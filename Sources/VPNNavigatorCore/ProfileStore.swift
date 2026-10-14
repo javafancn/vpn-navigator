@@ -21,11 +21,17 @@ public actor ProfileStore {
         guard !contents.isEmpty, contents.count <= 2_000_000,
               let string = String(data: contents, encoding: .utf8),
               string.contains("remote ") || string.contains("\nremote ") else { throw StoreError.invalidFile }
+        // Normalize external inline-capable certificates into a private runtime copy.
+        // Preserve the user's original bytes as the canonical source.
+        let runtime = try ProfileMaterializer.materialize(text: string, directory: file.deletingLastPathComponent())
         let id = UUID()
         let filename = "\(id.uuidString).ovpn"
         let destination = root.appendingPathComponent(filename)
         try contents.write(to: destination, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
+        let runtimeURL = root.appendingPathComponent("\(id.uuidString).runtime.ovpn")
+        try runtime.write(to: runtimeURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: runtimeURL.path)
         let profile = VPNProfile(id: id, name: file.deletingPathExtension().lastPathComponent,
                                  sourceFilename: file.lastPathComponent, relativePath: filename)
         var profiles = try list()
@@ -44,12 +50,19 @@ public actor ProfileStore {
         guard profile.relativePath == "\(profile.id.uuidString).ovpn" else { throw StoreError.invalidFile }
         return try String(contentsOf: root.appendingPathComponent(profile.relativePath), encoding: .utf8)
     }
+    public func runtimeConfig(for profile: VPNProfile) throws -> String {
+        guard profile.relativePath == "\(profile.id.uuidString).ovpn" else { throw StoreError.invalidFile }
+        let normalized = root.appendingPathComponent("\(profile.id.uuidString).runtime.ovpn")
+        guard FileManager.default.fileExists(atPath: normalized.path) else { return try original(for: profile) }
+        return try String(contentsOf: normalized, encoding: .utf8)
+    }
     public func delete(id: UUID) throws {
         var profiles = try list()
         guard let item = profiles.first(where: { $0.id == id }) else { throw StoreError.notFound }
         profiles.removeAll { $0.id == id }
         try save(profiles)
         try FileManager.default.removeItem(at: root.appendingPathComponent("\(item.id.uuidString).ovpn"))
+        try? FileManager.default.removeItem(at: root.appendingPathComponent("\(item.id.uuidString).runtime.ovpn"))
     }
     private func save(_ profiles: [VPNProfile]) throws {
         let encoder = JSONEncoder()

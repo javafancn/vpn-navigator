@@ -96,7 +96,7 @@ final class AppModel: ObservableObject {
         guard !busy, let selected else { return }
         busy = true; defer { busy = false }
         do {
-            let text = try await store.original(for: selected)
+            let text = try await store.runtimeConfig(for: selected)
             _ = try ProfileSafety.validate(text)
             if selected.mode == .chinaDirect && rules == nil {
                 message = "Download China IPv4 rules before connecting."

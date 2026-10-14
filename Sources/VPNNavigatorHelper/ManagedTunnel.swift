@@ -50,7 +50,7 @@ final class ManagedTunnel {
 
         // OpenVPN must be provided by a separately vetted signed distribution.
         // NEVER launch an arbitrary executable from an imported .ovpn or client-supplied path.
-        let binary = "/usr/local/libexec/vpn-navigator/openvpn"
+        let binary = Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/openvpn").path
         guard FileManager.default.isExecutableFile(atPath: binary) else { throw TunnelError.engineMissing }
         let task = Process()
         task.executableURL = URL(fileURLWithPath: binary)
@@ -68,6 +68,9 @@ final class ManagedTunnel {
         do {
             try task.run()
             let socket = ManagementSocket()
+            socket.onExit = { [weak self] in
+                self?.queue.async { if self?.process != nil { self?.stop() } }
+            }
             socket.onState = { [weak self] snapshot in
                 self?.queue.async { self?.handle(snapshot) }
             }
@@ -87,6 +90,11 @@ final class ManagedTunnel {
     private func handle(_ snapshot: TunnelSnapshot) {
         state = snapshot.state
         message = snapshot.message
+        if snapshot.state == .reconnecting {
+            routing?.rollback()
+            routing = nil
+            activePlan = nil
+        }
         guard snapshot.state == .connected, activeMode == .chinaDirect,
               routing == nil, let remote = snapshot.remoteIPv4, let tunnelIP = snapshot.localTunnelIPv4,
               let rules else { return }

@@ -1,7 +1,7 @@
 import Foundation
 
-public struct RouteTarget: Hashable, Sendable {
-    public enum Destination: Hashable, Sendable {
+public struct RouteTarget: Hashable, Codable, Sendable {
+    public enum Destination: Hashable, Codable, Sendable {
         case viaGateway(String)
         case interface(String)
     }

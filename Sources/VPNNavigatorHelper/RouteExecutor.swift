@@ -5,7 +5,15 @@ import VPNNavigatorCore
 final class RouteExecutor {
     private(set) var installed: [RouteTarget] = []
     private let journal: URL
-    init(journal: URL) { self.journal = journal }
+    init(journal: URL) {
+        self.journal = journal
+        // Recover and clean up routes left by an unexpected helper termination.
+        if let data = try? Data(contentsOf: journal),
+           let previous = try? JSONDecoder().decode([RouteTarget].self, from: data) {
+            self.installed = previous
+            rollback()
+        }
+    }
 
     func apply(_ route: RouteTarget) throws {
         // Abort if another tunnel already owns this exact network (idempotence protects shared routes).

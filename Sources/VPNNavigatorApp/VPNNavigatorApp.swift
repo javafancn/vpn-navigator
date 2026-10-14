@@ -1,5 +1,6 @@
 import SwiftUI
 import VPNNavigatorCore
+import ServiceManagement
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -78,6 +79,7 @@ final class AppModel: ObservableObject {
     func requestHelper() {
         do {
             try helper.requestRegistration()
+            try SMAppService.agent(plistName: "com.javafancn.vpn-navigator.rules.plist").register()
             helperStatus = String(describing: helper.installationStatus)
             message = "Enable the background helper in System Settings if requested. A signed .app distribution is required."
         } catch { message = "Helper registration failed: \(error.localizedDescription)" }

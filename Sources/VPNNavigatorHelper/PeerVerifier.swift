@@ -20,7 +20,7 @@ enum PeerVerifier {
         guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &peer) == errSecSuccess,
               let peer else { return false }
 
-        let requirementText = "anchor apple generic and certificate leaf[subject.OU] = \"\(team)\" and identifier \"com.javafancn.vpn-navigator\""
+        let requirementText = "anchor apple generic and certificate leaf[subject.OU] = \"\(team)\" and (identifier \"com.javafancn.vpn-navigator\" or identifier \"com.javafancn.vpn-navigator.rule-agent\")"
         var requirement: SecRequirement?
         guard SecRequirementCreateWithString(requirementText as CFString, [], &requirement) == errSecSuccess,
               let requirement else { return false }

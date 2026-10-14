@@ -190,5 +190,20 @@ final class ManagedTunnel {
 }
 enum TunnelError: Error, LocalizedError {
     case needRoot, alreadyRunning, missingRules, badCredential, engineMissing,
-         managementUnavailable, noPhysicalGateway, noTunnelInterface, noActiveRoutePlan
+         managementUnavailable, noPhysicalGateway, noTunnelInterface, noActiveRoutePlan, ipv6Unsafe
+
+    var errorDescription: String? {
+        switch self {
+        case .ipv6Unsafe: return "IPv6 has a physical-network route; IPv4-only split routing would leak traffic. Use Original mode or disable IPv6 before enabling IPv4 splitting."
+        case .engineMissing: return "Signed OpenVPN engine is not installed."
+        case .needRoot: return "Approve the privileged helper in macOS."
+        case .alreadyRunning: return "Another VPN session is active."
+        case .missingRules: return "A valid China IPv4 rules snapshot is required."
+        case .badCredential: return "Username/password is missing or invalid."
+        case .managementUnavailable: return "OpenVPN management socket is unavailable."
+        case .noPhysicalGateway: return "Cannot identify the local physical gateway."
+        case .noTunnelInterface: return "Cannot verify the OpenVPN utun interface."
+        case .noActiveRoutePlan: return "No active split-routing session."
+        }
+    }
 }

@@ -20,6 +20,9 @@ final class ManagedTunnel {
         guard getuid() == 0 else { throw TunnelError.needRoot }
         guard process == nil else { throw TunnelError.alreadyRunning }
         let validated = try ProfileSafety.validate(text)
+        // IPv4-only routing cannot protect IPv6. Refuse a non-original split or
+        // full-VPN mode while native IPv6 has a non-tunnel path (fail closed).
+        if mode != .original { try checkIPv6Bypass() }
         if mode == .chinaDirect {
             rules = try RuleSet(text: ruleText)
             guard let rules, rules.routes.count >= 100 else { throw TunnelError.missingRules }
@@ -84,6 +87,16 @@ final class ManagedTunnel {
         } catch {
             stop()
             throw error
+        }
+    }
+    private func checkIPv6Bypass() throws {
+        let output = try? RouteExecutor.command("/sbin/route",
+            ["-n", "get", "-inet6", "2606:4700:4700::1111"])
+        if let output, output.components(separatedBy: .newlines).contains(where: {
+            let line = $0.trimmingCharacters(in: .whitespaces)
+            return line.hasPrefix("interface:") && !line.contains("utun")
+        }) {
+            throw TunnelError.ipv6Unsafe
         }
     }
     private func handle(_ snapshot: TunnelSnapshot) {
@@ -175,7 +188,7 @@ final class ManagedTunnel {
         }
     }
 }
-enum TunnelError: Error {
+enum TunnelError: Error, LocalizedError {
     case needRoot, alreadyRunning, missingRules, badCredential, engineMissing,
          managementUnavailable, noPhysicalGateway, noTunnelInterface, noActiveRoutePlan
 }

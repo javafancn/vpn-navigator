@@ -50,8 +50,7 @@ final class ManagedTunnel {
 
         // OpenVPN must be provided by a separately vetted signed distribution.
         // NEVER launch an arbitrary executable from an imported .ovpn or client-supplied path.
-        let binary = Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/openvpn").path
-        guard FileManager.default.isExecutableFile(atPath: binary) else { throw TunnelError.engineMissing }
+        let binary = try ExecutableTrust.trustedOpenVPN().path
         let task = Process()
         task.executableURL = URL(fileURLWithPath: binary)
         task.arguments = options

@@ -15,6 +15,11 @@ struct MainView: View {
                 Section("Actions") {
                     Button { importing = true } label: { Label("Import .ovpn", systemImage: "plus") }
                 }
+                Section("Tools") {
+                    NavigationLink { NetworkDiagnosticsView() } label: {
+                        Label("Network Diagnostics", systemImage: "stethoscope")
+                    }
+                }
                 Section("System") {
                     Label(model.helperStatus, systemImage: "lock.shield")
                         .foregroundStyle(.secondary)

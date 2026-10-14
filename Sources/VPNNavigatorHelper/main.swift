@@ -1,0 +1,54 @@
+import Foundation
+import VPNNavigatorCore
+
+final class HelperService: NSObject, VPNNavigatorHelperAPI {
+    private let engine = ManagedTunnel()
+    private let queue = DispatchQueue(label: "VPNNavigator.PrivilegedIPC")
+
+    func health(reply: @escaping (String) -> Void) {
+        reply("VPN Navigator Helper (signed)")
+    }
+    func connect(profile: String, mode: String, rules: String,
+                 username: String, password: String,
+                 reply: @escaping (String) -> Void) {
+        queue.async {
+            guard let requested = RoutingMode(rawValue: mode) else {
+                reply("ERROR: Invalid route mode"); return
+            }
+            do {
+                try self.engine.start(profile: profile, mode: requested, ruleText: rules,
+                                      username: username, password: password)
+                reply("Connecting. Await tunnel state and route validation.")
+            } catch { reply("ERROR: \(error.localizedDescription)") }
+        }
+    }
+    func disconnect(reply: @escaping (String) -> Void) {
+        queue.async { self.engine.stop(); reply("Disconnected") }
+    }
+    func connectionStatus(reply: @escaping (String) -> Void) {
+        queue.async { reply("\(self.engine.state.rawValue): \(self.engine.message)") }
+    }
+    func updateRules(_ text: String, reply: @escaping (String) -> Void) {
+        queue.async {
+            do { try self.engine.changeRules(text); reply("Rules applied") }
+            catch { reply("ERROR: \(error.localizedDescription)") }
+        }
+    }
+}
+
+final class HelperDelegate: NSObject, NSXPCListenerDelegate {
+    private let service = HelperService()
+    func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
+        guard PeerVerifier.allows(connection) else { return false }
+        connection.exportedInterface = NSXPCInterface(with: VPNNavigatorHelperAPI.self)
+        connection.exportedObject = service
+        connection.resume()
+        return true
+    }
+}
+
+let listener = NSXPCListener(machServiceName: HelperIdentity.machService)
+let delegate = HelperDelegate()
+listener.delegate = delegate
+listener.resume()
+RunLoop.current.run()

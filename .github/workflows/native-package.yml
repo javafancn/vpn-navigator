@@ -1,0 +1,26 @@
+name: Native development package
+on:
+  workflow_dispatch:
+  pull_request:
+jobs:
+  build-macos-app:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify plists and scripts
+        run: |
+          plutil -lint Resources/Info.plist Resources/LaunchDaemons/*.plist Resources/LaunchAgents/*.plist
+          zsh -n scripts/build-app.sh scripts/build-pkg.sh scripts/notarize.sh
+      - name: Build unsigned developer-only app
+        run: zsh scripts/build-app.sh
+      - name: Verify development bundle
+        run: |
+          test -x 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp'
+          test -x 'dist/VPN Navigator.app/Contents/Resources/VPNNavigatorHelper'
+          test -x 'dist/VPN Navigator.app/Contents/Resources/VPNNavigatorRuleAgent'
+          test ! -f 'dist/VPN Navigator.app/Contents/Resources/openvpn'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VPNNavigator-unsigned-UI-only
+          path: dist/VPN Navigator.app
+          if-no-files-found: error

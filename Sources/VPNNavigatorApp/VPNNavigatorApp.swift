@@ -76,6 +76,12 @@ final class AppModel: ObservableObject {
         } catch { message = "Update failed; old rules preserved. \(error.localizedDescription)" }
     }
 
+    func checkForUpdates() async {
+        do {
+            let release = try await UpdateChecker.latestRelease()
+            message = "Latest published release: \(release.tag_name). Visit GitHub Releases to download a verified update."
+        } catch { message = "No published release is available yet, or update check failed." }
+    }
     func requestHelper() {
         do {
             try helper.requestRegistration()
@@ -156,6 +162,7 @@ struct VPNNavigatorApp: App {
                 LabeledContent("VPN engine", value: "Bundled OpenVPN CLI (requires signed distribution)")
                 LabeledContent("Background helper", value: model.helperStatus)
                 Button("Enable Privileged Helper…") { model.requestHelper() }
+                Button("Check for App Updates") { Task { await model.checkForUpdates() } }
                 Text("This developer SwiftPM build cannot register a launch daemon by itself. Use the signed app bundle.")
                     .font(.caption).foregroundStyle(.secondary)
             }

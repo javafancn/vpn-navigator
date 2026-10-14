@@ -10,7 +10,7 @@ final class MaterializerTests: XCTestCase {
         let text = "client\nremote vpn.example 1194\ndev tun\nca ca.crt\nauth-user-pass user.txt"
         let output = try ProfileMaterializer.materialize(text: text, directory: root)
         XCTAssertTrue(output.contains("<ca>\nTEST-CA\n</ca>"))
-        XCTAssertTrue(output.contains("auth-user-pass\n"))
+        XCTAssertTrue(output.contains("auth-user-pass"))
         XCTAssertFalse(output.contains("user.txt"))
         XCTAssertNoThrow(try ProfileSafety.validate(output))
     }

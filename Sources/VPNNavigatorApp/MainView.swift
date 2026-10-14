@@ -23,8 +23,10 @@ struct MainView: View {
             }
             .navigationTitle("VPN Navigator")
             .toolbar {
-                Button { importing = true } label: { Label("Import .ovpn", systemImage: "plus") }
-                    .help("Import an OpenVPN profile")
+                ToolbarItem(placement: .primaryAction) {
+                    Button { importing = true } label: { Label("Import .ovpn", systemImage: "plus") }
+                        .help("Import an OpenVPN profile")
+                }
             }
         } detail: {
             if let selected = model.selected {

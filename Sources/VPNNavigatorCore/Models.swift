@@ -21,7 +21,7 @@ public struct VPNProfile: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
-public struct IPv4CIDR: Hashable, Comparable, CustomStringConvertible, Sendable {
+public struct IPv4CIDR: Hashable, Comparable, Codable, CustomStringConvertible, Sendable {
     public let network: UInt32
     public let prefix: Int
     public init(_ string: String) throws {

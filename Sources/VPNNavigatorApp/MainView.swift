@@ -29,8 +29,11 @@ struct MainView: View {
             if let selected = model.selected {
                 ProfileDetail(profile: selected)
             } else {
-                ContentUnavailableView("No VPN profile selected", systemImage: "network",
-                    description: Text("Import an .ovpn configuration to get started."))
+                VStack(spacing: 12) {
+                    Image(systemName: "network").font(.system(size: 44)).foregroundStyle(.secondary)
+                    Text("No VPN profile selected").font(.title2)
+                    Text("Import an .ovpn configuration to get started.").foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.init(filenameExtension: "ovpn")!],

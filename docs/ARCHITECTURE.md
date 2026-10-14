@@ -1,25 +1,39 @@
-# Architecture & safety boundaries
+# VPN Navigator — current architecture and trust boundaries
 
-## This repository's initial implementation
+## Alpha implementation
 
-The SwiftPM library (VPNNavigatorCore) provides a validated CIDR parser, policy compiler, profile repository and remote IPv4 rule updater. The SwiftUI app provides a macOS-native, offline-first profile workspace. Neither component silently modifies the machine's routes.
+**User UI**: SwiftUI application with macOS menu bar, native sidebar, per-profile policies, status and route diagnostics. Can be built without a privileged helper for preview.
 
-**Not yet implemented:** privileged helper, signed OpenVPN distribution, root-safe configuration sanitizer, Management Interface controller, DNS lifecycle, IPv6 policy, route reconciliation, rollback, notarized installer, automatic rule scheduling. Connection controls are intentionally not wired until a secure helper is present.
+**Core**: `VPNNavigatorCore` provides CIDR parse/match/diff, safe OpenVPN profile allowlisting, relative certificate materialization into a private runtime copy, route plan generation, rule update staging, and a local profile repository.
 
-## Intended privileged design
+**Privileged helper**: separate CLI executable started by signed SMAppService LaunchDaemon. Receives only typed XPC messages from client apps with the expected Team ID and bundle identifiers. Opens trusted bundled OpenVPN executable only from root-owned non-user-writable /Applications path, verified against signed designated requirement.
 
-1. UI process runs unprivileged; encrypted credentials go to Keychain (not profile metadata).
-2. A signed helper registered with SMAppService authenticates callers over XPC.
-3. Imported profiles are untrusted data. Reject executable directives (up/down, plugin, script-security changes, etc.) before any privileged run.
-4. Helper launches a known signed OpenVPN executable, owns a private management socket and installs routes only through typed validated APIs.
-5. Never install a default VPN route before the tunnel and pinned VPN-server endpoint are usable.
-6. Preserve server-pushed private network routes and the physical LAN. On conflict, prompt the user.
-7. Use snapshots, idempotent incremental route transactions and rollback on failure.
-8. No actual LAN/VPN route will be mutated by the current MVP.
+**OpenVPN connection**: detached OpenVPN 2.x process, Unix-domain management socket, startup hold, status parsing, username/password transferred from GUI Keychain through authenticated XPC and written to a root-owned ephemeral credential file removed on shutdown. Do not log credentials.
 
-## Toolchains
+**Routing**: for China Direct, `route-noexec` delegates route responsibility to the helper. Pins the connected remote VPN endpoint to physical gateway first, then country exceptions, then two VPN /1 default routes. Records each installed route and rolls them back on disconnect / errors, with JSON journal recovery on helper restart.
 
-On macOS 13+, build with Xcode command-line tools and Swift 5.9+:
-`swift build`, `swift test`, `swift run VPNNavigatorApp`.
+**Rule updates**: user-scoped signed LaunchAgent fetches source data daily, verifies and stages a candidate, asks helper to apply deltas to any active split session, then commits the local snapshot. No downloaded script is executed.
 
-macOS app code cannot be compiled or exercised on Linux; run CI and signing tests on a Mac runner. Run `swift test --filter RuleEngineTests` for logic tests.
+**DNS**: relies on OpenVPN 2.7 client-provided platform DNS integration and server-pushed options, *not* a custom DNS proxy. Correctness for corporate split DNS and restoration remains unverified.
+
+**IPv6**: IPv4-only Full VPN and China Direct modes refuse a detected non-tunnel IPv6 default route. This is a conservative, incomplete safeguard, not full IPv6 support. No Kill Switch claim.
+
+## Security limitations before distribution
+
+1. XPC signing/SMAppService registration must be tested with the actual Developer ID Team; ad-hoc builds intentionally cannot authorize helper.
+2. Signed root-owned installation must be verified, including symlink/permission changes and uninstallation.
+3. Obtain / package a relocatable reviewed OpenVPN 2.x build with its dependent libraries, and fulfill GPLv2 obligations.
+4. Review re-entrant management callbacks and failure handling; catch process termination and DNS leftovers.
+5. Confirm safe route ownership under multiple VPNs, Wi-Fi transitions, laptop sleep/wake, overlapping enterprise CIDRs, VPN server address changes, and route table collisions.
+6. System default DNS and IPv6 behavior must be measured on dual-stack machines; dynamic DNS correctness isn't assured by unit tests.
+7. Strict allowlist intentionally rejects many valid OpenVPN directives. Unsupported scripts, TAP devices, outside-of-folder external files and proprietary plugins are NOT supported.
+8. Bundle is not notarized, and no signed production binary is distributed.
+
+## Build
+```bash
+swift test
+zsh scripts/build-app.sh
+```
+The generated unsigned app is GUI-only without a signed, bundled OpenVPN engine.
+
+Do not claim production readiness based on green CI. Hardware tests in docs/QA.md are release gates.

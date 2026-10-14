@@ -1,0 +1,33 @@
+# VPN Navigator — macOS release acceptance tests
+
+The following checks must be executed on a disposable Mac after Developer ID signing and installation with the PKG, using a testing-only OpenVPN server and disposable credentials.
+
+| ID | Test | Expected |
+|---|---|---|
+| A01 | Install root-owned signed .app through PKG | Correct root ownership, no group/world write, notarization passes |
+| A02 | SMAppService register LaunchDaemon/LaunchAgent | Visible macOS approval, XPC helper reachable |
+| A03 | Connect unsigned/mismatched XPC client | Helper rejects the connection |
+| A04 | Import profile with embedded certificates | Connect, disconnect, re-connect normally |
+| A05 | Import relative ca/cert/key files | Original preserved; runtime copy self-contained |
+| A06 | Unsafe script/plugin/management directive | Explicit error, nothing runs as root |
+| A07 | Username/password profile | Keychain optional, root temporary auth file removed |
+| A08 | Full VPN IPv4 route | Test remote egress and DNS actually use VPN |
+| A09 | China Direct, source with thousands of prefixes | CN IP uses physical network; foreign IPv4 uses utun |
+| A10 | VPN server located within China CIDR | Endpoint /32 pin remains physical |
+| A11 | Local NAS/SSH/SMB/printer access | No accidental LAN disruption |
+| A12 | Overlapping corporate private CIDR | Explicitly block or respect server routes |
+| A13 | Change rule feed while connected | Additions/removals valid; connection need not restart |
+| A14 | Update fails midway | Route ownership rollback, old working snapshot intact |
+| A15 | Kill/force-exit privileged helper mid-update | Journal recovery and no persistent broken routes |
+| A16 | Disconnect when traffic is active | Restore DNS and route state, no app-created routes remain |
+| A17 | Sleep, wake, Wi-Fi SSID/gateway switch | Reroute safely or disconnect; no stale physical gateway |
+| A18 | Reconnect remote VPN to a different server IP | Endpoint pin updated, old pin removed |
+| A19 | Native IPv6 physical default present | IPv4-only mode refuses to claim protected tunnel |
+| A20 | Corporate split DNS, mDNS and local printer | No DNS leak or local discovery regression |
+| A21 | Install/update/uninstall PKG | Process stopped; helper and launchd correctly removed |
+| A22 | macOS 13 / 14 / 15 / 26 compatibility | No API/permission regressions |
+| A23 | Test Intel + Apple Silicon | Correct architecture support and code signatures |
+| A24 | Dependency and license review | GPL / copyright notices and source available as required |
+| A25 | CPU/memory/energy baseline vs OpenVPN Connect | Measured under same server/cipher/traffic |
+
+**No entry above is yet marked as passed by actual hardware testing.**

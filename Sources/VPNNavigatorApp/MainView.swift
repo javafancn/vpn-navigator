@@ -14,6 +14,9 @@ struct MainView: View {
                             .tag(profile.id)
                     }
                 }
+                Section("Actions") {
+                    Button { importing = true } label: { Label("Import .ovpn", systemImage: "plus") }
+                }
                 Section("Status") {
                     Label("VPN engine not installed", systemImage: "shield.slash")
                         .foregroundStyle(.secondary)
@@ -22,12 +25,6 @@ struct MainView: View {
                 }
             }
             .navigationTitle("VPN Navigator")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button { importing = true } label: { Label("Import .ovpn", systemImage: "plus") }
-                        .help("Import an OpenVPN profile")
-                }
-            }
         } detail: {
             if let selected = model.selected {
                 ProfileDetail(profile: selected)

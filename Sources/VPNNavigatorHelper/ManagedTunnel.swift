@@ -12,6 +12,7 @@ final class ManagedTunnel {
     private var activeMode: RoutingMode = .original
     private var rules: RuleSet?
     private var activePlan: RoutePlan?
+    private var lastError: String?
     private(set) var state: TunnelState = .disconnected
     private(set) var message = "Disconnected"
 
@@ -64,6 +65,7 @@ final class ManagedTunnel {
             self?.queue.async { self?.stopRoutesAndReset() }
         }
         activeMode = mode
+        lastError = nil
         process = task
         state = .connecting
         message = "OpenVPN is starting"
@@ -102,6 +104,10 @@ final class ManagedTunnel {
     private func handle(_ snapshot: TunnelSnapshot) {
         state = snapshot.state
         message = snapshot.message
+        if snapshot.state == .connected && activeMode == .chinaDirect {
+            state = .connecting
+            message = "Applying and validating China IPv4 routes"
+        }
         if snapshot.state == .reconnecting {
             routing?.rollback()
             routing = nil
@@ -126,11 +132,14 @@ final class ManagedTunnel {
             try executor.apply(plan.installOrder)
             activePlan = plan
             routing = executor
+            state = .connected
             message = "Connected · China IPv4 split routing enabled"
         } catch {
-            message = "Routing failed; VPN stopped for safety"
-            state = .failed
+            let failure = "Routing failed; VPN stopped for safety: \(error.localizedDescription)"
             stop()
+            lastError = failure
+            state = .failed
+            message = failure
         }
     }
     private static func parseValue(_ key: String, in text: String) -> String? {
@@ -167,6 +176,7 @@ final class ManagedTunnel {
         message = "Routes refreshed; OpenVPN remains connected"
     }
     func stop() {
+        lastError = nil
         // Roll back routes before terminating the tunnel.
         routing?.rollback()
         routing = nil
@@ -181,8 +191,8 @@ final class ManagedTunnel {
         routing = nil
         activePlan = nil
         process = nil
-        state = .disconnected
-        message = "Disconnected"
+        state = lastError == nil ? .disconnected : .failed
+        message = lastError ?? "Disconnected"
         for name in ["active.ovpn", "auth.txt", "management.sock"] {
             try? FileManager.default.removeItem(at: workdir.appendingPathComponent(name))
         }

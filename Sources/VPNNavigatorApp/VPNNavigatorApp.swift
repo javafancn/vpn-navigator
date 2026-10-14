@@ -5,7 +5,14 @@ import ServiceManagement
 @MainActor
 final class AppModel: ObservableObject {
     @Published var profiles: [VPNProfile] = []
-    @Published var selectedID: UUID?
+    @Published var selectedID: UUID? {
+        didSet {
+            if oldValue != selectedID {
+                username = ""
+                password = ""
+            }
+        }
+    }
     @Published var rules: RuleSet?
     @Published var busy = false
     @Published var message: String?
@@ -13,6 +20,12 @@ final class AppModel: ObservableObject {
     @Published var connectionStatus = "disconnected: Not connected"
     @Published var username = ""
     @Published var password = ""
+    @Published var rememberCredentials = UserDefaults.standard.bool(forKey: "rememberCredentials") {
+        didSet {
+            UserDefaults.standard.set(rememberCredentials, forKey: "rememberCredentials")
+            if !rememberCredentials, let selectedID { KeychainVault.remove(id: selectedID) }
+        }
+    }
 
     private let store: ProfileStore
     private let updater: RuleUpdater
@@ -54,7 +67,7 @@ final class AppModel: ObservableObject {
     }
     func deleteSelected() async {
         guard let item = selected else { return }
-        do { try await store.delete(id: item.id); selectedID = nil; await load() }
+        do { try await store.delete(id: item.id); KeychainVault.remove(id: item.id); selectedID = nil; await load() }
         catch { message = error.localizedDescription }
     }
 
@@ -107,6 +120,14 @@ final class AppModel: ObservableObject {
             if selected.mode == .chinaDirect && rules == nil {
                 message = "Download China IPv4 rules before connecting."
                 return
+            }
+            if rememberCredentials && (username.isEmpty || password.isEmpty),
+               let secret = KeychainVault.load(id: selected.id) {
+                username = secret.username
+                password = secret.password
+            }
+            if rememberCredentials && !password.isEmpty {
+                try KeychainVault.store(.init(username: username, password: password), id: selected.id)
             }
             let rulesText = (rules?.routes ?? []).map(\.description).joined(separator: "\n")
             let result = await helper.connect(profile: text, mode: selected.mode, rules: rulesText,

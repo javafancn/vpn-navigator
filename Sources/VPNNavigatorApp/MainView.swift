@@ -83,6 +83,7 @@ private struct ProfileDetail: View {
                             .foregroundStyle(model.connected ? .green : .secondary)
                         TextField("Username (if required)", text: $model.username)
                         SecureField("Password (if required)", text: $model.password)
+                        Toggle("Remember credentials in macOS Keychain", isOn: $model.rememberCredentials)
                         HStack {
                             Button("Connect") { Task { await model.connectSelected() } }
                                 .buttonStyle(.borderedProminent)

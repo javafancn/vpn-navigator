@@ -8,19 +8,27 @@ final class AppModel: ObservableObject {
     @Published var rules: RuleSet?
     @Published var busy = false
     @Published var message: String?
-    private let root: URL
+    @Published var helperStatus = "Unavailable"
+    @Published var connectionStatus = "disconnected: Not connected"
+    @Published var username = ""
+    @Published var password = ""
+
     private let store: ProfileStore
     private let updater: RuleUpdater
+    private let helper = HelperClient.shared
 
     init() {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("VPNNavigator", isDirectory: true)
-        root = support
-        store = ProfileStore(root: support.appendingPathComponent("Profiles"))
-        updater = RuleUpdater(folder: support.appendingPathComponent("Rules"))
-        Task { await load() }
+        store = ProfileStore(root: root.appendingPathComponent("Profiles"))
+        updater = RuleUpdater(folder: root.appendingPathComponent("Rules"))
+        Task { await load(); await refreshConnectionStatus() }
     }
+
     var selected: VPNProfile? { profiles.first { $0.id == selectedID } }
+    var connected: Bool { connectionStatus.hasPrefix("connected:") }
+    var connecting: Bool { connectionStatus.hasPrefix("connecting:") || connectionStatus.hasPrefix("authenticating:") }
+
     func load() async {
         do {
             profiles = try await store.list()
@@ -48,12 +56,62 @@ final class AppModel: ObservableObject {
         do { try await store.delete(id: item.id); selectedID = nil; await load() }
         catch { message = error.localizedDescription }
     }
+
     func refreshRules() async {
+        guard !busy else { return }
         busy = true; defer { busy = false }
         do {
-            rules = try await updater.refresh()
-            message = "Validated \(rules!.routes.count) IPv4 networks. Rules are cached; system routes are unchanged."
+            let candidate = try await updater.fetchCandidate()
+            if connected, selected?.mode == .chinaDirect {
+                let response = await helper.updateRules(candidate.routes.map(\.description).joined(separator: "\n"))
+                guard !response.hasPrefix("ERROR:") else {
+                    message = "Existing routes unchanged. \(response)"
+                    return
+                }
+            }
+            try await updater.commit(candidate)
+            rules = candidate
+            message = "Validated and cached \(candidate.routes.count) IPv4 networks."
         } catch { message = "Update failed; old rules preserved. \(error.localizedDescription)" }
+    }
+
+    func requestHelper() {
+        do {
+            try helper.requestRegistration()
+            helperStatus = String(describing: helper.installationStatus)
+            message = "Enable the background helper in System Settings if requested. A signed .app distribution is required."
+        } catch { message = "Helper registration failed: \(error.localizedDescription)" }
+    }
+    func refreshConnectionStatus() async {
+        helperStatus = String(describing: helper.installationStatus)
+        if helper.installationStatus == .enabled {
+            connectionStatus = await helper.status()
+        } else {
+            connectionStatus = "disconnected: Privileged helper not enabled"
+        }
+    }
+    func connectSelected() async {
+        guard !busy, let selected else { return }
+        busy = true; defer { busy = false }
+        do {
+            let text = try await store.original(for: selected)
+            _ = try ProfileSafety.validate(text)
+            if selected.mode == .chinaDirect && rules == nil {
+                message = "Download China IPv4 rules before connecting."
+                return
+            }
+            let rulesText = (rules?.routes ?? []).map(\.description).joined(separator: "\n")
+            let result = await helper.connect(profile: text, mode: selected.mode, rules: rulesText,
+                                              username: username, password: password)
+            password = "" // never retain passwords in UI state after a connection attempt
+            if result.hasPrefix("ERROR:") { message = result }
+            else { connectionStatus = "connecting: \(result)" }
+        } catch { message = "Profile rejected: \(error.localizedDescription)" }
+    }
+    func disconnect() async {
+        let response = await helper.disconnect()
+        if response.hasPrefix("ERROR:") { message = response }
+        await refreshConnectionStatus()
     }
     func exportPreview() async {
         guard let profile = selected else { return }
@@ -62,10 +120,9 @@ final class AppModel: ObservableObject {
             let generated = try ProfileCompiler.render(original: original, mode: profile.mode, rules: rules)
             let panel = NSSavePanel()
             panel.nameFieldStringValue = profile.name + "-preview.ovpn"
-            panel.allowedContentTypes = [.init(filenameExtension: "ovpn")!]
             guard panel.runModal() == .OK, let url = panel.url else { return }
             try generated.write(to: url, atomically: true, encoding: .utf8)
-            message = "Exported a preview profile. Not imported into OpenVPN and not connected."
+            message = "Exported a preview; no system routes were modified."
         } catch { message = "Export failed: \(error.localizedDescription)" }
     }
 }
@@ -80,20 +137,28 @@ struct VPNNavigatorApp: App {
         }
         MenuBarExtra("VPN Navigator", systemImage: "network") {
             Text("VPN Navigator")
-            Text("VPN connection not configured").foregroundStyle(.secondary)
+            Text(model.connectionStatus).foregroundStyle(.secondary)
             Divider()
+            if model.connected || model.connecting {
+                Button("Disconnect") { Task { await model.disconnect() } }
+            } else {
+                Button("Connect Selected Profile") { Task { await model.connectSelected() } }
+                    .disabled(model.selected == nil)
+            }
             Button("Check China IP Rules") { Task { await model.refreshRules() } }
             Divider()
             Text("\(model.profiles.count) saved profiles")
         }
         Settings {
             Form {
-                LabeledContent("VPN engine", value: "Not installed (foundation build)")
-                LabeledContent("Rule source", value: "chnroutes2")
-                LabeledContent("Network changes", value: "Disabled")
+                LabeledContent("VPN engine", value: "Bundled OpenVPN CLI (requires signed distribution)")
+                LabeledContent("Background helper", value: model.helperStatus)
+                Button("Enable Privileged Helper…") { model.requestHelper() }
+                Text("This developer SwiftPM build cannot register a launch daemon by itself. Use the signed app bundle.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             .formStyle(.grouped)
-            .frame(width: 450)
+            .frame(width: 540)
             .padding()
         }
     }

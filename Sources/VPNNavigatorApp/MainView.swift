@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 import VPNNavigatorCore
 
 struct MainView: View {
@@ -10,17 +9,14 @@ struct MainView: View {
             List(selection: $model.selectedID) {
                 Section("Profiles") {
                     ForEach(model.profiles) { profile in
-                        Label(profile.name, systemImage: "network")
-                            .tag(profile.id)
+                        Label(profile.name, systemImage: "network").tag(profile.id)
                     }
                 }
                 Section("Actions") {
                     Button { importing = true } label: { Label("Import .ovpn", systemImage: "plus") }
                 }
-                Section("Status") {
-                    Label("VPN engine not installed", systemImage: "shield.slash")
-                        .foregroundStyle(.secondary)
-                    Label("Route modifications disabled", systemImage: "lock.shield")
+                Section("System") {
+                    Label(model.helperStatus, systemImage: "lock.shield")
                         .foregroundStyle(.secondary)
                 }
             }
@@ -36,12 +32,20 @@ struct MainView: View {
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.init(filenameExtension: "ovpn")!],
+        .task {
+            while !Task.isCancelled {
+                await model.refreshConnectionStatus()
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
+        }
+        .fileImporter(isPresented: $importing,
+                      allowedContentTypes: [.init(filenameExtension: "ovpn")!],
                       allowsMultipleSelection: true) { result in
             switch result {
             case .success(let files):
                 Task { for file in files { await model.importFile(file) } }
-            case .failure(let error): model.message = error.localizedDescription
+            case .failure(let error):
+                model.message = error.localizedDescription
             }
         }
         .alert("VPN Navigator", isPresented: Binding(
@@ -68,37 +72,44 @@ private struct ProfileDetail: View {
                     }
                     Spacer()
                 }
-                GroupBox("VPN status") {
-                    HStack {
-                        Label("Not connected", systemImage: "circle.dotted")
-                        Spacer()
-                        Text("Engine integration pending").foregroundStyle(.secondary)
+                GroupBox("Connection") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label(model.connectionStatus, systemImage: model.connected ? "checkmark.shield" : "circle.dotted")
+                            .foregroundStyle(model.connected ? .green : .secondary)
+                        TextField("Username (if required)", text: $model.username)
+                        SecureField("Password (if required)", text: $model.password)
+                        HStack {
+                            Button("Connect") { Task { await model.connectSelected() } }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(model.busy || model.connected || model.connecting)
+                            Button("Disconnect") { Task { await model.disconnect() } }
+                                .disabled(!model.connected && !model.connecting)
+                        }
                     }.padding(8)
                 }
                 GroupBox("Network policy") {
                     VStack(alignment: .leading, spacing: 12) {
                         Picker("Mode", selection: Binding(
                             get: { profile.mode },
-                            set: { newMode in Task { await model.setMode(newMode) } }
+                            set: { value in Task { await model.setMode(value) } }
                         )) {
-                            Text("Original profile").tag(RoutingMode.original)
+                            Text("Follow original profile").tag(RoutingMode.original)
                             Text("Full VPN").tag(RoutingMode.fullVPN)
                             Text("Mainland China direct").tag(RoutingMode.chinaDirect)
-                        }
-                        .pickerStyle(.radioGroup)
-                        Text("Policies here are saved only. No system routes are changed in this build.")
+                        }.pickerStyle(.radioGroup)
+                        Text("Change the policy before reconnecting. An active connection keeps its existing policy.")
                             .font(.caption).foregroundStyle(.secondary)
                     }.padding(8)
                 }
-                GroupBox("Mainland China IPv4 rules") {
+                GroupBox("China IPv4 rules") {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
                             Text(model.rules.map { "\($0.routes.count) validated networks" } ?? "No cached rules")
                             Spacer()
-                            Button("Check for Updates") { Task { await model.refreshRules() } }
+                            Button("Update Now") { Task { await model.refreshRules() } }
                                 .disabled(model.busy)
                         }
-                        Text("Rule updates never disconnect your VPN in this foundation build because routes are not yet applied.")
+                        Text("Updates may be applied to an active split-tunnel session; errors retain the last validated rules.")
                             .font(.caption).foregroundStyle(.secondary)
                     }.padding(8)
                 }
@@ -108,11 +119,10 @@ private struct ProfileDetail: View {
                     Spacer()
                     Button("Remove Profile", role: .destructive) { Task { await model.deleteSelected() } }
                 }
-                Text("This preview is not a production VPN client. Connection controls will be enabled only after the privileged helper passes integration tests.")
+                Text("The privileged helper requires a signed app bundle and installed OpenVPN CLI. Native route and DNS operations must be validated on your Mac before relying on this as a production VPN.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
-            .padding(25)
-            .frame(maxWidth: 850, alignment: .leading)
+            .padding(25).frame(maxWidth: 850, alignment: .leading)
         }
         .navigationTitle(profile.name)
     }

@@ -27,8 +27,21 @@ final class RouteExecutor {
         try persistJournal()
     }
     func apply(_ routes: [RouteTarget]) throws {
-        do { for route in routes { try apply(route) } }
-        catch { rollback(); throw error }
+        // Take a single route-table snapshot instead of running netstat for every CIDR.
+        let snapshot = try Self.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
+        let occupied = Set(snapshot.split(separator: "\n").compactMap {
+            $0.split(whereSeparator: { $0.isWhitespace }).first.map(String.init)
+        })
+        do {
+            for route in routes {
+                if occupied.contains(route.prefix.description) {
+                    throw RouteExecutionError.existingRoute(route.prefix.description)
+                }
+                try Self.command("/sbin/route", route.arguments(adding: true))
+                installed.append(route)
+                try persistJournal()
+            }
+        } catch { rollback(); throw error }
     }
     func rollback() {
         for route in installed.reversed() {
@@ -62,8 +75,7 @@ final class RouteExecutor {
     }
 
     private func persistJournal() throws {
-        let data = installed.map { "\($0.prefix.description) \($0.arguments(adding: true).joined(separator: " "))" }
-            .joined(separator: "\n").data(using: .utf8)!
+        let data = try JSONEncoder().encode(installed)
         try data.write(to: journal, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: journal.path)
     }

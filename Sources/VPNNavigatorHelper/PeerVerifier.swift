@@ -7,8 +7,10 @@ enum PeerVerifier {
     static func allows(_ connection: NSXPCConnection) -> Bool {
         var own: SecCode?
         guard SecCodeCopySelf([], &own) == errSecSuccess, let own else { return false }
+        var staticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(own, [], &staticCode) == errSecSuccess, let staticCode else { return false }
         var info: CFDictionary?
-        guard SecCodeCopySigningInformation(own, [], &info) == errSecSuccess,
+        guard SecCodeCopySigningInformation(staticCode, [], &info) == errSecSuccess,
               let dict = info as? [String: Any],
               let team = dict[kSecCodeInfoTeamIdentifier as String] as? String,
               !team.isEmpty else { return false }

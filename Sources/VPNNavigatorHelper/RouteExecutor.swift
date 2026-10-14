@@ -9,12 +9,12 @@ final class RouteExecutor {
 
     func apply(_ route: RouteTarget) throws {
         // Abort if another tunnel already owns this exact network (idempotence protects shared routes).
-        let output = try command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
+        let output = try Self.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
         let prefixName = route.prefix.description
         if output.split(separator: "\n").contains(where: {
-            $0.split(whereSeparator: \.isWhitespace).first.map(String.init) == prefixName
+            $0.split(whereSeparator: { $0.isWhitespace }).first.map(String.init) == prefixName
         }) { throw RouteExecutionError.existingRoute(prefixName) }
-        try command("/sbin/route", route.arguments(adding: true))
+        try Self.command("/sbin/route", route.arguments(adding: true))
         installed.append(route)
         try persistJournal()
     }
@@ -24,7 +24,7 @@ final class RouteExecutor {
     }
     func rollback() {
         for route in installed.reversed() {
-            _ = try? command("/sbin/route", route.arguments(adding: false))
+            _ = try? Self.command("/sbin/route", route.arguments(adding: false))
         }
         installed.removeAll()
         try? FileManager.default.removeItem(at: journal)
@@ -39,7 +39,7 @@ final class RouteExecutor {
             }
         } catch {
             for route in created.reversed() {
-                _ = try? command("/sbin/route", route.arguments(adding: false))
+                _ = try? Self.command("/sbin/route", route.arguments(adding: false))
                 installed.removeAll { $0 == route }
             }
             try? persistJournal()
@@ -47,7 +47,7 @@ final class RouteExecutor {
         }
         for route in removed {
             guard installed.contains(route) else { continue }
-            try command("/sbin/route", route.arguments(adding: false))
+            try Self.command("/sbin/route", route.arguments(adding: false))
             installed.removeAll { $0 == route }
         }
         try persistJournal()

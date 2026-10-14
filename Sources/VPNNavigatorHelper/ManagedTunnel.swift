@@ -93,8 +93,8 @@ final class ManagedTunnel {
         do {
             // Physical gateway is determined BEFORE a split default route is installed.
             let routeInfo = try RouteExecutor.command("/sbin/route", ["-n", "get", remote])
-            guard let gateway = parseValue("gateway:", in: routeInfo),
-                  let physicalInterface = parseValue("interface:", in: routeInfo),
+            guard let gateway = Self.parseValue("gateway:", in: routeInfo),
+                  let physicalInterface = Self.parseValue("interface:", in: routeInfo),
                   physicalInterface.hasPrefix("en") else { throw TunnelError.noPhysicalGateway }
             let interfaces = try RouteExecutor.command("/sbin/ifconfig", ["-a"])
             guard let utun = Self.findTunnel(containing: tunnelIP, in: interfaces) else {

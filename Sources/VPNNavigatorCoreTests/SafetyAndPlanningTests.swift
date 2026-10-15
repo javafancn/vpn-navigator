@@ -23,7 +23,7 @@ final class SafetyAndPlanningTests: XCTestCase {
     func testRejectUnsafeScriptsAndReferences() throws {
         for directive in ["script-security 3", "up /tmp/x", "plugin /tmp/evil.so",
                           "management 127.0.0.1 9999", "auth-user-pass /tmp/secrets",
-                          "ca /tmp/my-ca.pem", "route-noexec", "redirect-gateway def1"] {
+                          "ca /tmp/my-ca.pem", "route-noexec", "redirect-gateway block-local"] {
             XCTAssertThrowsError(try ProfileSafety.validate(inline + "\n" + directive))
         }
     }

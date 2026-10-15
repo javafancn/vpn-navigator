@@ -18,6 +18,7 @@ cp Resources/Engine/macos-dns-updown.sh "$APP/Contents/Resources/macos-dns-updow
 chmod 755 "$APP/Contents/Resources/macos-dns-updown.sh"
 mkdir -p "$APP/Contents/Resources/LICENSES"
 cp LICENSES/OpenVPN-DNS-BSD-2-Clause.txt "$APP/Contents/Resources/LICENSES/"
+cp LICENSES/CHNROUTES2_NOTICE.txt "$APP/Contents/Resources/LICENSES/"
 cp Resources/LaunchDaemons/*.plist "$APP/Contents/Library/LaunchDaemons/"
 cp Resources/LaunchAgents/*.plist "$APP/Contents/Library/LaunchAgents/"
 

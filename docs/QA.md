@@ -65,3 +65,11 @@ The following checks must be executed on a disposable Mac after Developer ID sig
 | A46 | Crash after committed add | Replay verifies ownership and removes only confirmed VPN Navigator route |
 | A47 | Crash during route deletion | Recovery blocks; no speculative deletion |
 | A48 | Helper crash with OpenVPN still alive | No automatic route cleanup or competing child process |
+
+| A49 | Disconnect while active tunnel carries traffic | Confirm child exits BEFORE custom /1 routes are restored |
+| A50 | Kill child refuses to exit | Keep active session marker and routing journal; block reconnect |
+| A51 | Switch profile from menu/window | Display actual active ID; stop old OpenVPN and confirm disconnect before reconnect |
+| A52 | IPv6 CIDR reserved input / country prefix | Reject malformed/special IPv6 networks; no unintended OS route changes |
+| A53 | PF anchor syntax in CI | `pfctl -vnf` parses candidate without loading or enabling PF |
+| A54 | PF guard active on spare Mac (future) | Prove anchors evaluated, leak-free IPv4/IPv6 and emergency restoration |
+| A55 | Signed helper deregistration with unresolved routes | Refuse deregistration; require verified recovery |

@@ -23,3 +23,8 @@ Activation remains blocked until signed-machine tests can prove:
 
 The candidate is deliberately **not a deployable PF firewall policy**. The
 app continues to reject unsafe unmanaged IPv6 routes in IPv4-only modes.
+
+The macOS runner's `PF preview syntax checks` workflow compiles a
+read-only `VPNNavigatorPFPreview` executable and runs `pfctl -vnf`
+on a generated sample. A pass proves **parser syntax only**, not routing
+or security enforcement.

@@ -91,3 +91,20 @@ Recovering an ambiguous pending operation requires manual verification of
 the process and route table on a disposable test Mac; this is deliberately
 not automated. The append-only route journal replaces the earlier
 single-record pre-add intent implementation.
+
+## Dual-stack / PF design-stage modules
+
+`IPv6CIDR` and `IPv6RuleSet` implement canonical IPv6 network parsing,
+public-prefix validation, overlap checks and bounded input. They do not
+download an IPv6 country feed or modify macOS IPv6 routes.
+
+`FirewallRulePreview` produces a candidate per-interface PF anchor rule
+file and its standalone development tool can be syntax-checked with
+`sudo pfctl -vnf` without loading rules. It is intentionally **not wired**
+to `ManagedTunnel`, because existing PF state, anchor evaluation order,
+enable reference tokens and emergency recovery have not been tested on a
+signed Mac. See `docs/PF_LEAK_GUARD.md`.
+
+After abnormal process termination, route restoration is only attempted
+once the OpenVPN process has exited. Any inability to confirm exit retains
+the private session files and guards against competing new tunnels.

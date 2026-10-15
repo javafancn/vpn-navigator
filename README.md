@@ -58,3 +58,22 @@ Rule feed: [chnroutes2](https://github.com/misakaio/chnroutes2), which requires 
 These additions require real signed-macOS device testing. They are NOT
 equivalent to an audited kill switch, traffic leak guarantees or a production
 VPN release. See [QA](docs/QA.md).
+
+## macOS Alpha hardening — October 15, 2026
+
+- VPN disconnect now waits for OpenVPN to exit before restoring custom routes.
+  If the child remains alive after graceful termination and forced stop,
+  the helper retains the active-profile marker and route journal.
+- Native profile switching uses the root helper's actual active profile ID,
+  requires explicit confirmation and verifies disconnect before reconnecting.
+- Added a bounded, reserved-range-aware IPv6 CIDR parser and offline rule set
+  as an **unwired foundation** for eventual dual-stack routing.
+  The current China route feed does not supply a corresponding IPv6 text feed.
+- Added a pure `FirewallRulePreview` generator and a separate macOS
+  `pfctl -vnf` syntax smoke test, without enabling PF or touching the
+  system's anchors. This is NOT yet a functioning kill switch.
+- Early startup signature failures avoid leaving a false active VPN marker.
+  Background helper deregistration checks the daemon's true session state.
+
+The shipping VPN remains **IPv4-only for non-original policies**, refuses
+unsafe IPv6 defaults and has no validated PF-enforced leak protection.

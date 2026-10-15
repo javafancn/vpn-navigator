@@ -25,6 +25,13 @@ final class ManagedRoutingPolicyTests: XCTestCase {
         }
     }
 
+    func testEmbeddedCertificateCannotMasqueradeAsRoutingDirective() throws {
+        let sample = base.replacingOccurrences(of: "TEST CERT", with:
+            "route 10.0.0.0 255.0.0.0 vpn_gateway")
+        let profile = try ProfileSafety.validate(sample)
+        XCTAssertNoThrow(try ManagedRoutingPolicy.validate(profile, mode: .chinaDirect))
+    }
+
     func testInlineCaAndDnsArePreserved() throws {
         let profile = try ProfileSafety.validate(base)
         XCTAssertNoThrow(try ManagedRoutingPolicy.validate(profile, mode: .chinaDirect))

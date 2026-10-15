@@ -23,18 +23,16 @@ cp Resources/LaunchAgents/*.plist "$APP/Contents/Library/LaunchAgents/"
 
 if [[ -n "${OPENVPN_BIN:-}" ]]; then
   [[ -x "$OPENVPN_BIN" ]] || { echo "OPENVPN_BIN must name an executable"; exit 1; }
-  # Reject common non-portable Homebrew dependency paths; package dependencies separately.
-  if otool -L "$OPENVPN_BIN" | grep -E '/opt/homebrew/|/usr/local/opt/|/usr/local/Cellar/' ; then
-    echo "Cannot bundle Homebrew-linked dynamic libraries as a standalone application."
-    echo "Build/link a redistributable OpenVPN binary first; do not overwrite system libraries."
-    exit 1
-  fi
-  cp "$OPENVPN_BIN" "$APP/Contents/Resources/openvpn"
+  python3 scripts/vendor-openvpn.py "$OPENVPN_BIN" "$APP"
 else
   echo "WARNING: no OPENVPN_BIN supplied. GUI builds, but VPN connections are unavailable."
 fi
 
 if [[ -n "${DEVELOPER_ID_APPLICATION:-}" ]]; then
+  # Sign relocated libraries first, then executables and the sealed outer bundle.
+  for dylib in "$APP"/Contents/Frameworks/*.dylib(N); do
+    codesign --force --timestamp --options runtime --sign "$DEVELOPER_ID_APPLICATION" "$dylib"
+  done
   # Explicit sign order: nested tools, then outer bundle. Identifiers are checked by PeerVerifier.
   for entry in VPNNavigatorHelper VPNNavigatorRuleAgent openvpn; do
     [[ -f "$APP/Contents/Resources/$entry" ]] || continue

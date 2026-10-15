@@ -21,6 +21,7 @@ final class AppModel: ObservableObject {
     @Published var availableInstaller: URL?
     @Published var availableReleasePage: URL?
     @Published var connectionStatus = "disconnected: Not connected"
+    @Published var traffic: TunnelTraffic?
     @Published var username = ""
     @Published var password = ""
     @Published var rememberCredentials = UserDefaults.standard.bool(forKey: "rememberCredentials") {
@@ -268,8 +269,11 @@ final class AppModel: ObservableObject {
         helperStatus = String(describing: helper.installationStatus)
         if helper.installationStatus == .enabled {
             connectionStatus = await helper.status()
+            let raw = await helper.trafficStatus()
+            traffic = ManagementParser.parseByteCount(">BYTECOUNT:" + raw)
         } else {
             connectionStatus = "disconnected: Privileged helper not enabled"
+            traffic = nil
         }
     }
     func connectSelected() async {
@@ -328,6 +332,11 @@ struct VPNNavigatorApp: App {
         MenuBarExtra("VPN Navigator", systemImage: "network") {
             Text("VPN Navigator")
             Text(model.connectionStatus).foregroundStyle(.secondary)
+            if let traffic = model.traffic {
+                Text("↓ " + ByteCountFormatter.string(fromByteCount: Int64(clamping: traffic.receivedBytes), countStyle: .file) +
+                     "  ↑ " + ByteCountFormatter.string(fromByteCount: Int64(clamping: traffic.sentBytes), countStyle: .file))
+                    .foregroundStyle(.secondary)
+            }
             Divider()
             if model.connected || model.connecting {
                 Button("Disconnect") { Task { await model.disconnect() } }

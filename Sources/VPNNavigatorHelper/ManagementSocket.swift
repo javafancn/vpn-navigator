@@ -10,6 +10,7 @@ final class ManagementSocket {
     private var buffer = Data()
     private var credentials: (username: String, password: String)?
     var onState: ((TunnelSnapshot) -> Void)?
+    var onTraffic: ((TunnelTraffic) -> Void)?
     var onExit: (() -> Void)?
     var onUnsupportedChallenge: (() -> Void)?
     var onAuthenticationFailure: (() -> Void)?
@@ -42,6 +43,7 @@ final class ManagementSocket {
         guard rc == 0 else { Darwin.close(fd); throw ManagementError.unavailable }
         descriptor = fd
         try send("state on")
+        try send("bytecount 3")
         try send("hold release")
         queue.async { [weak self] in self?.readLoop() }
     }
@@ -84,6 +86,8 @@ final class ManagementSocket {
                 buffer.removeSubrange(...newline)
                 if let snapshot = ManagementParser.parseState(line) {
                     onState?(snapshot)
+                } else if let traffic = ManagementParser.parseByteCount(line) {
+                    onTraffic?(traffic)
                 } else if line.hasPrefix(">PASSWORD:Verification Failed:") {
                     onAuthenticationFailure?()
                     close()

@@ -29,6 +29,12 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
     func connectionStatus(reply: @escaping (String) -> Void) {
         queue.async { reply("\(self.engine.state.rawValue): \(self.engine.message)") }
     }
+    func trafficStatus(reply: @escaping (String) -> Void) {
+        queue.async {
+            guard let value = self.engine.traffic else { reply(""); return }
+            reply("\(value.receivedBytes),\(value.sentBytes)")
+        }
+    }
     func recoverOrphanedRoutes(reply: @escaping (String) -> Void) {
         queue.async { reply(self.engine.retryRouteRecovery()) }
     }

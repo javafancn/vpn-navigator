@@ -9,7 +9,25 @@ public struct TunnelSnapshot: Equatable, Sendable {
     public let localTunnelIPv4: String?
     public let message: String
 }
+public struct TunnelTraffic: Equatable, Sendable {
+    public let receivedBytes: UInt64
+    public let sentBytes: UInt64
+    public init(receivedBytes: UInt64, sentBytes: UInt64) {
+        self.receivedBytes = receivedBytes
+        self.sentBytes = sentBytes
+    }
+}
 public enum ManagementParser {
+    public static func parseByteCount(_ line: String) -> TunnelTraffic? {
+        guard line.hasPrefix(">BYTECOUNT:") else { return nil }
+        let numbers = line.dropFirst(">BYTECOUNT:".count)
+            .split(separator: ",", omittingEmptySubsequences: false)
+        guard numbers.count == 2,
+              let received = UInt64(numbers[0]),
+              let sent = UInt64(numbers[1]) else { return nil }
+        return TunnelTraffic(receivedBytes: received, sentBytes: sent)
+    }
+
     public static func parseState(_ line: String) -> TunnelSnapshot? {
         // OpenVPN state: epoch,STATE,description,local_ip,remote_ip,...
         let clean = line.hasPrefix(">STATE:") ? String(line.dropFirst(7)) : line

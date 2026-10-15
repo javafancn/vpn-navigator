@@ -158,6 +158,14 @@ private struct ProfileDetail: View {
                         TextField("Username (if required)", text: $model.username)
                         SecureField("Password (if required)", text: $model.password)
                         Toggle("Remember credentials in macOS Keychain", isOn: $model.rememberCredentials)
+                        if let traffic = model.traffic {
+                            HStack(spacing: 22) {
+                                LabeledContent("Received", value:
+                                    ByteCountFormatter.string(fromByteCount: Int64(clamping: traffic.receivedBytes), countStyle: .file))
+                                LabeledContent("Sent", value:
+                                    ByteCountFormatter.string(fromByteCount: Int64(clamping: traffic.sentBytes), countStyle: .file))
+                            }
+                        }
                         HStack {
                             Button("Connect") { Task { await model.connectSelected() } }
                                 .buttonStyle(.borderedProminent)

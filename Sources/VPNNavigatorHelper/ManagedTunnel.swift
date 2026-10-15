@@ -36,6 +36,7 @@ final class ManagedTunnel {
     }
     private(set) var state: TunnelState = .disconnected
     private(set) var message = "Disconnected"
+    private(set) var traffic: TunnelTraffic?
     var activeSplitRoutes: Bool { activeMode == .chinaDirect && routing != nil }
 
     func start(profile text: String, mode: RoutingMode, ruleText: String,
@@ -93,6 +94,7 @@ final class ManagedTunnel {
             }
         }
         activeMode = mode
+        traffic = nil
         lastError = nil
         process = task
         state = .connecting
@@ -125,6 +127,12 @@ final class ManagedTunnel {
                 self?.queue.async { [weak self] in
                     guard let self, self.management === socket else { return }
                     self.stop()
+                }
+            }
+            socket.onTraffic = { [weak self, weak socket] sample in
+                self?.queue.async { [weak self] in
+                    guard let self, self.management === socket else { return }
+                    self.traffic = sample
                 }
             }
             socket.onState = { [weak self, weak socket] snapshot in
@@ -408,6 +416,7 @@ final class ManagedTunnel {
         activePlan = nil
         protectedLocalNetworks = []
         process = nil
+        traffic = nil
         let unresolved = FileManager.default.fileExists(atPath: workdir.appendingPathComponent("routes.journal").path)
         state = unresolved || lastError != nil ? .failed : .disconnected
         message = unresolved ? "VPN stopped, but some routes require safe recovery." : (lastError ?? "Disconnected")

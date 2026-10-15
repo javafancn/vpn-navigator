@@ -4,7 +4,8 @@ import VPNNavigatorCore
 
 /// Root-owned, single-session OpenVPN process. The caller has already passed code-signing verification.
 final class ManagedTunnel {
-    private let queue = DispatchQueue(label: "VPNNavigator.ManagedTunnel")
+    let queue = DispatchQueue(label: "VPNNavigator.ManagedTunnel")
+    private var networkWatchdog: DispatchSourceTimer?
     private let workdir = URL(fileURLWithPath: "/var/run/vpn-navigator", isDirectory: true)
     private var process: Process?
     private var management: ManagementSocket?
@@ -13,6 +14,14 @@ final class ManagedTunnel {
     private var rules: RuleSet?
     private var activePlan: RoutePlan?
     private var lastError: String?
+
+    init() {
+        // Reconcile a previous helper crash before allowing a new VPN session.
+        let leftover = workdir.appendingPathComponent("routes.journal")
+        if FileManager.default.fileExists(atPath: leftover.path) {
+            _ = RouteExecutor(journal: leftover)
+        }
+    }
     private(set) var state: TunnelState = .disconnected
     private(set) var message = "Disconnected"
 
@@ -109,6 +118,8 @@ final class ManagedTunnel {
             message = "Applying and validating China IPv4 routes"
         }
         if snapshot.state == .reconnecting {
+            networkWatchdog?.cancel()
+            networkWatchdog = nil
             routing?.rollback()
             routing = nil
             activePlan = nil
@@ -134,6 +145,7 @@ final class ManagedTunnel {
             routing = executor
             state = .connected
             message = "Connected · China IPv4 split routing enabled"
+            startNetworkWatchdog()
         } catch {
             let failure = "Routing failed; VPN stopped for safety: \(error.localizedDescription)"
             stop()
@@ -157,6 +169,35 @@ final class ManagedTunnel {
         }
         return nil
     }
+    private func startNetworkWatchdog() {
+        networkWatchdog?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 15, repeating: .seconds(15))
+        timer.setEventHandler { [weak self] in self?.verifyPhysicalNetwork() }
+        networkWatchdog = timer
+        timer.resume()
+    }
+
+    private func verifyPhysicalNetwork() {
+        guard state == .connected, activeMode == .chinaDirect,
+              let plan = activePlan else { return }
+        guard case .viaGateway(let expected) = plan.endpoint.destination else { return }
+        do {
+            let route = try RouteExecutor.command("/sbin/route", ["-n", "get", "default"])
+            guard Self.parseValue("gateway:", in: route) == expected,
+                  Self.parseValue("interface:", in: route)?.hasPrefix("en") == true else {
+                throw TunnelError.noPhysicalGateway
+            }
+            try checkIPv6Bypass()
+        } catch {
+            let failure = "Physical network changed or IPv6 became unsafe; VPN disconnected: \(error.localizedDescription)"
+            stop()
+            lastError = failure
+            state = .failed
+            message = failure
+        }
+    }
+
     func changeRules(_ text: String) throws {
         guard activeMode == .chinaDirect, let oldRules = rules,
               let plan = activePlan, let executor = routing else { throw TunnelError.noActiveRoutePlan }
@@ -176,6 +217,8 @@ final class ManagedTunnel {
         message = "Routes refreshed; OpenVPN remains connected"
     }
     func stop() {
+        networkWatchdog?.cancel()
+        networkWatchdog = nil
         lastError = nil
         // Roll back routes before terminating the tunnel.
         routing?.rollback()

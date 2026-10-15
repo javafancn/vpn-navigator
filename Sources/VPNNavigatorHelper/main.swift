@@ -3,7 +3,8 @@ import VPNNavigatorCore
 
 final class HelperService: NSObject, VPNNavigatorHelperAPI {
     private let engine = ManagedTunnel()
-    private let queue = DispatchQueue(label: "VPNNavigator.PrivilegedIPC")
+    // All tunnel actions and state transitions use one serial queue.
+    private var queue: DispatchQueue { engine.queue }
 
     func health(reply: @escaping (String) -> Void) {
         reply("VPN Navigator Helper (signed)")

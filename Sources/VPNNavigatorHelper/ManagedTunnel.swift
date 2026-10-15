@@ -329,12 +329,24 @@ final class ManagedTunnel {
         case .viaGateway(let value): gateway = value
         case .interface: throw TunnelError.noPhysicalGateway
         }
-        try executor.refreshDirectRoutes(
-            added: diff.added.map { RouteTarget($0, .viaGateway(gateway)) },
-            removed: diff.removed.map { RouteTarget($0, .viaGateway(gateway)) }
-        )
-        rules = next
-        message = "Routes refreshed; OpenVPN remains connected"
+        do {
+            try executor.refreshDirectRoutes(
+                added: diff.added.map { RouteTarget($0, .viaGateway(gateway)) },
+                removed: diff.removed.map { RouteTarget($0, .viaGateway(gateway)) }
+            )
+            rules = next
+            message = "Routes refreshed; OpenVPN remains connected"
+        } catch {
+            // A partially failed route transaction may violate the selected
+            // direct/VPN policy. Disconnect rather than leave a silently
+            // incorrect split route table active.
+            let reason = "Route update failed, VPN disconnected for safety: \(error.localizedDescription)"
+            stop()
+            lastError = reason
+            state = .failed
+            message = reason
+            throw error
+        }
     }
     func stop() {
         networkWatchdog?.cancel()

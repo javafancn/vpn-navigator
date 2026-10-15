@@ -63,6 +63,10 @@ final class ManagedTunnel {
         if validated.requestsCredentials && (username.isEmpty || password.isEmpty) {
             throw TunnelError.badCredential
         }
+        // Resolve and verify both required signed components before creating
+        // any root-owned session markers or credentials.
+        let binary = try ExecutableTrust.trustedOpenVPN().path
+        let dnsHook = try ExecutableTrust.trustedDNSUpDown()
         try FileManager.default.createDirectory(at: workdir, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: workdir.path)
         let configFile = workdir.appendingPathComponent("active.ovpn")
@@ -75,12 +79,8 @@ final class ManagedTunnel {
         try? FileManager.default.removeItem(atPath: managementPath)
         options += ["--management", managementPath, "unix", "--management-hold", "--management-up-down", "--management-query-passwords"]
 
-        // OpenVPN must be provided by a separately vetted signed distribution.
-        // NEVER launch an arbitrary executable from an imported .ovpn or client-supplied path.
-        let binary = try ExecutableTrust.trustedOpenVPN().path
-        // The OpenVPN 2.7 platform DNS hook must ship with the standalone
-        // binary; otherwise a successful tunnel may silently retain wrong DNS.
-        let dnsHook = try ExecutableTrust.trustedDNSUpDown()
+        // Trusted binary and DNS hook were verified before the runtime profile
+        // was created. Never leave a false orphan marker on signature errors.
         options += ["--script-security", "2", "--dns-updown", dnsHook.path]
         let task = Process()
         task.executableURL = URL(fileURLWithPath: binary)

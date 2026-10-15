@@ -32,7 +32,7 @@ public struct RouteLedgerReplay: Sendable {
             installed = []; uncertain = []; malformed = true
             return
         }
-        var live = Set<RouteTarget>()
+        var live: [RouteTarget] = []
         var pending: [UUID: RouteMutation] = [:]
         var corrupt = false
         for row in text.split(separator: "\n", omittingEmptySubsequences: true) {
@@ -49,22 +49,22 @@ public struct RouteLedgerReplay: Sendable {
                     }
                     pending.removeValue(forKey: event.mutation.id)
                     if event.mutation.action == .add {
-                        live.insert(event.mutation.route)
+                        if !live.contains(event.mutation.route) { live.append(event.mutation.route) }
                     } else {
-                        live.remove(event.mutation.route)
+                        live.removeAll { $0 == event.mutation.route }
                     }
                 }
             } else if let old = try? decoder.decode(RouteTarget.self, from: bytes) {
                 // Old installer journals recorded only successful route adds.
-                live.insert(old)
+                if !live.contains(old) { live.append(old) }
             } else if let legacy = try? decoder.decode([RouteTarget].self, from: bytes) {
                 // Legacy JSON-array followed by a new operation log.
-                legacy.forEach { live.insert($0) }
+                legacy.forEach { if !live.contains($0) { live.append($0) } }
             } else {
                 corrupt = true
             }
         }
-        installed = live.sorted { $0.prefix < $1.prefix }
+        installed = live
         uncertain = pending.values.sorted { $0.id.uuidString < $1.id.uuidString }
         malformed = corrupt
     }

@@ -107,7 +107,7 @@ final class AppModel: ObservableObject {
             return
         }
         do {
-            try SMAppService.agent(plistName: "com.javafancn.vpn-navigator.rules.plist").unregister()
+            try await SMAppService.agent(plistName: "com.javafancn.vpn-navigator.rules.plist").unregister()
             try helper.unregister()
             await refreshConnectionStatus()
             message = "VPN Navigator background services have been unregistered."

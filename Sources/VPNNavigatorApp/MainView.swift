@@ -4,12 +4,28 @@ import VPNNavigatorCore
 struct MainView: View {
     @EnvironmentObject private var model: AppModel
     @State private var importing = false
+    @State private var searchText = ""
+    private var shownProfiles: [VPNProfile] {
+        let filtered = model.profiles.filter {
+            searchText.isEmpty || $0.name.localizedCaseInsensitiveContains(searchText) ||
+            $0.group.localizedCaseInsensitiveContains(searchText) ||
+            $0.sourceFilename.localizedCaseInsensitiveContains(searchText)
+        }
+        return filtered.sorted {
+            if $0.isFavorite != $1.isFavorite { return $0.isFavorite }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+    }
+    private var groups: [String] { Array(Set(shownProfiles.map(\.group))).sorted() }
     var body: some View {
         NavigationSplitView {
             List(selection: $model.selectedID) {
-                Section("Profiles") {
-                    ForEach(model.profiles) { profile in
-                        Label(profile.name, systemImage: "network").tag(profile.id)
+                ForEach(groups, id: \.self) { group in
+                    Section(group) {
+                        ForEach(shownProfiles.filter { $0.group == group }) { profile in
+                            Label(profile.name, systemImage: profile.isFavorite ? "star.fill" : "network")
+                                .tag(profile.id)
+                        }
                     }
                 }
                 Section("Actions") {
@@ -26,9 +42,10 @@ struct MainView: View {
                 }
             }
             .navigationTitle("VPN Navigator")
+            .searchable(text: $searchText, prompt: "Search profiles")
         } detail: {
             if let selected = model.selected {
-                ProfileDetail(profile: selected)
+                ProfileDetail(profile: selected).id(selected.id)
             } else {
                 VStack(spacing: 12) {
                     Image(systemName: "network").font(.system(size: 44)).foregroundStyle(.secondary)
@@ -59,6 +76,11 @@ struct MainView: View {
 private struct ProfileDetail: View {
     @EnvironmentObject private var model: AppModel
     let profile: VPNProfile
+    @State private var draftName = ""
+    @State private var draftGroup = ""
+    @State private var draftNotes = ""
+    @State private var draftFavorite = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -70,6 +92,23 @@ private struct ProfileDetail: View {
                         Text(profile.sourceFilename).foregroundStyle(.secondary)
                     }
                     Spacer()
+                }
+                GroupBox("Profile details") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        TextField("Display name", text: $draftName)
+                        TextField("Group", text: $draftGroup)
+                        Toggle("Favorite", isOn: $draftFavorite)
+                        TextField("Notes", text: $draftNotes)
+                        HStack {
+                            Spacer()
+                            Button("Save Details") {
+                                Task {
+                                    await model.updateMetadata(name: draftName,
+                                        group: draftGroup, notes: draftNotes, favorite: draftFavorite)
+                                }
+                            }
+                        }
+                    }.padding(8)
                 }
                 GroupBox("Connection") {
                     VStack(alignment: .leading, spacing: 10) {
@@ -125,5 +164,11 @@ private struct ProfileDetail: View {
             .padding(25).frame(maxWidth: 850, alignment: .leading)
         }
         .navigationTitle(profile.name)
+        .onAppear {
+            draftName = profile.name
+            draftGroup = profile.group
+            draftNotes = profile.notes
+            draftFavorite = profile.isFavorite
+        }
     }
 }

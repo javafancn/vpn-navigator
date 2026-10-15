@@ -12,10 +12,16 @@ public enum ManagedRoutingPolicy {
 
     public static func validate(_ profile: ValidatedProfile, mode: RoutingMode) throws {
         guard mode != .original else { return }
+        var insideInlineBlock = false
         for (offset, line) in profile.text.components(separatedBy: .newlines).enumerated() {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty, !trimmed.hasPrefix("#"), !trimmed.hasPrefix(";"),
-                  !trimmed.hasPrefix("<") else { continue }
+            if trimmed.hasPrefix("<") && trimmed.hasSuffix(">") {
+                if trimmed.hasPrefix("</") { insideInlineBlock = false }
+                else { insideInlineBlock = true }
+                continue
+            }
+            guard !insideInlineBlock,
+                  !trimmed.isEmpty, !trimmed.hasPrefix("#"), !trimmed.hasPrefix(";") else { continue }
             guard let directive = trimmed.split(whereSeparator: { $0.isWhitespace }).first else { continue }
             if blockedClientOptions.contains(String(directive)) {
                 throw ManagedRoutingPolicyError.conflictingDirective(

@@ -160,10 +160,10 @@ final class RouteExecutor {
         timeout.schedule(deadline: .now() + .seconds(12))
         timeout.setEventHandler { [weak task] in
             guard let task, task.isRunning else { return }
+            // Do not send SIGKILL to a numeric PID after a delay. If the
+            // original command exited and the OS reused its PID, a delayed
+            // kill could target an unrelated process.
             task.terminate()
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + .seconds(2)) {
-                if task.isRunning { _ = Darwin.kill(task.processIdentifier, SIGKILL) }
-            }
         }
         timeout.resume()
         let data = output.fileHandleForReading.readDataToEndOfFile()

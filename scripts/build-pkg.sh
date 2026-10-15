@@ -23,6 +23,7 @@ pkgbuild --root "$STAGING" \
     --identifier com.javafancn.vpn-navigator.pkg \
     --version 0.1.0 \
     --ownership recommended \
+    --scripts "$PWD/scripts/pkg-scripts" \
     --sign "$DEVELOPER_ID_INSTALLER" \
     "$PWD/dist/VPN-Navigator-0.1.0.pkg"
 echo "Created: $PWD/dist/VPN-Navigator-0.1.0.pkg"

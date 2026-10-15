@@ -99,3 +99,16 @@ zsh scripts/release-audit.sh
 The packaging script refuses to copy an unnotarized app into the PKG.
 Both app and installer must retain valid signatures and notarization tickets.
 Production release remains gated on docs/QA.md results.
+
+## Safe upgrades and removal
+
+Disconnect the active VPN, verify restoration of the local routes and DNS,
+then choose "Disable Background Services" in Settings. PKG preinstall blocks
+replacement if the root helper is still running or a routing journal/session
+file remains. This intentionally requires user intervention rather than
+killing root VPN services from an installer script.
+
+To uninstall: disconnect, unregister the LaunchAgent and LaunchDaemon from
+the app, then remove the signed app. Leave user profiles in Application Support
+unless the user explicitly chooses to delete them. Validate routing recovery
+before deleting any old journal.

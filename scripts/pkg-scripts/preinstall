@@ -1,0 +1,17 @@
+#!/bin/zsh
+# Fail closed if replacing a live root helper or a VPN session that may own routes.
+# User must disconnect in VPN Navigator and disable background services first.
+set -euo pipefail
+if /usr/bin/pgrep -x VPNNavigatorHelper >/dev/null 2>&1; then
+  echo "VPN Navigator Helper is still active. Disconnect VPN and disable background services in VPN Navigator settings before upgrading." >&2
+  exit 1
+fi
+if [[ -e /var/run/vpn-navigator/routes.journal ]]; then
+  echo "VPN Navigator has an unresolved routing journal. Do not upgrade until network recovery is verified." >&2
+  exit 1
+fi
+if [[ -e /var/run/vpn-navigator/active.ovpn ]]; then
+  echo "VPN Navigator VPN session has not fully shut down. Disconnect before upgrade." >&2
+  exit 1
+fi
+exit 0

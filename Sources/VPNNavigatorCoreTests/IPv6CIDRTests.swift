@@ -10,7 +10,7 @@ final class IPv6CIDRTests: XCTestCase {
         XCTAssertEqual(cidr, try IPv6CIDR("240e:abcd::/32"))
     }
     func testOverlapAndBoundaryMasks() throws {
-        XCTAssertTrue((try IPv6CIDR("240e::/20")).overlaps(try IPv6CIDR("240e:1000::/32")))
+        XCTAssertTrue((try IPv6CIDR("240e::/20")).overlaps(try IPv6CIDR("240e:0f00::/32")))
         XCTAssertFalse((try IPv6CIDR("240e::/20")).overlaps(try IPv6CIDR("240f::/20")))
         XCTAssertTrue((try IPv6CIDR("::/0")).contains("2606:4700::1111"))
         XCTAssertFalse((try IPv6CIDR("::1/128")).contains("::2"))
@@ -26,7 +26,7 @@ final class IPv6CIDRTests: XCTestCase {
     }
     func testIPv6CountryRuleSetIsDataOnly() throws {
         let rules = try IPv6RuleSet(text: "# sample\n240e::/20\n2409:8000::/20")
-        XCTAssertTrue(rules.contains("240e:1234::5"))
+        XCTAssertTrue(rules.contains("240e:0abc::5"))
         XCTAssertFalse(rules.contains("2606:4700::1111"))
         XCTAssertEqual(rules.routes.count, 2)
         XCTAssertThrowsError(try IPv6RuleSet(text: ""))

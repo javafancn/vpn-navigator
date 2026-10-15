@@ -15,7 +15,9 @@ jobs:
           plutil -lint Resources/Info.plist Resources/LaunchDaemons/*.plist Resources/LaunchAgents/*.plist
           zsh -n scripts/build-app.sh scripts/build-pkg.sh scripts/notarize.sh scripts/release-audit.sh scripts/pkg-scripts/preinstall scripts/live-route-assert.sh
           python3 -m py_compile scripts/vendor-openvpn.py
-      - name: Build unsigned developer-only app
+      - name: Build dual-architecture developer-only app
+        env:
+          VPNNAV_BUILD_UNIVERSAL: "1"
         run: zsh scripts/build-app.sh
       - name: Verify development bundle
         run: |
@@ -26,8 +28,36 @@ jobs:
           test -f 'dist/VPN Navigator.app/Contents/Resources/LICENSES/OpenVPN-DNS-BSD-2-Clause.txt'
           /bin/bash -n 'dist/VPN Navigator.app/Contents/Resources/macos-dns-updown.sh'
           test ! -f 'dist/VPN Navigator.app/Contents/Resources/openvpn'
+      - name: Verify Apple Silicon and Intel slices
+        run: |
+          for entry in \
+            'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp' \
+            'dist/VPN Navigator.app/Contents/Resources/VPNNavigatorHelper' \
+            'dist/VPN Navigator.app/Contents/Resources/VPNNavigatorRuleAgent'; do
+            archs="$(lipo -archs "$entry")"
+            echo "$entry: $archs"
+            [[ " $archs " == *" arm64 "* && " $archs " == *" x86_64 "* ]] || exit 1
+          done
+      - name: Ad-hoc sign development UI for local integrity checks
+        run: |
+          APP='dist/VPN Navigator.app'
+          codesign --force --sign - --identifier com.javafancn.vpn-navigator.helper "$APP/Contents/Resources/VPNNavigatorHelper"
+          codesign --force --sign - --identifier com.javafancn.vpn-navigator.rule-agent "$APP/Contents/Resources/VPNNavigatorRuleAgent"
+          codesign --force --sign - --identifier com.javafancn.vpn-navigator "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          echo 'This ad-hoc signature is NOT an Apple Developer ID signature and is NOT notarized.'
+      - name: Package verified .app using macOS ditto
+        run: |
+          APP='dist/VPN Navigator.app'
+          OUT="$RUNNER_TEMP/VPN-Navigator-0.1.0-macOS-Universal-UI-Test.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT"
+          unzip -t "$OUT"
+          shasum -a 256 "$OUT" | tee "$RUNNER_TEMP/VPN-Navigator-0.1.0-macOS-Universal-UI-Test.sha256"
+          ls -lh "$OUT"
       - uses: actions/upload-artifact@v4
         with:
-          name: VPNNavigator-unsigned-UI-only
-          path: dist/VPN Navigator.app
+          name: VPNNavigator-0.1.0-macOS-Universal-UI-Test
+          path: |
+            ${{ runner.temp }}/VPN-Navigator-0.1.0-macOS-Universal-UI-Test.zip
+            ${{ runner.temp }}/VPN-Navigator-0.1.0-macOS-Universal-UI-Test.sha256
           if-no-files-found: error

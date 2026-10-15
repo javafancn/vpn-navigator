@@ -49,6 +49,31 @@ jobs:
       - name: Best-effort native UI screenshot (macOS CI)
         continue-on-error: true
         run: |
+          # Test against a REAL macOS desktop image, not in-app scenery.
+          # CI machines often start with a monochrome desktop which makes
+          # transparent native material look opaque in screenshots.
+          WALLPAPER="$(find '/System/Library/Desktop Pictures' -type f \\( -iname '*.heic' -o -iname '*.jpg' -o -iname '*.png' \\) 2>/dev/null | head -n 1 || true)"
+          if [[ -n "$WALLPAPER" ]]; then
+            export VPNNAV_TEST_WALLPAPER="$WALLPAPER"
+            cat > "$RUNNER_TEMP/desktop-wallpaper.swift" <<'SWIFT'
+          import AppKit
+          import Foundation
+          if let path = ProcessInfo.processInfo.environment["VPNNAV_TEST_WALLPAPER"] {
+              for screen in NSScreen.screens {
+                  do {
+                      try NSWorkspace.shared.setDesktopImageURL(
+                          URL(fileURLWithPath: path), for: screen, options: [:])
+                      print("Desktop wallpaper configured: \\(path)")
+                  } catch {
+                      print("Desktop wallpaper update unavailable: \\(error)")
+                  }
+              }
+          }
+          SWIFT
+            swift "$RUNNER_TEMP/desktop-wallpaper.swift" || true
+            sleep 3
+          fi
+          screencapture -x "$RUNNER_TEMP/VPNNavigator-Desktop-Before.png" || true
           APP='dist/VPN Navigator.app'
           open "$APP" || true
           sleep 5
@@ -59,7 +84,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: VPNNavigator-visual-smoke
-          path: ${{ runner.temp }}/VPNNavigator-UI-Screenshot.png
+          path: |
+            ${{ runner.temp }}/VPNNavigator-UI-Screenshot.png
+            ${{ runner.temp }}/VPNNavigator-Desktop-Before.png
           if-no-files-found: ignore
           retention-days: 7
       - name: Package verified .app using macOS ditto

@@ -69,3 +69,7 @@ and show a clear empty state otherwise; no dummy latency or speed data.
 ## Wallpaper provenance correction (October 15)
 
 **Design reference clarification:** all mountain scenery is the user's **macOS desktop wallpaper**, not a VPN Navigator illustration or branded background. Removed MountainRidge, the full-window gradient and all app-drawn scenery. Main window uses a transparent NSWindow and a behind-window NSVisualEffectView to sample the current desktop. Cards are thin native system materials with a faint translucent tint (rather than 79% white), and the sidebar/toolbar likewise avoid opaque backgrounds. Results vary with macOS wallpaper, transparency accessibility preferences, and macOS appearance. This is a functional reproduction of the composition, not a pixel-locked wallpaper image. Real network state and data remain authoritative.
+
+### CI visual validation
+
+The optional macOS CI screenshot attempts to choose an existing **operating-system desktop wallpaper** through `NSWorkspace.setDesktopImageURL`, captures the desktop before opening the app, and captures the real app window afterward. Neither image is an application asset. If the runner disallows wallpaper changes, the screenshot still validates app structure and build, but transparency fidelity requires a user-device capture against a distinctive wallpaper.

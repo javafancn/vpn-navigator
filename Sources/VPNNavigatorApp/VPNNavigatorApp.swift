@@ -205,6 +205,14 @@ final class AppModel: ObservableObject {
               ReleaseAssetPolicy.isApprovedReleasePage(url) else { return }
         NSWorkspace.shared.open(url)
     }
+    func retryNetworkRecovery() async {
+        guard !connected && !connecting else {
+            message = "Disconnect the VPN before attempting route recovery."
+            return
+        }
+        message = await helper.recoverOrphanedRoutes()
+        await refreshConnectionStatus()
+    }
     func disableServices() async {
         guard !connected && !connecting else {
             message = "Disconnect VPN before disabling background services."
@@ -308,6 +316,7 @@ struct VPNNavigatorApp: App {
                 LabeledContent("Background helper", value: model.helperStatus)
                 Button("Enable Privileged Helper…") { model.requestHelper() }
                 Button("Disable Background Services…") { Task { await model.disableServices() } }
+                Button("Attempt Safe Network Recovery…") { Task { await model.retryNetworkRecovery() } }
                 Button("Check for App Updates") { Task { await model.checkForUpdates() } }
                 Button("Download Verified Update…") { Task { await model.downloadVerifiedUpdate() } }
                     .disabled(model.availableInstaller == nil || model.busy)

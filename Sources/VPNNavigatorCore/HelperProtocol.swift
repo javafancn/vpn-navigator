@@ -10,6 +10,7 @@ import Foundation
     func disconnect(reply: @escaping (String) -> Void)
     func connectionStatus(reply: @escaping (String) -> Void)
     func updateRules(_ text: String, reply: @escaping (String) -> Void)
+    func recoverOrphanedRoutes(reply: @escaping (String) -> Void)
 }
 
 public enum HelperIdentity {

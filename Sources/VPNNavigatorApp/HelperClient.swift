@@ -59,6 +59,9 @@ final class HelperClient {
     func disconnect() async -> String {
         await ask(timeout: 30) { helper, reply in helper.disconnect(reply: reply) }
     }
+    func recoverOrphanedRoutes() async -> String {
+        await ask(timeout: 60) { helper, reply in helper.recoverOrphanedRoutes(reply: reply) }
+    }
     func updateRules(_ rules: String) async -> String {
         await ask(timeout: 600) { helper, reply in helper.updateRules(rules, reply: reply) }
     }

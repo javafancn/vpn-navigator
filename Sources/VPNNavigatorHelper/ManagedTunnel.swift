@@ -20,6 +20,10 @@ final class ManagedTunnel {
         let leftover = workdir.appendingPathComponent("routes.journal")
         if FileManager.default.fileExists(atPath: leftover.path) {
             _ = RouteExecutor(journal: leftover)
+            if FileManager.default.fileExists(atPath: leftover.path) {
+                state = .failed
+                message = "Unresolved routes remain from a previous VPN session."
+            }
         }
     }
     private(set) var state: TunnelState = .disconnected
@@ -294,6 +298,25 @@ final class ManagedTunnel {
         }
     }
 
+    func retryRouteRecovery() -> String {
+        guard process == nil else {
+            return "ERROR: Disconnect the current VPN before recovering routes."
+        }
+        let journal = workdir.appendingPathComponent("routes.journal")
+        guard FileManager.default.fileExists(atPath: journal.path) else {
+            return "No orphaned VPN Navigator routes were found."
+        }
+        _ = RouteExecutor(journal: journal)
+        if FileManager.default.fileExists(atPath: journal.path) {
+            state = .failed
+            message = "Route recovery is incomplete; some routes could not be safely verified."
+            return "ERROR: \(message)"
+        }
+        lastError = nil
+        state = .disconnected
+        message = "Routes safely recovered."
+        return message
+    }
     func changeRules(_ text: String) throws {
         guard activeMode == .chinaDirect, let oldRules = rules,
               let plan = activePlan, let executor = routing else { throw TunnelError.noActiveRoutePlan }
@@ -340,8 +363,9 @@ final class ManagedTunnel {
         routing = nil
         activePlan = nil
         process = nil
-        state = lastError == nil ? .disconnected : .failed
-        message = lastError ?? "Disconnected"
+        let unresolved = FileManager.default.fileExists(atPath: workdir.appendingPathComponent("routes.journal").path)
+        state = unresolved || lastError != nil ? .failed : .disconnected
+        message = unresolved ? "VPN stopped, but some routes require safe recovery." : (lastError ?? "Disconnected")
         for name in ["active.ovpn", "management.sock", "auth.txt"] {
             try? FileManager.default.removeItem(at: workdir.appendingPathComponent(name))
         }

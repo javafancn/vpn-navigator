@@ -29,6 +29,9 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
     func connectionStatus(reply: @escaping (String) -> Void) {
         queue.async { reply("\(self.engine.state.rawValue): \(self.engine.message)") }
     }
+    func recoverOrphanedRoutes(reply: @escaping (String) -> Void) {
+        queue.async { reply(self.engine.retryRouteRecovery()) }
+    }
     func updateRules(_ text: String, reply: @escaping (String) -> Void) {
         queue.async {
             if self.engine.state == .connecting || self.engine.state == .authenticating ||

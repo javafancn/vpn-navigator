@@ -71,8 +71,11 @@ final class ManagedTunnel {
         task.currentDirectoryURL = workdir
         task.standardOutput = FileHandle.nullDevice
         task.standardError = FileHandle.nullDevice
-        task.terminationHandler = { [weak self] _ in
-            self?.queue.async { self?.stopRoutesAndReset() }
+        task.terminationHandler = { [weak self, weak task] _ in
+            self?.queue.async { [weak self] in
+                guard let self, let task, self.process === task else { return }
+                self.stopRoutesAndReset()
+            }
         }
         activeMode = mode
         lastError = nil
@@ -93,11 +96,17 @@ final class ManagedTunnel {
                     self?.message = self?.lastError ?? "Authentication failed"
                 }
             }
-            socket.onExit = { [weak self] in
-                self?.queue.async { if self?.process != nil { self?.stop() } }
+            socket.onExit = { [weak self, weak socket] in
+                self?.queue.async { [weak self] in
+                    guard let self, self.management === socket else { return }
+                    self.stop()
+                }
             }
-            socket.onState = { [weak self] snapshot in
-                self?.queue.async { self?.handle(snapshot) }
+            socket.onState = { [weak self, weak socket] snapshot in
+                self?.queue.async { [weak self] in
+                    guard let self, self.management === socket else { return }
+                    self.handle(snapshot)
+                }
             }
             management = socket
             // OpenVPN creates the socket asynchronously. Bounded retry only.
@@ -155,9 +164,15 @@ final class ManagedTunnel {
             }
             return
         }
-        guard snapshot.state == .connected, activeMode == .chinaDirect,
-              routing == nil, let remote = snapshot.remoteIPv4, let tunnelIP = snapshot.localTunnelIPv4,
-              let rules else { return }
+        guard snapshot.state == .connected, activeMode == .chinaDirect, routing == nil else { return }
+        guard let remote = snapshot.remoteIPv4, let tunnelIP = snapshot.localTunnelIPv4, let rules else {
+            let failure = "OpenVPN did not report a usable IPv4 endpoint or tunnel address."
+            stop()
+            lastError = failure
+            state = .failed
+            message = failure
+            return
+        }
         do {
             // Physical gateway is determined BEFORE a split default route is installed.
             let routeInfo = try RouteExecutor.command("/sbin/route", ["-n", "get", remote])
@@ -288,7 +303,16 @@ final class ManagedTunnel {
         activePlan = nil
         management?.close()
         management = nil
-        if let task = process, task.isRunning { task.terminate() }
+        if let task = process, task.isRunning {
+            task.terminate()
+            let until = Date().addingTimeInterval(2.0)
+            while task.isRunning && Date() < until {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            if task.isRunning {
+                _ = Darwin.kill(task.processIdentifier, SIGKILL)
+            }
+        }
         stopRoutesAndReset()
     }
     private func stopRoutesAndReset() {

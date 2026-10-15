@@ -1,4 +1,5 @@
 import Foundation
+import VPNNavigatorCore
 import Security
 
 enum InstallerUpdateError: Error, LocalizedError {

@@ -1,4 +1,5 @@
 import Foundation
+import VPNNavigatorCore
 
 struct GitHubReleaseAsset: Decodable {
     let name: String

@@ -13,6 +13,7 @@ final class ManagedTunnel {
     private var activeMode: RoutingMode = .original
     private var rules: RuleSet?
     private var activePlan: RoutePlan?
+    private var protectedLocalNetworks: [IPv4CIDR] = []
     private var lastError: String?
 
     init() {
@@ -171,6 +172,7 @@ final class ManagedTunnel {
             routing?.rollback()
             routing = nil
             activePlan = nil
+            protectedLocalNetworks = []
         }
         if snapshot.state == .connected, activeMode == .fullVPN {
             do {
@@ -219,6 +221,7 @@ final class ManagedTunnel {
             try executor.apply(plan.installOrder)
             try verifySplitRoutes(plan: plan, country: rules)
             activePlan = plan
+            protectedLocalNetworks = localPrefixes
             state = .connected
             message = "Connected · China IPv4 split routing enabled"
             startNetworkWatchdog()
@@ -323,17 +326,32 @@ final class ManagedTunnel {
         let next = try RuleSet(text: text)
         guard next.routes.count >= 100 else { throw TunnelError.missingRules }
         try RuleUpdater.validateChange(previous: oldRules, next: next)
-        let diff = next.diff(from: oldRules)
         let gateway: String
+        let vpnInterface: String
         switch plan.endpoint.destination {
         case .viaGateway(let value): gateway = value
         case .interface: throw TunnelError.noPhysicalGateway
         }
+        guard let interfaceRoute = plan.vpnDefaults.first,
+              case .interface(let tun) = interfaceRoute.destination else {
+            throw TunnelError.noTunnelInterface
+        }
+        vpnInterface = tun
+
+        // Rebuild the effective routing plan, not the raw downloaded CIDR diff.
+        // Otherwise a newly added CN prefix could hijack a connected local subnet.
+        let updated = try RoutePlanner.build(
+            serverIPv4: IPv4CIDR.parseAddressString(plan.endpoint.prefix.network),
+            physicalGateway: gateway, vpnInterface: vpnInterface,
+            localPrefixes: protectedLocalNetworks, china: next)
+        let oldSet = Set(plan.direct)
+        let nextSet = Set(updated.direct)
+        let additions = nextSet.subtracting(oldSet).sorted { $0.prefix < $1.prefix }
+        let removals = oldSet.subtracting(nextSet).sorted { $0.prefix < $1.prefix }
+
         do {
-            try executor.refreshDirectRoutes(
-                added: diff.added.map { RouteTarget($0, .viaGateway(gateway)) },
-                removed: diff.removed.map { RouteTarget($0, .viaGateway(gateway)) }
-            )
+            try executor.refreshDirectRoutes(added: additions, removed: removals)
+            activePlan = updated
             rules = next
             message = "Routes refreshed; OpenVPN remains connected"
         } catch {
@@ -356,6 +374,7 @@ final class ManagedTunnel {
         routing?.rollback()
         routing = nil
         activePlan = nil
+        protectedLocalNetworks = []
         management?.close()
         management = nil
         if let task = process, task.isRunning {
@@ -374,6 +393,7 @@ final class ManagedTunnel {
         routing?.rollback()
         routing = nil
         activePlan = nil
+        protectedLocalNetworks = []
         process = nil
         let unresolved = FileManager.default.fileExists(atPath: workdir.appendingPathComponent("routes.journal").path)
         state = unresolved || lastError != nil ? .failed : .disconnected

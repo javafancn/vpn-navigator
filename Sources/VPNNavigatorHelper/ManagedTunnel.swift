@@ -29,6 +29,9 @@ final class ManagedTunnel {
     func start(profile text: String, mode: RoutingMode, ruleText: String,
                username: String, password: String) throws {
         guard getuid() == 0 else { throw TunnelError.needRoot }
+        guard !FileManager.default.fileExists(atPath: workdir.appendingPathComponent("routes.journal").path) else {
+            throw TunnelError.unresolvedRoutes
+        }
         guard process == nil else { throw TunnelError.alreadyRunning }
         let validated = try ProfileSafety.validate(text)
         // IPv4-only routing cannot protect IPv6. Refuse a non-original split or
@@ -253,7 +256,7 @@ final class ManagedTunnel {
 }
 enum TunnelError: Error, LocalizedError {
     case needRoot, alreadyRunning, missingRules, badCredential, engineMissing,
-         managementUnavailable, noPhysicalGateway, noTunnelInterface, noActiveRoutePlan, ipv6Unsafe
+         managementUnavailable, noPhysicalGateway, noTunnelInterface, noActiveRoutePlan, ipv6Unsafe, unresolvedRoutes
 
     var errorDescription: String? {
         switch self {
@@ -267,6 +270,7 @@ enum TunnelError: Error, LocalizedError {
         case .noPhysicalGateway: return "Cannot identify the local physical gateway."
         case .noTunnelInterface: return "Cannot verify the OpenVPN utun interface."
         case .noActiveRoutePlan: return "No active split-routing session."
+        case .unresolvedRoutes: return "Unresolved routes remain from an earlier session. Diagnose and safely restore them before reconnecting."
         }
     }
 }

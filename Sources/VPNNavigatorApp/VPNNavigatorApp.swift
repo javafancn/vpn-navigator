@@ -101,6 +101,20 @@ final class AppModel: ObservableObject {
             message = "Latest published release: \(release.tag_name). Visit GitHub Releases to download a verified update."
         } catch { message = "No published release is available yet, or update check failed." }
     }
+    func disableServices() async {
+        guard !connected && !connecting else {
+            message = "Disconnect VPN before disabling background services."
+            return
+        }
+        do {
+            try SMAppService.agent(plistName: "com.javafancn.vpn-navigator.rules.plist").unregister()
+            try helper.unregister()
+            await refreshConnectionStatus()
+            message = "VPN Navigator background services have been unregistered."
+        } catch {
+            message = "Service removal requires attention: \(error.localizedDescription)"
+        }
+    }
     func requestHelper() {
         do {
             try helper.requestRegistration()
@@ -189,6 +203,7 @@ struct VPNNavigatorApp: App {
                 LabeledContent("VPN engine", value: "Bundled OpenVPN CLI (requires signed distribution)")
                 LabeledContent("Background helper", value: model.helperStatus)
                 Button("Enable Privileged Helper…") { model.requestHelper() }
+                Button("Disable Background Services…") { Task { await model.disableServices() } }
                 Button("Check for App Updates") { Task { await model.checkForUpdates() } }
                 Text("This developer SwiftPM build cannot register a launch daemon by itself. Use the signed app bundle.")
                     .font(.caption).foregroundStyle(.secondary)

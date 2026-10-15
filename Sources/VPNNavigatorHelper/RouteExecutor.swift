@@ -12,9 +12,13 @@ final class RouteExecutor {
             if let previous = try? JSONDecoder().decode([RouteTarget].self, from: data) {
                 installed = previous  // migrate older array-style journals
             } else if let text = String(data: data, encoding: .utf8) {
-                installed = text.split(separator: "\n").compactMap {
+                let lines = text.split(separator: "\n")
+                let recovered = lines.map {
                     try? JSONDecoder().decode(RouteTarget.self, from: Data($0.utf8))
                 }
+                // If even one record is invalid, don't drop the recovery file.
+                guard !lines.isEmpty, recovered.allSatisfy({ $0 != nil }) else { return }
+                installed = recovered.compactMap { $0 }
             }
             // Do not silently delete a corrupted or unresolved journal.
             if !installed.isEmpty { rollback() }

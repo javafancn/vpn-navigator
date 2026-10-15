@@ -31,7 +31,12 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
     }
     func updateRules(_ text: String, reply: @escaping (String) -> Void) {
         queue.async {
-            if self.engine.state != .connected || self.engine.activeSplitRoutes == false {
+            if self.engine.state == .connecting || self.engine.state == .authenticating ||
+               self.engine.state == .reconnecting || self.engine.state == .stopping {
+                reply("ERROR: VPN session is changing state; retry rule update")
+                return
+            }
+            if !self.engine.activeSplitRoutes {
                 reply("NO_ACTIVE_SPLIT")
                 return
             }

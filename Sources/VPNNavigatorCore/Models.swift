@@ -57,6 +57,12 @@ public struct IPv4CIDR: Hashable, Comparable, Codable, CustomStringConvertible, 
     }
     public var description: String { "\(Self.addressString(network))/\(prefix)" }
     public var netmask: String { Self.addressString(prefix == 0 ? 0 : UInt32.max << (32 - prefix)) }
+    /// Two CIDR networks overlap if the shorter prefix matches both.
+    public func overlaps(_ other: IPv4CIDR) -> Bool {
+        let sharedBits = Swift.min(prefix, other.prefix)
+        let mask: UInt32 = sharedBits == 0 ? 0 : UInt32.max << (32 - sharedBits)
+        return (network & mask) == (other.network & mask)
+    }
     public func contains(_ address: UInt32) -> Bool {
         let mask: UInt32 = prefix == 0 ? 0 : UInt32.max << (32 - prefix)
         return (address & mask) == network

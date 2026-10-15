@@ -61,7 +61,7 @@ public enum RoutePlanner {
         let localSet = Set(localPrefixes)
         let direct = china.routes.filter { candidate in
             !localSet.contains(where: { candidate.overlaps($0) }) &&
-            !candidate.overlaps(host)
+            candidate != host
         }
             .map { RouteTarget($0, .viaGateway(physicalGateway)) }
         let defaults: [RouteTarget] = [

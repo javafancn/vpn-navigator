@@ -48,6 +48,9 @@ jobs:
           if [[ -e /tmp/unsafe-dns ]]; then
             echo 'Unsafe DNS variable was executed' >&2; exit 1
           fi
+          if env dev=utun4 script_type=dns-up dns_search_domain_1='a;malicious'               /bin/bash "$hook" --check-dns-vars; then
+            echo 'Unsafe inherited DNS variable was accepted' >&2; exit 1
+          fi
       - name: Report
         run: |
           echo 'Engine smoke test passed on macOS runner.'

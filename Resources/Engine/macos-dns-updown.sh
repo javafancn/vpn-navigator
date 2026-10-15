@@ -59,6 +59,20 @@ load_dns_vars_file() {
     done < "$path"
 }
 load_dns_vars_file || { echo "invalid OpenVPN DNS variables" >&2; exit 1; }
+# OpenVPN can alternatively supply DNS options as inherited environment
+# variables. Validate this path too; data must never become scutil commands.
+validate_dns_values() {
+    local key value
+    while IFS= read -r key; do
+        case "$key" in
+            dns_search_domain_*|dns_server_*)
+                value="${!key}"
+                [[ ${#value} -le 253 && "$value" =~ ^[A-Za-z0-9_.:/%+-]+$ ]] || return 1
+                ;;
+        esac
+    done < <(compgen -A variable dns_)
+}
+validate_dns_values || { echo "invalid OpenVPN DNS value" >&2; exit 1; }
 [[ "${dev:-}" =~ ^(utun|tun)[0-9]{1,4}$ ]] || {
     echo "invalid OpenVPN DNS device" >&2; exit 1;
 }

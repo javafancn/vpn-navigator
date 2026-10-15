@@ -88,3 +88,5 @@ The following checks must be executed on a disposable Mac after Developer ID sig
 | A65 | Management credentials contain CR/NUL/Unicode separators | Reject before management socket is opened |
 | A66 | Full VPN gateway or tunnel interface changes after CONNECTED | Watchdog detects path change; managed session terminates |
 | A67 | China Direct hot rule update changes routed sample unexpectedly | Fail update, disconnect and retain route journal until verified cleanup |
+
+| A68 | OpenVPN passes malicious DNS environment values without a vars file | Reject before constructing scutil command text |

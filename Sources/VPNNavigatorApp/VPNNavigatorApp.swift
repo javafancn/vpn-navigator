@@ -71,6 +71,23 @@ final class AppModel: ObservableObject {
         do { try await store.update(item); await load() }
         catch { message = error.localizedDescription }
     }
+    func updateMetadata(name: String, group: String, notes: String, favorite: Bool) async {
+        guard var item = selected else { return }
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanGroup = group.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanName.isEmpty, cleanName.count <= 100,
+              !cleanGroup.isEmpty, cleanGroup.count <= 48, notes.count <= 4000 else {
+            message = "Profile name, group or notes exceed the supported limits."
+            return
+        }
+        item.name = cleanName
+        item.group = cleanGroup
+        item.notes = notes
+        item.isFavorite = favorite
+        do { try await store.update(item); await load() }
+        catch { message = error.localizedDescription }
+    }
+
     func deleteSelected() async {
         guard let item = selected else { return }
         do { try await store.delete(id: item.id); KeychainVault.remove(id: item.id); selectedID = nil; await load() }

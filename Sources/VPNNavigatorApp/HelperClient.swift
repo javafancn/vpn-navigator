@@ -27,6 +27,13 @@ final class HelperClient {
                 connection.invalidate()
                 continuation.resume(returning: value)
             }
+            // Validate the *server* identity as well as the server's incoming
+            // client requirement. Never send VPN credentials to a fake daemon.
+            guard let requirement = PrivilegedServiceTrust.helperRequirement() else {
+                completion.finish("ERROR: App is not Developer ID signed")
+                return
+            }
+            connection.setCodeSigningRequirement(requirement)
             connection.remoteObjectInterface = NSXPCInterface(with: VPNNavigatorHelperAPI.self)
             connection.interruptionHandler = { completion.finish("ERROR: Helper interrupted") }
             connection.invalidationHandler = { completion.finish("ERROR: Helper unavailable or not authorized") }

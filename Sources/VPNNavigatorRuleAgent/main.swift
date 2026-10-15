@@ -44,6 +44,11 @@ private enum HelperMessage {
                 connection.invalidate()
                 continuation.resume(returning: result)
             }
+            guard let requirement = PrivilegedServiceTrust.helperRequirement() else {
+                once.finish("ERROR: Background rule agent is not signed")
+                return
+            }
+            connection.setCodeSigningRequirement(requirement)
             connection.remoteObjectInterface = NSXPCInterface(with: VPNNavigatorHelperAPI.self)
             connection.interruptionHandler = { once.finish("ERROR: Interrupted") }
             connection.invalidationHandler = { once.finish("ERROR: Unavailable") }

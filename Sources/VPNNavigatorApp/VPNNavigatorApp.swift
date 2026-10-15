@@ -18,7 +18,7 @@ final class AppModel: ObservableObject {
     @Published var ruleSnapshots: [RuleSnapshot] = []
     @Published var busy = false
     @Published var message: String?
-    @Published var helperStatus = "Unavailable"
+    @Published var helperStatus = "未启用"
     @Published var availableInstaller: URL?
     @Published var availableReleasePage: URL?
     @Published var connectionStatus = "disconnected: Not connected"
@@ -283,16 +283,26 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func displayHelperStatus(_ status: SMAppService.Status) -> String {
+        switch status {
+        case .enabled: return "已启用"
+        case .notRegistered: return "未注册"
+        case .requiresApproval: return "等待系统授权"
+        case .notFound: return "服务未安装"
+        @unknown default: return "状态未知"
+        }
+    }
+
     func requestHelper() {
         do {
             try helper.requestRegistration()
             try SMAppService.agent(plistName: "com.javafancn.vpn-navigator.rules.plist").register()
-            helperStatus = String(describing: helper.installationStatus)
+            helperStatus = displayHelperStatus(helper.installationStatus)
             message = "Enable the background helper in System Settings if requested. A signed .app distribution is required."
         } catch { message = "Helper registration failed: \(error.localizedDescription)" }
     }
     func refreshConnectionStatus() async {
-        helperStatus = String(describing: helper.installationStatus)
+        helperStatus = displayHelperStatus(helper.installationStatus)
         if helper.installationStatus == .enabled {
             if let report = await helper.sessionReport() {
                 connectionStatus = report.statusText

@@ -56,3 +56,12 @@ The system menu-bar control is now a native SwiftUI window-style popover
 with live helper status, active profile, cumulative traffic (no fabricated
 throughput), connect/disconnect, safe IPv4 refresh and main-window access.
 It uses the same compact glass card language.
+
+## Detailed fidelity pass
+
+The reference's profile detail segmented inspector is live (metadata,
+secure config editing, per-profile route mode and archived revisions). The
+settings pane is a stack of compact icon-led action rows rather than oversized
+forms. Helper status is localized instead of displaying the raw Swift enum.
+Traffic mini-charts are derived only from actual OpenVPN byte-count differences
+and show a clear empty state otherwise; no dummy latency or speed data.

@@ -11,6 +11,7 @@ final class ManagedTunnel {
     private var management: ManagementSocket?
     private var routing: RouteExecutor?
     private var activeMode: RoutingMode = .original
+    private(set) var activeProfileID: UUID?
     private var rules: RuleSet?
     private var activePlan: RoutePlan?
     private var protectedLocalNetworks: [IPv4CIDR] = []
@@ -39,7 +40,7 @@ final class ManagedTunnel {
     private(set) var traffic: TunnelTraffic?
     var activeSplitRoutes: Bool { activeMode == .chinaDirect && routing != nil }
 
-    func start(profile text: String, mode: RoutingMode, ruleText: String,
+    func start(profile text: String, profileID: UUID, mode: RoutingMode, ruleText: String,
                username: String, password: String) throws {
         guard getuid() == 0 else { throw TunnelError.needRoot }
         guard !FileManager.default.fileExists(atPath: workdir.appendingPathComponent("active.ovpn").path) else {
@@ -94,6 +95,7 @@ final class ManagedTunnel {
             }
         }
         activeMode = mode
+        activeProfileID = profileID
         traffic = nil
         lastError = nil
         process = task
@@ -435,6 +437,7 @@ final class ManagedTunnel {
         activePlan = nil
         protectedLocalNetworks = []
         process = nil
+        activeProfileID = nil
         traffic = nil
         let unresolved = FileManager.default.fileExists(
             atPath: workdir.appendingPathComponent("routes.journal").path)

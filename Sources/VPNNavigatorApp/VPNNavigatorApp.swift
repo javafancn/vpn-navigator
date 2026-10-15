@@ -21,6 +21,7 @@ final class AppModel: ObservableObject {
     @Published var availableInstaller: URL?
     @Published var availableReleasePage: URL?
     @Published var connectionStatus = "disconnected: Not connected"
+    @Published var activeProfileID: UUID?
     @Published var traffic: TunnelTraffic?
     @Published var username = ""
     @Published var password = ""
@@ -50,6 +51,7 @@ final class AppModel: ObservableObject {
     }
 
     var selected: VPNProfile? { profiles.first { $0.id == selectedID } }
+    var activeProfile: VPNProfile? { profiles.first { $0.id == activeProfileID } }
     var connected: Bool { connectionStatus.hasPrefix("connected:") }
     var connecting: Bool { connectionStatus.hasPrefix("connecting:") || connectionStatus.hasPrefix("authenticating:") }
 
@@ -269,10 +271,12 @@ final class AppModel: ObservableObject {
         helperStatus = String(describing: helper.installationStatus)
         if helper.installationStatus == .enabled {
             connectionStatus = await helper.status()
+            activeProfileID = await helper.activeProfile()
             let raw = await helper.trafficStatus()
             traffic = ManagementParser.parseByteCount(">BYTECOUNT:" + raw)
         } else {
             connectionStatus = "disconnected: Privileged helper not enabled"
+            activeProfileID = nil
             traffic = nil
         }
     }
@@ -295,12 +299,31 @@ final class AppModel: ObservableObject {
                 try KeychainVault.store(.init(username: username, password: password), id: selected.id)
             }
             let rulesText = (rules?.routes ?? []).map(\.description).joined(separator: "\n")
-            let result = await helper.connect(profile: text, mode: selected.mode, rules: rulesText,
+            let result = await helper.connect(profile: text, profileID: selected.id,
+                                              mode: selected.mode, rules: rulesText,
                                               username: username, password: password)
             password = "" // never retain passwords in UI state after a connection attempt
             if result.hasPrefix("ERROR:") { message = result }
             else { connectionStatus = "connecting: \(result)" }
         } catch { message = "Profile rejected: \(error.localizedDescription)" }
+    }
+    func switchToSelected() async {
+        guard !busy, let selected, connected, activeProfileID != selected.id else { return }
+        busy = true
+        let response = await helper.disconnect()
+        if response != "Disconnected" {
+            busy = false
+            message = "Cannot switch profiles until the old VPN has fully exited: \(response)"
+            return
+        }
+        await refreshConnectionStatus()
+        if !connectionStatus.hasPrefix("disconnected:") {
+            busy = false
+            message = "The old VPN did not finish disconnecting. Profile switch cancelled."
+            return
+        }
+        busy = false
+        await connectSelected()
     }
     func disconnect() async {
         let response = await helper.disconnect()
@@ -332,6 +355,7 @@ struct VPNNavigatorApp: App {
         MenuBarExtra("VPN Navigator", systemImage: "network") {
             Text("VPN Navigator")
             Text(model.connectionStatus).foregroundStyle(.secondary)
+            if let current = model.activeProfile { Text("Active: \(current.name)") }
             if let traffic = model.traffic {
                 Text("↓ " + ByteCountFormatter.string(fromByteCount: Int64(clamping: traffic.receivedBytes), countStyle: .file) +
                      "  ↑ " + ByteCountFormatter.string(fromByteCount: Int64(clamping: traffic.sentBytes), countStyle: .file))

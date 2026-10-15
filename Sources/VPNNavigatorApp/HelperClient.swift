@@ -53,13 +53,17 @@ final class HelperClient {
     func ping() async -> String {
         await ask { helper, reply in helper.health(reply: reply) }
     }
+    func activeProfile() async -> UUID? {
+        UUID(uuidString: await ask { helper, reply in helper.activeProfile(reply: reply) })
+    }
     func status() async -> String {
         await ask { helper, reply in helper.connectionStatus(reply: reply) }
     }
-    func connect(profile: String, mode: RoutingMode, rules: String,
+    func connect(profile: String, profileID: UUID, mode: RoutingMode, rules: String,
                  username: String, password: String) async -> String {
         await ask { helper, reply in
-            helper.connect(profile: profile, mode: mode.rawValue, rules: rules,
+            helper.connect(profile: profile, profileID: profileID.uuidString,
+                           mode: mode.rawValue, rules: rules,
                            username: username, password: password, reply: reply)
         }
     }

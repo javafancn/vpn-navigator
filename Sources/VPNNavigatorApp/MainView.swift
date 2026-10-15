@@ -80,6 +80,7 @@ private struct ProfileDetail: View {
     @State private var draftGroup = ""
     @State private var draftNotes = ""
     @State private var draftFavorite = false
+    @State private var confirmSwitch = false
     @State private var editorText = ""
     @State private var showingEditor = false
     @State private var history: [ProfileRevision] = []
@@ -154,6 +155,9 @@ private struct ProfileDetail: View {
                 GroupBox("Connection") {
                     VStack(alignment: .leading, spacing: 10) {
                         Label(model.connectionStatus, systemImage: model.connected ? "checkmark.shield" : "circle.dotted")
+                        if let active = model.activeProfile {
+                            LabeledContent("Active profile", value: active.name)
+                        }
                             .foregroundStyle(model.connected ? .green : .secondary)
                         TextField("Username (if required)", text: $model.username)
                         SecureField("Password (if required)", text: $model.password)
@@ -170,6 +174,9 @@ private struct ProfileDetail: View {
                             Button("Connect") { Task { await model.connectSelected() } }
                                 .buttonStyle(.borderedProminent)
                                 .disabled(model.busy || model.connected || model.connecting)
+                            if model.connected && model.activeProfileID != profile.id {
+                                Button("Switch to This Profile…") { confirmSwitch = true }
+                            }
                             Button("Disconnect") { Task { await model.disconnect() } }
                                 .disabled(!model.connected && !model.connecting)
                         }
@@ -229,6 +236,15 @@ private struct ProfileDetail: View {
             .padding(25).frame(maxWidth: 850, alignment: .leading)
         }
         .navigationTitle(profile.name)
+        .confirmationDialog("Switch VPN Profile?",
+                            isPresented: $confirmSwitch, titleVisibility: .visible) {
+            Button("Disconnect and Switch") {
+                Task { await model.switchToSelected() }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("VPN Navigator will stop the currently active tunnel, verify that it exited, then start the selected profile. Network connectivity may pause during the switch.")
+        }
         .sheet(isPresented: $showingEditor) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Edit OpenVPN Configuration").font(.title2.bold())

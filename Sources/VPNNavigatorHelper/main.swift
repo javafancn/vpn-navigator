@@ -9,15 +9,19 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
     func health(reply: @escaping (String) -> Void) {
         reply("VPN Navigator Helper (signed)")
     }
-    func connect(profile: String, mode: String, rules: String,
+    func connect(profile: String, profileID: String, mode: String, rules: String,
                  username: String, password: String,
                  reply: @escaping (String) -> Void) {
         queue.async {
+            guard let profileUUID = UUID(uuidString: profileID) else {
+                reply("ERROR: Invalid profile identifier"); return
+            }
             guard let requested = RoutingMode(rawValue: mode) else {
                 reply("ERROR: Invalid route mode"); return
             }
             do {
-                try self.engine.start(profile: profile, mode: requested, ruleText: rules,
+                try self.engine.start(profile: profile, profileID: profileUUID,
+                                      mode: requested, ruleText: rules,
                                       username: username, password: password)
                 reply("Connecting. Await tunnel state and route validation.")
             } catch { reply("ERROR: \(error.localizedDescription)") }
@@ -35,6 +39,9 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
     }
     func connectionStatus(reply: @escaping (String) -> Void) {
         queue.async { reply("\(self.engine.state.rawValue): \(self.engine.message)") }
+    }
+    func activeProfile(reply: @escaping (String) -> Void) {
+        queue.async { reply(self.engine.activeProfileID?.uuidString ?? "") }
     }
     func trafficStatus(reply: @escaping (String) -> Void) {
         queue.async {

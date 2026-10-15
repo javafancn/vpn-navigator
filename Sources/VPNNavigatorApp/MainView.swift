@@ -203,6 +203,7 @@ struct WorkspaceHeading: View {
 }
 
 struct VPNPanel<Content: View>: View {
+    @Environment(\.colorScheme) private var appearance
     let title: String
     let symbol: String
     private let content: Content
@@ -215,7 +216,7 @@ struct VPNPanel<Content: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: symbol)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(GlassPalette.ink.opacity(0.83))
+                .foregroundStyle(appearance == .dark ? Color.white.opacity(0.91) : GlassPalette.ink.opacity(0.85))
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -254,9 +255,13 @@ private struct ConnectionOverview: View {
                     VStack(spacing: 9) {
                         Spacer(minLength: 0)
                         Button {
-                            Task {
-                                if model.connected { await model.disconnect() }
-                                else { await model.connectSelected() }
+                            if !model.connected && model.selected == nil {
+                                model.message = "请先点击右上角的导入配置，选择一个 .ovpn 文件。"
+                            } else {
+                                Task {
+                                    if model.connected { await model.disconnect() }
+                                    else { await model.connectSelected() }
+                                }
                             }
                         } label: {
                             ZStack {
@@ -282,8 +287,7 @@ private struct ConnectionOverview: View {
                             .frame(width: 155, height: 155)
                         }
                         .buttonStyle(.plain)
-                        .disabled(model.busy || model.connecting ||
-                                  (!model.connected && model.selected == nil))
+                        .disabled(model.busy || model.connecting)
                         .accessibilityLabel(model.connected ? "断开 VPN" : "连接 VPN")
                         .help(model.connected ? "断开当前 VPN" : "连接所选 VPN")
                         Text(statusTitle)

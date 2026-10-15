@@ -54,17 +54,17 @@ struct GlassAtmosphere: View {
                 }
                 MountainRidge(foreground: false)
                     .fill(LinearGradient(colors: [
-                        GlassPalette.cyan.opacity(0.12),
-                        GlassPalette.blue.opacity(0.04)
+                        GlassPalette.cyan.opacity(0.24),
+                        GlassPalette.blue.opacity(0.13)
                     ], startPoint: .top, endPoint: .bottom))
-                    .blur(radius: 28)
+                    .blur(radius: 16)
                     .offset(y: geometry.size.height * 0.12)
                 MountainRidge(foreground: true)
                     .fill(LinearGradient(colors: [
-                        GlassPalette.violet.opacity(0.15),
-                        GlassPalette.blue.opacity(0.07)
+                        GlassPalette.violet.opacity(0.23),
+                        GlassPalette.blue.opacity(0.15)
                     ], startPoint: .top, endPoint: .bottom))
-                    .blur(radius: 41)
+                    .blur(radius: 22)
                     .offset(y: geometry.size.height * 0.07)
                 Ellipse()
                     .fill(Color.white.opacity(0.48))
@@ -125,15 +125,18 @@ private struct GlassCardModifier: ViewModifier {
         let corners = RoundedRectangle(cornerRadius: cornerRadius,
                                        style: .continuous)
         content
-            .background(.ultraThinMaterial, in: corners)
+            // The translucent white tint MUST be painted on TOP of the
+            // system material. Painting the vibrancy material last produces
+            // the flat gray cards seen in earlier hardware screenshots.
             .background {
                 corners.fill(LinearGradient(colors: appearance == .dark ? [
-                    Color.white.opacity(0.13),
-                    Color.white.opacity(0.04)
+                    Color.white.opacity(0.16),
+                    Color.white.opacity(0.09)
                 ] : [
-                    Color.white.opacity(0.63),
-                    Color.white.opacity(0.43)
+                    Color.white.opacity(0.79),
+                    Color.white.opacity(0.57)
                 ], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .background(.ultraThinMaterial, in: corners)
             }
             .overlay {
                 corners.strokeBorder(LinearGradient(colors: [

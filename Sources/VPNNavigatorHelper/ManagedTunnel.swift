@@ -191,10 +191,12 @@ final class ManagedTunnel {
                                               vpnInterface: utun, localPrefixes: localPrefixes,
                                               china: rules)
             let executor = RouteExecutor(journal: workdir.appendingPathComponent("routes.journal"))
+            // Own the executor *before* mutating routes. If installation or
+            // verification fails, stop() must still find the rollback journal.
+            routing = executor
             try executor.apply(plan.installOrder)
             try verifySplitRoutes(plan: plan, country: rules)
             activePlan = plan
-            routing = executor
             state = .connected
             message = "Connected · China IPv4 split routing enabled"
             startNetworkWatchdog()

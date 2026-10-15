@@ -7,6 +7,11 @@ APP="$PWD/dist/VPN Navigator.app"
 [[ -d "$APP" ]] || { echo "Build the signed native app first."; exit 1; }
 [[ -x "$APP/Contents/Resources/openvpn" ]] || { echo "Missing vendored signed OpenVPN binary."; exit 1; }
 codesign --verify --deep --strict "$APP" || { echo "App code signature invalid"; exit 1; }
+xcrun stapler validate "$APP" || {
+  echo "Staple and verify the notarized .app before building a PKG"
+  echo "Run NOTARY_KEYCHAIN_PROFILE=... zsh scripts/notarize.sh app"
+  exit 1
+}
 
 STAGING="$(mktemp -d)"
 trap 'rm -rf "$STAGING"' EXIT

@@ -84,6 +84,18 @@ DEVELOPER_ID_APPLICATION="Developer ID Application: ..." \
 zsh scripts/build-app.sh
 ```
 
-Sign and build PKG, then invoke `scripts/notarize.sh` **after** the PKG
-is generated to notarize both the app and installer. For release review run
-`zsh scripts/release-audit.sh`, `spctl --assess`, and the real-Mac QA checklist.
+See the required two-step notarization order below. Do not ship a PKG with an unstapled app.
+
+## Correct notarization order for a root-owned VPN installer
+
+```shell
+# After signing the .app using build-app.sh
+NOTARY_KEYCHAIN_PROFILE=notary-profile zsh scripts/notarize.sh app
+DEVELOPER_ID_INSTALLER="Developer ID Installer: ..." zsh scripts/build-pkg.sh
+NOTARY_KEYCHAIN_PROFILE=notary-profile zsh scripts/notarize.sh pkg
+zsh scripts/release-audit.sh
+```
+
+The packaging script refuses to copy an unnotarized app into the PKG.
+Both app and installer must retain valid signatures and notarization tickets.
+Production release remains gated on docs/QA.md results.

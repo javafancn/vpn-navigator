@@ -49,6 +49,12 @@ final class SafetyAndPlanningTests: XCTestCase {
         XCTAssertThrowsError(try RoutePlanner.build(serverIPv4: "8.8.8.8", physicalGateway: "bad", vpnInterface: "utun0", localPrefixes: [], china: rules))
         XCTAssertThrowsError(try RoutePlanner.build(serverIPv4: "8.8.8.8", physicalGateway: "192.168.1.1", vpnInterface: "en0", localPrefixes: [], china: rules))
     }
+    func testManagementCredentialEscaping() {
+        XCTAssertEqual(ManagementEscaping.escape("a\\b"), "a\\\\b")
+        XCTAssertEqual(ManagementEscaping.escape("a\"b"), "a\\\"b")
+        XCTAssertTrue(ManagementParser.parsePasswordChallenge(">PASSWORD:Need 'Auth' username/password"))
+        XCTAssertFalse(ManagementParser.parsePasswordChallenge(">PASSWORD:Need 'Private Key' password"))
+    }
     func testManagementConnectedLine() {
         let value = ManagementParser.parseState(">STATE:1690000000,CONNECTED,SUCCESS,10.8.0.2,203.0.113.7")
         XCTAssertEqual(value?.state, .connected)

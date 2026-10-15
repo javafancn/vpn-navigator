@@ -34,3 +34,12 @@ public enum ManagementParser {
         line.hasPrefix(">PASSWORD:Need 'Auth' username/password")
     }
 }
+
+/// Values for the OpenVPN management text protocol, not shell quoting.
+/// Caller must reject control characters before using this escape function.
+public enum ManagementEscaping {
+    public static func escape(_ value: String) -> String {
+        value.replacingOccurrences(of: "\\", with: "\\\\")
+             .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+}

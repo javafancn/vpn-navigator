@@ -50,16 +50,9 @@ final class ManagedTunnel {
         var options = ["--config", configFile.path]
         if mode == .chinaDirect { options += ["--route-noexec"] }
         if mode == .fullVPN { options += ["--redirect-gateway", "def1"] }
-        let credentialsFile = workdir.appendingPathComponent("auth.txt")
-        if validated.requestsCredentials {
-            try (username + "\n" + password + "\n").write(to: credentialsFile, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: credentialsFile.path)
-            // --auth-user-pass on CLI overrides the profile's bare auth-user-pass.
-            options += ["--auth-user-pass", credentialsFile.path]
-        }
         let managementPath = workdir.appendingPathComponent("management.sock").path
         try? FileManager.default.removeItem(atPath: managementPath)
-        options += ["--management", managementPath, "unix", "--management-hold", "--management-up-down"]
+        options += ["--management", managementPath, "unix", "--management-hold", "--management-up-down", "--management-query-passwords"]
 
         // OpenVPN must be provided by a separately vetted signed distribution.
         // NEVER launch an arbitrary executable from an imported .ovpn or client-supplied path.
@@ -81,6 +74,17 @@ final class ManagedTunnel {
         do {
             try task.run()
             let socket = ManagementSocket()
+            if validated.requestsCredentials {
+                socket.setCredentials(username: username, password: password)
+            }
+            socket.onUnsupportedChallenge = { [weak self] in
+                self?.queue.async {
+                    self?.stop()
+                    self?.lastError = "OpenVPN requested an unsupported authentication method."
+                    self?.state = .failed
+                    self?.message = self?.lastError ?? "Authentication failed"
+                }
+            }
             socket.onExit = { [weak self] in
                 self?.queue.async { if self?.process != nil { self?.stop() } }
             }
@@ -236,7 +240,7 @@ final class ManagedTunnel {
         process = nil
         state = lastError == nil ? .disconnected : .failed
         message = lastError ?? "Disconnected"
-        for name in ["active.ovpn", "auth.txt", "management.sock"] {
+        for name in ["active.ovpn", "management.sock", "auth.txt"] {
             try? FileManager.default.removeItem(at: workdir.appendingPathComponent(name))
         }
     }

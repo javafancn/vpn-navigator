@@ -140,7 +140,7 @@ struct MainView: View {
                 Text(model.activeProfile?.name ?? "选择配置后开始")
                     .font(.system(size: 10)).foregroundStyle(.secondary)
                     .lineLimit(1)
-                Text("Alpha · macOS 13+")
+                Text("macOS 13+ · Alpha")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
             .padding(12)
@@ -400,8 +400,8 @@ private struct ProfileLibrary: View {
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
-            }.padding(.horizontal, 28).padding(.top, 26).padding(.bottom, 19)
-            HStack(spacing: 0) {
+            }.padding(.horizontal, 22).padding(.top, 22).padding(.bottom, 14)
+            HStack(spacing: 12) {
                 VStack(spacing: 12) {
                     HStack {
                         Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -444,13 +444,13 @@ private struct ProfileLibrary: View {
                         }
                     }
                 }
-                .padding(13)
-                .frame(width: 260)
-                .background(.thinMaterial)
-                Divider().opacity(0.35)
+                .padding(12)
+                .frame(width: 235)
+                .glassCard(cornerRadius: 17)
                 if let profile = model.selected {
                     ProfileDetail(profile: profile).id(profile.id)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .glassCard(cornerRadius: 18)
                 } else {
                     VStack(spacing: 12) {
                         Image(systemName: "square.stack.3d.up.slash")
@@ -461,6 +461,8 @@ private struct ProfileLibrary: View {
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 19)
         }
     }
 }
@@ -469,73 +471,97 @@ private struct RoutingWorkspace: View {
     @EnvironmentObject private var model: AppModel
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 15) {
                 WorkspaceHeading(title: "路由与规则",
-                    subtitle: "按配置管理策略，保留已经验证的网络规则版本",
+                    subtitle: "选择网络策略，管理已验证的中国 IPv4 规则",
                     symbol: "point.3.connected.trianglepath.dotted")
-                VPNPanel("连接策略", symbol: "arrow.triangle.branch") {
-                    if let profile = model.selected {
-                        Text("当前编辑：\(profile.name)")
-                            .font(.callout.weight(.medium))
-                        Picker("路由模式", selection: Binding(
-                            get: { profile.mode },
-                            set: { newMode in Task { await model.setMode(newMode) } }
-                        )) {
-                            Text("原始配置").tag(RoutingMode.original)
-                            Text("全局 VPN").tag(RoutingMode.fullVPN)
-                            Text("中国 IPv4 直连").tag(RoutingMode.chinaDirect)
+                HStack(alignment: .top, spacing: 13) {
+                    VPNPanel("路由模式", symbol: "arrow.triangle.branch") {
+                        if let profile = model.selected {
+                            Text("所选配置 · \(profile.name)")
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                            Picker("连接模式", selection: Binding(
+                                get: { profile.mode },
+                                set: { newMode in Task { await model.setMode(newMode) } }
+                            )) {
+                                Text("Original · 遵循配置文件").tag(RoutingMode.original)
+                                Text("Full VPN · 全局 IPv4").tag(RoutingMode.fullVPN)
+                                Text("中国 IPv4 直连").tag(RoutingMode.chinaDirect)
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.radioGroup)
+                            .disabled(model.connected || model.connecting || model.busy)
+                            Divider()
+                            Text("原始模式遵循 .ovpn；全局模式将 IPv4 默认路由指向 VPN；中国直连模式对已识别中国 IPv4 网段使用物理网络。")
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                            Text("连接时不可改动路由模式。")
+                                .font(.system(size: 10)).foregroundStyle(.secondary)
+                        } else {
+                            Label("请先导入并选择配置文件", systemImage: "info.circle")
+                                .font(.callout).foregroundStyle(.secondary)
                         }
-                        .pickerStyle(.segmented)
-                        .disabled(model.connected || model.connecting || model.busy)
-                        Text("修改仅影响所选配置的下一次连接；不改变正在运行的隧道。")
-                            .font(.caption).foregroundStyle(.secondary)
-                    } else {
-                        Text("请先导入并选择一个 VPN 配置。")
-                            .foregroundStyle(.secondary)
                     }
-                }
-                VPNPanel("中国 IPv4 分流数据", symbol: "globe.asia.australia") {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(model.rules.map { "\($0.routes.count) 个已校验的网段" } ?? "本机尚未缓存规则")
-                                .font(.headline)
-                            Text("按需更新；旧版规则在变更异常时保留。")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button("立即更新") { Task { await model.refreshRules() } }
-                            .disabled(model.busy)
-                    }
-                    if !model.ruleSnapshots.isEmpty {
-                        Divider()
-                        Text("历史规则").font(.callout.weight(.semibold))
-                        ForEach(model.ruleSnapshots.prefix(5)) { snapshot in
-                            HStack {
-                                Text(snapshot.savedAt, format: .dateTime.year().month().day())
-                                Text("\(snapshot.routeCount) 个网段")
-                                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+
+                    VStack(spacing: 13) {
+                        VPNPanel("中国 IPv4 规则", symbol: "globe.asia.australia") {
+                            HStack(spacing: 12) {
+                                Image(systemName: "globe.asia.australia.fill")
+                                    .font(.system(size: 26)).foregroundStyle(.blue)
+                                    .frame(width: 44, height: 44)
+                                    .background(Color.blue.opacity(0.09),
+                                                in: RoundedRectangle(cornerRadius: 12))
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(model.rules.map { "\($0.routes.count) 个网段" } ?? "尚未下载")
+                                        .font(.headline)
+                                    Text("本机经验证的 IPv4 分流数据")
+                                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                                }
                                 Spacer()
-                                Button("恢复此版本") {
-                                    Task { await model.restoreRuleSnapshot(snapshot.id) }
-                                }.disabled(model.busy)
+                            }
+                            HStack {
+                                Button("更新规则") { Task { await model.refreshRules() } }
+                                    .buttonStyle(.borderedProminent)
+                                    .disabled(model.busy)
+                                Spacer()
+                                Text("异常更新将保留旧版")
+                                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                            }
+                            if !model.ruleSnapshots.isEmpty {
+                                Divider()
+                                Text("历史快照").font(.system(size: 11, weight: .semibold))
+                                ForEach(model.ruleSnapshots.prefix(4)) { snapshot in
+                                    HStack {
+                                        Text(snapshot.savedAt, style: .date)
+                                        Text("\(snapshot.routeCount) 个网段")
+                                            .foregroundStyle(.secondary)
+                                        Spacer()
+                                        Button("恢复") {
+                                            Task { await model.restoreRuleSnapshot(snapshot.id) }
+                                        }.disabled(model.busy)
+                                    }.font(.system(size: 11))
+                                }
                             }
                         }
+                        VPNPanel("IPv6 数据预览 · 未启用", symbol: "shield.lefthalf.filled") {
+                            HStack(spacing: 9) {
+                                Text(model.ipv6Preview.map {
+                                    "\($0.routes.count) 个 APNIC 注册前缀"
+                                } ?? "尚未下载预览")
+                                    .font(.system(size: 11))
+                                Spacer()
+                                Button("刷新") { Task { await model.updateIPv6Preview() } }
+                                    .disabled(model.busy)
+                            }
+                            Text("仅显示注册数据，不安装 IPv6 路由或防火墙。")
+                                .font(.system(size: 10)).foregroundStyle(.secondary)
+                        }
                     }
-                }
-                VPNPanel("IPv6 注册数据预览", symbol: "globe") {
-                    HStack {
-                        Text(model.ipv6Preview.map {
-                            "\($0.routes.count) 个 APNIC 中国注册前缀"
-                        } ?? "未下载预览")
-                        Spacer()
-                        Button("刷新预览") { Task { await model.updateIPv6Preview() } }
-                            .disabled(model.busy)
-                    }
-                    Text("仅展示资源注册地，并非实际 IP 地理位置；尚未应用于系统路由，不代表 IPv6 分流或 Kill Switch 已实现。")
-                        .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
                 }
             }
-            .padding(28).frame(maxWidth: 1050, alignment: .leading)
+            .padding(22)
+            .frame(maxWidth: 1050, alignment: .leading)
         }
     }
 }
@@ -601,7 +627,7 @@ struct ProfileDetail: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 14) {
                     Image(systemName: "network.badge.shield.half.filled")
                         .font(.system(size: 35)).foregroundStyle(.tint)
@@ -679,7 +705,7 @@ struct ProfileDetail: View {
                 Text("真实连接需要签名 Helper 与 OpenVPN 引擎；使用前应在自己的 Mac 上验证路由、DNS 和网络安全。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
-            .padding(26).frame(maxWidth: 820, alignment: .leading)
+            .padding(19).frame(maxWidth: 780, alignment: .leading)
         }
         .navigationTitle(profile.name)
         .sheet(isPresented: $showingEditor) {

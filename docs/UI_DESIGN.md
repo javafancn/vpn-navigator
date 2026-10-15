@@ -36,3 +36,16 @@ CI should run Swift build/tests and unsigned universal ad-hoc app packaging.
 Manual UI acceptance on real Mac: light/dark, window resizing, keyboard
 navigation, profile import/history and empty states. Actual VPN behavior
 requires signed hardware testing.
+
+## Second pass — reference fidelity
+
+The window now uses a genuinely transparent NSWindow and an AppKit
+NSVisualEffectView in behind-window blending mode, rather than tinting an
+opaque NavigationSplitView. Five compact workspaces share blue selected
+navigation, thin glass cards, soft highlights, native macOS typography and a
+real-glass background that responds to the user's wallpaper. The dashboard
+has a luminous connection control, fast profile selection and real counters.
+Profiles are split into a search list and an editable glass detail pane.
+Routing adopts side-by-side mode/data panels; diagnostics use side-by-side
+route/health panes without inventing network measurements. On macOS 13,
+these are native vibrancy materials, not macOS 26 Liquid Glass-only APIs.

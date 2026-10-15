@@ -30,24 +30,34 @@ struct GlassAtmosphere: View {
     }
 }
 
+final class NativeWindowGlass: NSVisualEffectView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        configureWindow()
+    }
+
+    func configureWindow() {
+        guard let window else { return }
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.styleMask.insert(.fullSizeContentView)
+        window.isMovableByWindowBackground = true
+    }
+}
+
 struct DesktopVisualEffect: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
+    func makeNSView(context: Context) -> NativeWindowGlass {
+        let view = NativeWindowGlass()
         view.material = .underWindowBackground
         view.blendingMode = .behindWindow
         view.state = .active
         return view
     }
 
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {
-        DispatchQueue.main.async { [weak view] in
-            guard let window = view?.window else { return }
-            window.isOpaque = false
-            window.backgroundColor = .clear
-            window.titlebarAppearsTransparent = true
-            window.titleVisibility = .hidden
-            window.styleMask.insert(.fullSizeContentView)
-        }
+    func updateNSView(_ view: NativeWindowGlass, context: Context) {
+        view.configureWindow()
     }
 }
 

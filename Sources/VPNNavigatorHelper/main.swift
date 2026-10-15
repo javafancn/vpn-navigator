@@ -43,6 +43,22 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
     func activeProfile(reply: @escaping (String) -> Void) {
         queue.async { reply(self.engine.activeProfileID?.uuidString ?? "") }
     }
+    func sessionSnapshot(reply: @escaping (String) -> Void) {
+        queue.async {
+            let report = SessionReport(
+                state: self.engine.state,
+                message: self.engine.message,
+                activeProfileID: self.engine.activeProfileID,
+                receivedBytes: self.engine.traffic?.receivedBytes,
+                sentBytes: self.engine.traffic?.sentBytes)
+            guard let bytes = try? JSONEncoder().encode(report),
+                  let output = String(data: bytes, encoding: .utf8) else {
+                reply("ERROR: Cannot serialize tunnel status")
+                return
+            }
+            reply(output)
+        }
+    }
     func trafficStatus(reply: @escaping (String) -> Void) {
         queue.async {
             guard let value = self.engine.traffic else { reply(""); return }

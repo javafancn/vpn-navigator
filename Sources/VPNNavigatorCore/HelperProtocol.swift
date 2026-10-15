@@ -9,6 +9,7 @@ import Foundation
                  reply: @escaping (String) -> Void)
     func disconnect(reply: @escaping (String) -> Void)
     func connectionStatus(reply: @escaping (String) -> Void)
+    func sessionSnapshot(reply: @escaping (String) -> Void)
     func activeProfile(reply: @escaping (String) -> Void)
     func trafficStatus(reply: @escaping (String) -> Void)
     func updateRules(_ text: String, reply: @escaping (String) -> Void)

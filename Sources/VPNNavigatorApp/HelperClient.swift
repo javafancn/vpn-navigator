@@ -53,6 +53,11 @@ final class HelperClient {
     func ping() async -> String {
         await ask { helper, reply in helper.health(reply: reply) }
     }
+    func sessionReport() async -> SessionReport? {
+        let raw = await ask { helper, reply in helper.sessionSnapshot(reply: reply) }
+        guard let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(SessionReport.self, from: data)
+    }
     func activeProfile() async -> UUID? {
         UUID(uuidString: await ask { helper, reply in helper.activeProfile(reply: reply) })
     }

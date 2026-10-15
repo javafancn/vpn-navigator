@@ -17,6 +17,29 @@ public struct TunnelTraffic: Equatable, Sendable {
         self.sentBytes = sentBytes
     }
 }
+public struct SessionReport: Codable, Equatable, Sendable {
+    public let state: TunnelState
+    public let message: String
+    public let activeProfileID: UUID?
+    public let receivedBytes: UInt64?
+    public let sentBytes: UInt64?
+
+    public init(state: TunnelState, message: String, activeProfileID: UUID?,
+                receivedBytes: UInt64?, sentBytes: UInt64?) {
+        self.state = state
+        self.message = message
+        self.activeProfileID = activeProfileID
+        self.receivedBytes = receivedBytes
+        self.sentBytes = sentBytes
+    }
+
+    public var statusText: String { "\(state.rawValue): \(message)" }
+
+    public var traffic: TunnelTraffic? {
+        guard let receivedBytes, let sentBytes else { return nil }
+        return TunnelTraffic(receivedBytes: receivedBytes, sentBytes: sentBytes)
+    }
+}
 public enum ManagementParser {
     public static func parseByteCount(_ line: String) -> TunnelTraffic? {
         guard line.hasPrefix(">BYTECOUNT:") else { return nil }

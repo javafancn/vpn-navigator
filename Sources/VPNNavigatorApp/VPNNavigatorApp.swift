@@ -292,10 +292,15 @@ final class AppModel: ObservableObject {
     func refreshConnectionStatus() async {
         helperStatus = String(describing: helper.installationStatus)
         if helper.installationStatus == .enabled {
-            connectionStatus = await helper.status()
-            activeProfileID = await helper.activeProfile()
-            let raw = await helper.trafficStatus()
-            traffic = ManagementParser.parseByteCount(">BYTECOUNT:" + raw)
+            if let report = await helper.sessionReport() {
+                connectionStatus = report.statusText
+                activeProfileID = report.activeProfileID
+                traffic = report.traffic
+            } else {
+                connectionStatus = "failed: Privileged helper did not return a valid session snapshot"
+                activeProfileID = nil
+                traffic = nil
+            }
         } else {
             connectionStatus = "disconnected: Privileged helper not enabled"
             activeProfileID = nil

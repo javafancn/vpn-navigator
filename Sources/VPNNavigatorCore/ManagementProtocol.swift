@@ -20,6 +20,7 @@ public enum ManagementParser {
         case "CONNECTING", "WAIT", "RESOLVE", "TCP_CONNECT", "GET_CONFIG", "ASSIGN_IP", "ADD_ROUTES":
             state = .connecting
         case "AUTH": state = .authenticating
+        case "AUTH_FAILED": state = .failed
         case "CONNECTED": state = .connected
         case "RECONNECTING": state = .reconnecting
         case "EXITING": state = .stopping

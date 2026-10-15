@@ -12,6 +12,7 @@ final class ManagementSocket {
     var onState: ((TunnelSnapshot) -> Void)?
     var onExit: (() -> Void)?
     var onUnsupportedChallenge: (() -> Void)?
+    var onAuthenticationFailure: (() -> Void)?
 
     func setCredentials(username: String, password: String) {
         credentials = (username, password)
@@ -83,6 +84,10 @@ final class ManagementSocket {
                 buffer.removeSubrange(...newline)
                 if let snapshot = ManagementParser.parseState(line) {
                     onState?(snapshot)
+                } else if line.hasPrefix(">PASSWORD:Verification Failed:") {
+                    onAuthenticationFailure?()
+                    close()
+                    break
                 } else if line.hasPrefix(">PASSWORD:Need ") {
                     // Bare auth-user-pass supported; all other challenges (including
                     // encrypted key / proxy auth) require an explicit future adapter.

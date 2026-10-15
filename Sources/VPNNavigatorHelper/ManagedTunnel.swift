@@ -88,6 +88,15 @@ final class ManagedTunnel {
             if validated.requestsCredentials {
                 socket.setCredentials(username: username, password: password)
             }
+            socket.onAuthenticationFailure = { [weak self] in
+                self?.queue.async { [weak self] in
+                    guard let self, self.management === socket else { return }
+                    self.stop()
+                    self.lastError = "VPN authentication failed. Check the credentials."
+                    self.state = .failed
+                    self.message = self.lastError ?? "Authentication failed"
+                }
+            }
             socket.onUnsupportedChallenge = { [weak self] in
                 self?.queue.async {
                     self?.stop()
@@ -137,6 +146,14 @@ final class ManagedTunnel {
         }
     }
     private func handle(_ snapshot: TunnelSnapshot) {
+        if snapshot.state == .failed {
+            let failure = "VPN authentication failed: \(snapshot.message)"
+            stop()
+            lastError = failure
+            state = .failed
+            message = failure
+            return
+        }
         state = snapshot.state
         message = snapshot.message
         if snapshot.state == .connected && activeMode == .chinaDirect {

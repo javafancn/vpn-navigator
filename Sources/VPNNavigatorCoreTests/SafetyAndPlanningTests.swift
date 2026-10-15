@@ -66,6 +66,10 @@ final class SafetyAndPlanningTests: XCTestCase {
         XCTAssertTrue(ManagementParser.parsePasswordChallenge(">PASSWORD:Need 'Auth' username/password"))
         XCTAssertFalse(ManagementParser.parsePasswordChallenge(">PASSWORD:Need 'Private Key' password"))
     }
+    func testAuthenticationFailureState() {
+        let value = ManagementParser.parseState(">STATE:1690000000,AUTH_FAILED,AUTH_FAILED")
+        XCTAssertEqual(value?.state, .failed)
+    }
     func testManagementConnectedLine() {
         let value = ManagementParser.parseState(">STATE:1690000000,CONNECTED,SUCCESS,10.8.0.2,203.0.113.7")
         XCTAssertEqual(value?.state, .connected)

@@ -27,7 +27,9 @@ public struct FirewallRulePreview: Sendable {
               Self.validInterface(tunnelInterface, prefix: "utun"),
               endpointPort > 0,
               IPv4CIDR.parseAddress(endpointIPv4) != nil,
-              !localNetworks.isEmpty else {
+              !localNetworks.isEmpty,
+              localNetworks.allSatisfy({ $0.prefix >= 8 }),
+              Self.safePolicy(policy) else {
             throw FirewallPreviewError.invalidInput
         }
         self.physicalInterface = physicalInterface
@@ -58,6 +60,17 @@ public struct FirewallRulePreview: Sendable {
         block drop out quick on \(physicalInterface) inet from any to any
         block drop out quick on \(physicalInterface) inet6 from any to any
         """
+    }
+
+    private static func safePolicy(_ value: Policy) -> Bool {
+        switch value {
+        case .fullVPN: return true
+        case .chinaDirect(let entries):
+            // Reject a catch-all or a non-public direct-route prefix.
+            // A preview must not quietly turn into unrestricted physical egress.
+            guard !entries.isEmpty else { return false }
+            return (try? RuleSet(text: entries.map(\.description).joined(separator: "\n"))) != nil
+        }
     }
 
     private static func validInterface(_ value: String, prefix: String) -> Bool {

@@ -90,3 +90,6 @@ The following checks must be executed on a disposable Mac after Developer ID sig
 | A67 | China Direct hot rule update changes routed sample unexpectedly | Fail update, disconnect and retain route journal until verified cleanup |
 
 | A68 | OpenVPN passes malicious DNS environment values without a vars file | Reject before constructing scutil command text |
+
+| A69 | DNS script obtains its lock on a shared world-writable path | Require root-private runtime directory; reject unsafe owner or mode |
+| A70 | PF preview receives a /0 or private geographic exception | Reject invalid policy before producing an apparently restrictive guard |

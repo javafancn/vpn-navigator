@@ -86,11 +86,15 @@ if [[ "${1:-}" == "--check-dns-vars" ]]; then
 fi
 
 
-lockdir=/var/lock
-if [ ! -d "${lockdir}" ]; then
-    /bin/mkdir "${lockdir}"
-    /bin/chmod 1777 "${lockdir}"
-fi
+# Lockfiles for a root DNS modifier must never live in a shared 1777
+# directory. The helper created this root-owned 0700 runtime directory
+# before launching OpenVPN. Refuse to run if it is not trustworthy.
+lockdir=/var/run/vpn-navigator
+[[ -d "$lockdir" && ! -L "$lockdir" ]] || exit 1
+lockowner=$(/usr/bin/stat -f %u "$lockdir") || exit 1
+lockmode=$(/usr/bin/stat -f %Lp "$lockdir") || exit 1
+[[ "$lockowner" == "$EUID" && "$lockmode" =~ ^[0-7]{3,4}$ ]] || exit 1
+(( (8#$lockmode & 0077) == 0 )) || exit 1
 
 i=1
 lockfile="${lockdir}/openvpn-dns-updown.lock"

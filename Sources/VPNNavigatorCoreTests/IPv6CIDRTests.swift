@@ -5,7 +5,7 @@ final class IPv6CIDRTests: XCTestCase {
     func testCanonicalizationAndMembership() throws {
         let cidr = try IPv6CIDR("240e:abcd:1234::1/32")
         XCTAssertEqual(cidr.description, "240e:abcd::/32")
-        XCTAssertTrue(cidr.contains("240e:ffff::1"))
+        XCTAssertTrue(cidr.contains("240e:abcd:ffff::1"))
         XCTAssertFalse(cidr.contains("240f::1"))
         XCTAssertEqual(cidr, try IPv6CIDR("240e:abcd::/32"))
     }

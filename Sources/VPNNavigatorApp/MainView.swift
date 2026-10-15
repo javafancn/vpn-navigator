@@ -29,80 +29,33 @@ enum WorkspaceTab: String, CaseIterable, Identifiable {
 
 struct MainView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var tab: WorkspaceTab? = .overview
+    @State private var tab: WorkspaceTab = .overview
     @State private var importing = false
 
     var body: some View {
-        NavigationSplitView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 11) {
-                    Image(systemName: "globe.americas.fill")
-                        .font(.system(size: 27, weight: .medium))
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.blue, .cyan)
-                        .frame(width: 42, height: 42)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("VPN Navigator").font(.system(size: 15, weight: .bold))
-                        Text("网络连接控制台").font(.caption2).foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.horizontal, 16).padding(.top, 18).padding(.bottom, 18)
-                List(selection: $tab) {
-                    Section("工作空间") {
-                        ForEach(WorkspaceTab.allCases) { item in
-                            Label(item.title, systemImage: item.symbol)
-                                .font(.system(size: 13, weight: .medium))
-                                .padding(.vertical, 5)
-                                .tag(item)
+        ZStack {
+            GlassAtmosphere()
+            HStack(spacing: 0) {
+                sidebar.frame(width: 188)
+                Rectangle().fill(Color.white.opacity(0.26)).frame(width: 1)
+                VStack(spacing: 0) {
+                    topBar
+                    Rectangle().fill(Color.white.opacity(0.22)).frame(height: 1)
+                    Group {
+                        switch tab {
+                        case .overview: ConnectionOverview()
+                        case .profiles: ProfileLibrary()
+                        case .routing: RoutingWorkspace()
+                        case .diagnostics: NetworkDiagnosticsView()
+                        case .settings: SystemSettingsPane()
                         }
                     }
-                }
-                .listStyle(.sidebar)
-                .scrollContentBackground(.hidden)
-                Divider().opacity(0.35)
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack(spacing: 7) {
-                        Circle().fill(model.connected ? Color.green : Color.secondary.opacity(0.6))
-                            .frame(width: 7, height: 7)
-                        Text(model.connected ? "VPN 已连接" : model.connecting ? "正在连接" : "VPN 未连接")
-                            .font(.caption.weight(.semibold))
-                    }
-                    Text(model.activeProfile?.name ?? "请选择配置文件")
-                        .font(.caption2).foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Text("Alpha · macOS 13+")
-                        .font(.caption2).foregroundStyle(Color.secondary.opacity(0.7))
-                }
-                .padding(17).frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(minWidth: 200)
-            .background(.ultraThinMaterial)
-        } detail: {
-            ZStack {
-                LinearGradient(
-                    colors: [.blue.opacity(0.08), .clear, .cyan.opacity(0.035)],
-                    startPoint: .topLeading, endPoint: .bottomTrailing)
-                    .ignoresSafeArea()
-                switch tab ?? .overview {
-                case .overview: ConnectionOverview()
-                case .profiles: ProfileLibrary()
-                case .routing: RoutingWorkspace()
-                case .diagnostics: NetworkDiagnosticsView()
-                case .settings: SystemSettingsPane()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
-        .navigationSplitViewStyle(.balanced)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { importing = true } label: {
-                    Label("导入 .ovpn", systemImage: "plus")
-                }
-                .buttonStyle(.borderedProminent)
-                .help("导入 OpenVPN 配置文件")
-            }
-        }
+        .frame(minWidth: 1030, minHeight: 655)
+        .preferredColorScheme(nil)
         .fileImporter(isPresented: $importing,
                       allowedContentTypes: [.init(filenameExtension: "ovpn")!],
                       allowsMultipleSelection: true) { result in
@@ -112,7 +65,8 @@ struct MainView: View {
                     for url in urls { await model.importFile(url) }
                     tab = .profiles
                 }
-            case .failure(let error): model.message = error.localizedDescription
+            case .failure(let error):
+                model.message = error.localizedDescription
             }
         }
         .alert("VPN Navigator", isPresented: Binding(
@@ -122,6 +76,105 @@ struct MainView: View {
             Button("确定") { model.message = nil }
         } message: { Text(model.message ?? "") }
     }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "globe.americas.fill")
+                    .font(.system(size: 23, weight: .medium))
+                    .foregroundStyle(.blue)
+                    .frame(width: 37, height: 37)
+                    .background(.white.opacity(0.48),
+                                in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(.white.opacity(0.45)))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("VPN Navigator").font(.system(size: 12, weight: .bold))
+                        .lineLimit(1)
+                    Text("网络连接控制台").font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.leading, 16)
+            .padding(.trailing, 8)
+            .padding(.top, 63)
+            .padding(.bottom, 28)
+
+            ForEach(WorkspaceTab.allCases) { item in
+                Button { withAnimation(.easeInOut(duration: 0.16)) { tab = item } } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: item.symbol)
+                            .font(.system(size: 15, weight: .medium))
+                            .frame(width: 22)
+                        Text(item.title).font(.system(size: 12, weight: .medium))
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(tab == item ? Color.white : Color.primary)
+                    .padding(.horizontal, 12)
+                    .frame(height: 37)
+                    .background {
+                        if tab == item {
+                            RoundedRectangle(cornerRadius: 9)
+                                .fill(LinearGradient(colors: [
+                                    Color(red: 0.12, green: 0.53, blue: 1),
+                                    Color(red: 0.03, green: 0.39, blue: 0.91)
+                                ], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .shadow(color: .blue.opacity(0.28), radius: 9, y: 3)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(tab == item ? .isSelected : [])
+                .padding(.horizontal, 10)
+                .padding(.bottom, 5)
+            }
+            Spacer(minLength: 20)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 7) {
+                    Circle()
+                        .fill(model.connected ? Color.green : Color.secondary.opacity(0.7))
+                        .frame(width: 7, height: 7)
+                    Text(model.connected ? "已连接" : model.connecting ? "连接中" : "未连接")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                Text(model.activeProfile?.name ?? "选择配置后开始")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text("Alpha · macOS 13+")
+                    .font(.system(size: 10)).foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.white.opacity(0.12),
+                        in: RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 12)
+            .padding(.bottom, 14)
+        }
+        .background(.ultraThinMaterial)
+    }
+
+    private var topBar: some View {
+        HStack {
+            Text(tab.title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.primary.opacity(0.83))
+            Spacer()
+            Text("安全 · 高效 · 专业")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .padding(.trailing, 10)
+            Button { importing = true } label: {
+                Label("导入配置", systemImage: "plus")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.blue)
+            .controlSize(.regular)
+        }
+        .padding(.leading, 24).padding(.trailing, 20)
+        .frame(height: 53)
+        .background(.ultraThinMaterial)
+    }
 }
 
 struct WorkspaceHeading: View {
@@ -129,19 +182,21 @@ struct WorkspaceHeading: View {
     let subtitle: String
     let symbol: String
     var body: some View {
-        HStack(alignment: .center, spacing: 13) {
+        HStack(spacing: 11) {
             Image(systemName: symbol)
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(.tint)
+                .font(.system(size: 24, weight: .medium))
+                .foregroundStyle(.blue)
                 .frame(width: 46, height: 46)
-                .background(.blue.opacity(0.09), in: RoundedRectangle(cornerRadius: 14))
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.system(size: 27, weight: .bold, design: .rounded))
-                Text(subtitle).font(.callout).foregroundStyle(.secondary)
+                .background(Color.blue.opacity(0.1),
+                            in: RoundedRectangle(cornerRadius: 13))
+                .overlay(RoundedRectangle(cornerRadius: 13)
+                    .strokeBorder(Color.white.opacity(0.45)))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.system(size: 22, weight: .bold, design: .rounded))
+                Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary)
             }
-            Spacer(minLength: 0)
+            Spacer()
         }
-        .padding(.bottom, 7)
     }
 }
 
@@ -155,17 +210,15 @@ struct VPNPanel<Content: View>: View {
         self.content = content()
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(19)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 19))
-        .overlay(RoundedRectangle(cornerRadius: 19)
-            .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1))
+        .padding(16)
+        .glassCard(cornerRadius: 16)
     }
 }
 
@@ -175,73 +228,88 @@ private struct ConnectionOverview: View {
     private var error: Bool { model.connectionStatus.hasPrefix("failed:") }
     private var statusTitle: String {
         if model.connected { return "已连接" }
-        if model.connecting { return "正在建立安全连接" }
+        if model.connecting { return "正在连接" }
         if error { return "连接需要检查" }
         return "准备连接"
     }
-    private var trafficText: String {
-        guard let traffic = model.traffic else { return "—" }
-        return ByteCountFormatter.string(fromByteCount:
-            Int64(clamping: traffic.receivedBytes), countStyle: .file)
+    private var description: String {
+        if !model.connected && !model.connecting { return "点击电源按钮开始建立连接" }
+        return model.connectionStatus
+    }
+    private func formattedBytes(_ bytes: UInt64?) -> String {
+        guard let bytes else { return "—" }
+        return ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes),
+                                         countStyle: .file)
     }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 14) {
                 WorkspaceHeading(title: "连接总览",
-                    subtitle: "清晰掌控当前 VPN 状态与网络策略",
-                    symbol: "network.badge.shield.half.filled")
-                HStack(alignment: .top, spacing: 18) {
-                    VStack(spacing: 13) {
+                    subtitle: "当前 VPN 连接状态与网络策略",
+                    symbol: "globe.americas.fill")
+                HStack(alignment: .top, spacing: 13) {
+                    VStack(spacing: 9) {
+                        Spacer(minLength: 0)
                         Button {
                             Task {
                                 if model.connected { await model.disconnect() }
                                 else { await model.connectSelected() }
                             }
                         } label: {
-                            Image(systemName: "power")
-                                .font(.system(size: 34, weight: .medium))
-                                .foregroundStyle(.white)
-                                .frame(width: 104, height: 104)
-                                .background(
-                                    Circle().fill(
-                                        LinearGradient(colors: model.connected ?
-                                            [.green, .mint] : [.blue, .cyan],
-                                            startPoint: .topLeading, endPoint: .bottomTrailing)))
-                                .overlay(Circle().strokeBorder(.white.opacity(0.8), lineWidth: 4).padding(-9))
-                                .padding(14)
-                                .background(Circle().fill(.blue.opacity(0.09)))
-                                .shadow(color: .blue.opacity(0.18), radius: 16, y: 7)
+                            ZStack {
+                                Circle().stroke(Color.blue.opacity(0.08), lineWidth: 16)
+                                    .frame(width: 135, height: 135)
+                                Circle().stroke(.white.opacity(0.9), lineWidth: 5)
+                                    .frame(width: 130, height: 130)
+                                Circle().stroke(Color.cyan.opacity(0.63), lineWidth: 2)
+                                    .blur(radius: 5).frame(width: 141, height: 141)
+                                Circle()
+                                    .fill(LinearGradient(colors: model.connected ?
+                                          [Color.green, Color.mint] :
+                                          [Color(red: 0.0, green: 0.49, blue: 1),
+                                           Color(red: 0.09, green: 0.76, blue: 0.98)],
+                                          startPoint: .topLeading,
+                                          endPoint: .bottomTrailing))
+                                    .frame(width: 112, height: 112)
+                                    .shadow(color: .blue.opacity(0.48), radius: 20, y: 5)
+                                Image(systemName: "power")
+                                    .font(.system(size: 39, weight: .light))
+                                    .foregroundStyle(.white)
+                            }
+                            .frame(width: 155, height: 155)
                         }
                         .buttonStyle(.plain)
                         .disabled(model.busy || model.connecting ||
                                   (!model.connected && model.selected == nil))
                         .accessibilityLabel(model.connected ? "断开 VPN" : "连接 VPN")
+                        .help(model.connected ? "断开当前 VPN" : "连接所选 VPN")
                         Text(statusTitle)
-                            .font(.system(size: 25, weight: .bold, design: .rounded))
-                            .foregroundStyle(model.connected ? Color.green : Color.primary)
-                        Text(model.connectionStatus)
-                            .font(.caption)
+                            .font(.system(size: 21, weight: .bold, design: .rounded))
+                            .foregroundStyle(model.connected ? Color.green :
+                                             error ? Color.orange : Color.primary)
+                        Text(description)
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .lineLimit(3)
                             .textSelection(.enabled)
                         if let active = model.activeProfile {
-                            Label("当前连接：\(active.name)", systemImage: "checkmark.shield")
-                                .font(.callout).foregroundStyle(.secondary)
+                            Label(active.name, systemImage: "checkmark.shield")
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
                         }
-                        if model.connected && model.activeProfileID != model.selectedID,
+                        if model.connected && model.activeProfileID != model.selectedID &&
                            model.selectedID != nil {
-                            Button("切换至所选配置…") { confirmSwitch = true }
+                            Button("切换到所选配置") { confirmSwitch = true }
+                                .controlSize(.small)
                         }
+                        Spacer(minLength: 0)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 38).padding(.horizontal, 20)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 23))
-                    .overlay(RoundedRectangle(cornerRadius: 23)
-                        .strokeBorder(Color.primary.opacity(0.07)))
+                    .frame(maxWidth: .infinity, minHeight: 275)
+                    .padding(.horizontal, 15)
+                    .glassCard(cornerRadius: 18)
 
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(spacing: 12) {
                         VPNPanel("快速连接", symbol: "slider.horizontal.3") {
                             Picker("配置文件", selection: $model.selectedID) {
                                 Text("请选择配置").tag(UUID?.none)
@@ -249,62 +317,64 @@ private struct ConnectionOverview: View {
                                     Text(profile.name).tag(Optional(profile.id))
                                 }
                             }
-                            .disabled(model.profiles.isEmpty)
                             .pickerStyle(.menu)
+                            .disabled(model.profiles.isEmpty)
+                            .controlSize(.small)
                             if let profile = model.selected {
                                 LabeledContent("路由模式", value: profile.mode.rawValue)
                                 LabeledContent("配置文件", value: profile.sourceFilename)
-                            } else {
-                                Text("导入 .ovpn 配置后即可选择连接。")
-                                    .font(.callout).foregroundStyle(.secondary)
                             }
-                            Divider()
-                            Toggle("在 macOS 钥匙串中记住凭据",
-                                   isOn: $model.rememberCredentials)
-                            TextField("用户名（按需填写）", text: $model.username)
-                                .textFieldStyle(.roundedBorder)
-                            SecureField("密码（按需填写）", text: $model.password)
-                                .textFieldStyle(.roundedBorder)
-                            Text("凭据仅用于所选配置；密码在连接尝试后会从界面状态清除。")
-                                .font(.caption).foregroundStyle(.secondary)
+                            DisclosureGroup("身份验证（按需）") {
+                                Toggle("保存在钥匙串", isOn: $model.rememberCredentials)
+                                TextField("用户名", text: $model.username)
+                                SecureField("密码", text: $model.password)
+                            }
+                            .font(.system(size: 11))
                         }
-                        VPNPanel("连接保护", symbol: "shield.lefthalf.filled") {
-                            Label("Managed VPN 遇到重连会安全断开",
-                                  systemImage: "checkmark.shield")
-                                .font(.callout)
-                            Text("PF Kill Switch 尚未启用；此版本不承诺网络流量零泄漏。")
-                                .font(.caption).foregroundStyle(.secondary)
+                        VPNPanel("连接保护", symbol: "checkmark.shield") {
+                            Label("受管连接异常时安全断开", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                                .font(.system(size: 11))
+                            Text("PF Kill Switch 尚未启用，不能保证零泄漏。")
+                                .font(.system(size: 10)).foregroundStyle(.secondary)
                         }
                     }
-                    .frame(maxWidth: 360)
+                    .frame(width: 288)
                 }
-                HStack(spacing: 16) {
-                    VPNPanel("累计接收", symbol: "arrow.down.circle") {
-                        Text(trafficText)
-                            .font(.system(size: 25, weight: .semibold, design: .rounded))
-                    }
-                    VPNPanel("累计发送", symbol: "arrow.up.circle") {
-                        Text(model.traffic.map {
-                            ByteCountFormatter.string(fromByteCount:
-                                Int64(clamping: $0.sentBytes), countStyle: .file)
-                        } ?? "—")
-                        .font(.system(size: 25, weight: .semibold, design: .rounded))
-                    }
-                    VPNPanel("中国 IPv4 规则", symbol: "list.bullet.rectangle") {
-                        Text(model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
-                            .font(.system(size: 25, weight: .semibold, design: .rounded))
-                    }
+                HStack(spacing: 12) {
+                    miniStatistic("累计接收", symbol: "arrow.down.circle.fill",
+                                  value: formattedBytes(model.traffic?.receivedBytes))
+                    miniStatistic("累计发送", symbol: "arrow.up.circle.fill",
+                                  value: formattedBytes(model.traffic?.sentBytes))
+                    miniStatistic("中国 IPv4 规则", symbol: "globe.asia.australia.fill",
+                                  value: model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
                 }
             }
-            .padding(28)
-            .frame(maxWidth: 1120, alignment: .leading)
+            .padding(22)
+            .frame(maxWidth: 1060, alignment: .leading)
         }
         .confirmationDialog("切换 VPN 配置？", isPresented: $confirmSwitch) {
             Button("断开当前连接并切换") { Task { await model.switchToSelected() } }
-            Button("取消", role: .cancel) {}
+            Button("取消", role: .cancel) { }
         } message: {
-            Text("将先验证旧连接完全退出，再连接新配置；过程中网络可能短暂中断。")
+            Text("应用将验证旧会话退出，然后连接新配置。")
         }
+    }
+
+    private func miniStatistic(_ title: String, symbol: String,
+                               value: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(title, systemImage: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 21, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+        .padding(15)
+        .glassCard(cornerRadius: 15)
     }
 }
 

@@ -1,11 +1,23 @@
 import Foundation
 
+struct GitHubReleaseAsset: Decodable {
+    let name: String
+    let browser_download_url: URL
+}
 struct AvailableUpdate: Decodable {
     let tag_name: String
     let html_url: URL
+    let assets: [GitHubReleaseAsset]
+
+    var trustedInstallerURL: URL? {
+        assets.first(where: {
+            $0.name.lowercased().hasSuffix(".pkg") &&
+            ReleaseAssetPolicy.isApprovedInstaller($0.browser_download_url)
+        })?.browser_download_url
+    }
 }
 enum UpdateChecker {
-    /// Read-only check; the app does not execute downloaded code or silently update root services.
+    /// Read-only GitHub release metadata check. Installation needs explicit user consent.
     static func latestRelease() async throws -> AvailableUpdate {
         let endpoint = URL(string: "https://api.github.com/repos/javafancn/vpn-navigator/releases/latest")!
         var request = URLRequest(url: endpoint)

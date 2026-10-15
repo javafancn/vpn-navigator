@@ -475,15 +475,12 @@ final class ManagedTunnel {
             while task.isRunning && Date() < gracefulDeadline {
                 Thread.sleep(forTimeInterval: 0.05)
             }
+            // Do not send SIGKILL to a numeric PID from a delayed callback:
+            // PID reuse could target an unrelated process. Process.terminate()
+            // targets the child object, and an unresolved child is kept as
+            // recovery evidence rather than force-killed.
             if task.isRunning {
-                _ = Darwin.kill(task.processIdentifier, SIGKILL)
-                let forcedDeadline = Date().addingTimeInterval(2.0)
-                while task.isRunning && Date() < forcedDeadline {
-                    Thread.sleep(forTimeInterval: 0.05)
-                }
-            }
-            if task.isRunning {
-                lastError = "OpenVPN did not exit. Routes and session marker were retained; inspect the child process before retrying."
+                lastError = "OpenVPN did not exit after graceful termination. Routes and session marker were retained; inspect the child before retrying."
                 state = .failed
                 message = lastError!
                 return

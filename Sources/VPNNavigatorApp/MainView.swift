@@ -346,10 +346,10 @@ private struct ConnectionOverview: View {
                 HStack(spacing: 12) {
                     miniStatistic("累计接收", symbol: "arrow.down.circle.fill",
                                   value: formattedBytes(model.traffic?.receivedBytes),
-                                  samples: model.receiveTrend.samples
+                                  samples: model.receiveTrend.samples)
                     miniStatistic("累计发送", symbol: "arrow.up.circle.fill",
                                   value: formattedBytes(model.traffic?.sentBytes),
-                                  samples: model.sendTrend.samples
+                                  samples: model.sendTrend.samples)
                     miniStatistic("中国 IPv4 规则", symbol: "globe.asia.australia.fill",
                                   value: model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
                 }

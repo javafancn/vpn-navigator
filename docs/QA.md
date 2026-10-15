@@ -83,3 +83,8 @@ The following checks must be executed on a disposable Mac after Developer ID sig
 | A62 | Client cert inline data contains directive-like text | Managed routing scanner ignores inline certificate material |
 
 | A63 | Helper restarted with old active.ovpn/PID marker; user clicks Disconnect | No marker deletion or route rollback; only explicit absence-verified recovery can clear evidence |
+
+| A64 | OpenVPN DNS vars file contains shell metacharacters / control characters | Reject without evaluating any shell commands; no root DNS changes |
+| A65 | Management credentials contain CR/NUL/Unicode separators | Reject before management socket is opened |
+| A66 | Full VPN gateway or tunnel interface changes after CONNECTED | Watchdog detects path change; managed session terminates |
+| A67 | China Direct hot rule update changes routed sample unexpectedly | Fail update, disconnect and retain route journal until verified cleanup |

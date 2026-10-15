@@ -7,6 +7,7 @@ on:
     paths:
       - 'scripts/build-app.sh'
       - 'scripts/vendor-openvpn.py'
+      - 'Resources/Engine/macos-dns-updown.sh'
       - '.github/workflows/native-engine-smoke.yml'
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -30,6 +31,23 @@ jobs:
           python3 -m json.tool "$APP/Contents/Resources/openvpn-dependencies.json" >/dev/null
           test -x "$APP/Contents/Resources/macos-dns-updown.sh"
           /bin/bash -n "$APP/Contents/Resources/macos-dns-updown.sh"
+      - name: Reject injected DNS variables without running them
+        run: |
+          hook='dist/VPN Navigator.app/Contents/Resources/macos-dns-updown.sh'
+          safe="$RUNNER_TEMP/dns-safe.env"
+          bad="$RUNNER_TEMP/dns-bad.env"
+          sentinel="$RUNNER_TEMP/dns-injection-sentinel"
+          printf 'dev=utun4\\nscript_type=dns-up\\ndns_server_1_address_1=10.8.0.1\\n' > "$safe"
+          chmod 600 "$safe"
+          env dns_vars_file="$safe" /bin/bash "$hook" --check-dns-vars
+          printf 'dev=utun4\\nscript_type=dns-up\\ndns_search_domain_1=$(touch /tmp/unsafe-dns)\\n' > "$bad"
+          chmod 600 "$bad"
+          if env dns_vars_file="$bad" /bin/bash "$hook" --check-dns-vars; then
+            echo 'Unsafe DNS variable was accepted' >&2; exit 1
+          fi
+          if [[ -e /tmp/unsafe-dns ]]; then
+            echo 'Unsafe DNS variable was executed' >&2; exit 1
+          fi
       - name: Report
         run: |
           echo 'Engine smoke test passed on macOS runner.'

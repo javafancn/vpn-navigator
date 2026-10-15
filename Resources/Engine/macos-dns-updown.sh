@@ -26,6 +26,52 @@
 #   dns_server_1_sni dns.mycorp.in
 #
 
+# OpenVPN 2.7 writes DNS hook variables as plain NAME=value lines.
+# NEVER source that file: DNS names can originate from a VPN server, and
+# evaluating them as shell commands in a root hook is unacceptable.
+load_dns_vars_file() {
+    local path="${dns_vars_file:-}"
+    [ -n "$path" ] || return 0
+    [[ -f "$path" && ! -L "$path" ]] || return 1
+    local size owner mode
+    size=$(/usr/bin/stat -f %z "$path") || return 1
+    owner=$(/usr/bin/stat -f %u "$path") || return 1
+    mode=$(/usr/bin/stat -f %Lp "$path") || return 1
+    [[ "$size" =~ ^[0-9]+$ && "$size" -le 65536 ]] || return 1
+    [[ "$owner" == "$EUID" ]] || return 1
+    [[ "$mode" =~ ^[0-7]{3,4}$ ]] || return 1
+    (( (8#$mode & 0022) == 0 )) || return 1
+    local row key value
+    while IFS= read -r row || [[ -n "$row" ]]; do
+        [[ -n "$row" ]] || continue
+        [[ "$row" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || return 1
+        key="${BASH_REMATCH[1]}"
+        value="${BASH_REMATCH[2]}"
+        case "$key" in
+            dev|script_type|dns_search_domain_*|dns_server_*) ;;
+            *) continue ;;
+        esac
+        # The DNS/scutil hook accepts only simple DNS/address/port tokens,
+        # never whitespace, quotes, substitutions, shell metacharacters or
+        # scutil command delimiters.
+        [[ ${#value} -le 253 && "$value" =~ ^[A-Za-z0-9_.:/%+-]+$ ]] || return 1
+        printf -v "$key" '%s' "$value"
+    done < "$path"
+}
+load_dns_vars_file || { echo "invalid OpenVPN DNS variables" >&2; exit 1; }
+[[ "${dev:-}" =~ ^(utun|tun)[0-9]{1,4}$ ]] || {
+    echo "invalid OpenVPN DNS device" >&2; exit 1;
+}
+[[ "${script_type:-}" == "dns-up" || "${script_type:-}" == "dns-down" ]] || {
+    echo "invalid OpenVPN DNS hook phase" >&2; exit 1;
+}
+# Validation-only entry point: CI can exercise the hostile-input parser
+# without applying DNS settings or obtaining root privileges.
+if [[ "${1:-}" == "--check-dns-vars" ]]; then
+    exit 0
+fi
+
+
 lockdir=/var/lock
 if [ ! -d "${lockdir}" ]; then
     /bin/mkdir "${lockdir}"
@@ -42,8 +88,6 @@ while ! /usr/bin/shlock -f $lockfile -p $$; do
     sleep 0.2
 done
 trap "/bin/rm -f ${lockfile}" EXIT
-
-[ -z "${dns_vars_file}" ] || . "${dns_vars_file}"
 
 itf_dns_key="State:/Network/Service/openvpn-${dev}/DNS"
 

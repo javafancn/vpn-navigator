@@ -66,6 +66,28 @@ final class SafetyAndPlanningTests: XCTestCase {
         XCTAssertTrue(ManagementParser.parsePasswordChallenge(">PASSWORD:Need 'Auth' username/password"))
         XCTAssertFalse(ManagementParser.parsePasswordChallenge(">PASSWORD:Need 'Private Key' password"))
     }
+    func testManagementCredentialsRejectProtocolInjection() {
+        XCTAssertTrue(ManagementCredentialPolicy.allows(
+            username: "user@example.test", password: "quoted\\\"password", credentialsRequired: true))
+        let invalid = ["x" + String(UnicodeScalar(10)!) + "y",
+                       "x" + String(UnicodeScalar(13)!) + "y",
+                       "x" + String(UnicodeScalar(0)!) + "y",
+                       "x" + String(UnicodeScalar(127)!) + "y",
+                       "x" + String(UnicodeScalar(0x2028)!) + "y",
+                       "x" + String(UnicodeScalar(0x2029)!) + "y"]
+        for malicious in invalid {
+            XCTAssertFalse(ManagementCredentialPolicy.allows(
+                username: malicious, password: "safe", credentialsRequired: true))
+            XCTAssertFalse(ManagementCredentialPolicy.allows(
+                username: "safe", password: malicious, credentialsRequired: true))
+        }
+        XCTAssertFalse(ManagementCredentialPolicy.allows(
+            username: "", password: "x", credentialsRequired: true))
+        XCTAssertFalse(ManagementCredentialPolicy.allows(
+            username: String(repeating: "u", count: 1024),
+            password: "x", credentialsRequired: false))
+    }
+
     func testAuthenticationFailureState() {
         let value = ManagementParser.parseState(">STATE:1690000000,AUTH_FAILED,AUTH_FAILED")
         XCTAssertEqual(value?.state, .failed)

@@ -39,3 +39,29 @@ NOTARY_KEYCHAIN_PROFILE=your-keychain-profile ./scripts/notarize.sh
 Always test install, reconnect, shutdown, sleep/wake, uninstallation, emergency cleanup and both DNS/IPv6 behavior on a disposable test Mac before shipping.
 
 **Known blockers**: external certificate-file profiles are not supported by the strict privileged validator yet; signed distributable OpenVPN CLI binary isn't included; system-route hot update and crash recovery need real macOS integration tests. Not a production release.
+
+## Engine packaging (maintainer Mac)
+
+Install a verified OpenVPN 2.7.x formula on the **build machine only**, then:
+
+```bash
+brew install openvpn
+OPENVPN_BIN="$(brew --prefix openvpn)/sbin/openvpn" \
+DEVELOPER_ID_APPLICATION="Developer ID Application: ..." \
+zsh scripts/build-app.sh
+DEVELOPER_ID_INSTALLER="Developer ID Installer: ..." \
+zsh scripts/build-pkg.sh
+zsh scripts/release-audit.sh
+```
+
+`vendor-openvpn.py` recursively copies third-party Mach-O libraries into
+`Contents/Frameworks`, rewrites their load paths, runs `openvpn --version`,
+and records source paths/checksums in an engine-dependency manifest. Do not
+assume the manifest grants any redistribution license. Provide all required
+third-party notices, GPL OpenVPN source corresponding to the binary, and
+reproducible build instructions with any published installer. Do not release
+unsigned files or an unsigned UI-only CI artifact as a working VPN.
+
+`release-audit.sh` checks binaries, identity, Team ID, libraries and plists;
+it **cannot** substitute for physical macOS networking, entitlement and
+notarization testing.

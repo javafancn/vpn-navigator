@@ -80,6 +80,9 @@ private struct ProfileDetail: View {
     @State private var draftGroup = ""
     @State private var draftNotes = ""
     @State private var draftFavorite = false
+    @State private var editorText = ""
+    @State private var showingEditor = false
+    @State private var history: [ProfileRevision] = []
 
     var body: some View {
         ScrollView {
@@ -105,6 +108,44 @@ private struct ProfileDetail: View {
                                 Task {
                                     await model.updateMetadata(name: draftName,
                                         group: draftGroup, notes: draftNotes, favorite: draftFavorite)
+                                }
+                            }
+                        }
+                    }.padding(8)
+                }
+                GroupBox("Configuration & versions") {
+                    VStack(alignment: .leading, spacing: 9) {
+                        HStack {
+                            Button("Edit .ovpn…") {
+                                Task {
+                                    if let source = await model.editSource(for: profile) {
+                                        editorText = source
+                                        showingEditor = true
+                                    }
+                                }
+                            }
+                            Spacer()
+                            Button("Refresh History") {
+                                Task { history = await model.revisions(for: profile) }
+                            }
+                        }
+                        Text("The editor may display private keys. Revisions are kept only in the private local profile repository.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if history.isEmpty {
+                            Text("No previous versions yet").foregroundStyle(.secondary)
+                        }
+                        ForEach(history.prefix(10)) { revision in
+                            HStack {
+                                Text(revision.createdAt, style: .date)
+                                Text(revision.createdAt, style: .time)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Restore") {
+                                    Task {
+                                        if await model.restoreSource(for: profile, revision: revision.filename) {
+                                            history = await model.revisions(for: profile)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -164,11 +205,41 @@ private struct ProfileDetail: View {
             .padding(25).frame(maxWidth: 850, alignment: .leading)
         }
         .navigationTitle(profile.name)
+        .sheet(isPresented: $showingEditor) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Edit OpenVPN Configuration").font(.title2.bold())
+                Text("This configuration may include private keys. Unsafe scripts and unsupported options cannot be saved. Changes apply after reconnecting.")
+                    .font(.callout).foregroundStyle(.secondary)
+                TextEditor(text: $editorText)
+                    .font(.system(.body, design: .monospaced))
+                    .border(Color.secondary.opacity(0.3))
+                HStack {
+                    Button("Cancel") {
+                        editorText = ""
+                        showingEditor = false
+                    }
+                    Spacer()
+                    Button("Save Version") {
+                        Task {
+                            if await model.saveSource(for: profile, text: editorText) {
+                                editorText = ""
+                                history = await model.revisions(for: profile)
+                                showingEditor = false
+                            }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(22)
+            .frame(minWidth: 720, minHeight: 530)
+        }
         .onAppear {
             draftName = profile.name
             draftGroup = profile.group
             draftNotes = profile.notes
             draftFavorite = profile.isFavorite
+            Task { history = await model.revisions(for: profile) }
         }
     }
 }

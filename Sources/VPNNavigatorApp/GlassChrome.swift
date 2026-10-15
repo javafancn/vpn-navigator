@@ -100,7 +100,7 @@ final class NativeWindowGlass: NSVisualEffectView {
         window.titleVisibility = .hidden
         window.styleMask.insert(.fullSizeContentView)
         // Let users drag the chrome, not form controls or cards.
-        window.isMovableByWindowBackground = false
+        window.isMovableByWindowBackground = true
     }
 }
 

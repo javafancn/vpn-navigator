@@ -403,6 +403,8 @@ struct VPNNavigatorApp: App {
             MainView().environmentObject(model)
                 .frame(minWidth: 990, minHeight: 635)
         }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1090, height: 705)
         MenuBarExtra("VPN Navigator", systemImage: "network") {
             GlassMenuBarView().environmentObject(model)
         }

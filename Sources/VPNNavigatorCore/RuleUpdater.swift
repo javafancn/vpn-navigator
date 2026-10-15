@@ -20,6 +20,7 @@ public actor RuleUpdater {
               let content = String(data: data, encoding: .utf8) else { throw RuleError.tooLarge }
         let validated = try RuleSet(text: content)
         guard validated.routes.count >= 100 else { throw RuleError.empty }
+        if let previous = try cached() { try Self.validateChange(previous: previous, next: validated) }
         return validated
     }
     public func commit(_ value: RuleSet) throws {

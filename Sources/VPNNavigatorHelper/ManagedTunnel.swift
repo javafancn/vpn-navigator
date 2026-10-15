@@ -212,6 +212,7 @@ final class ManagedTunnel {
               let plan = activePlan, let executor = routing else { throw TunnelError.noActiveRoutePlan }
         let next = try RuleSet(text: text)
         guard next.routes.count >= 100 else { throw TunnelError.missingRules }
+        try RuleUpdater.validateChange(previous: oldRules, next: next)
         let diff = next.diff(from: oldRules)
         let gateway: String
         switch plan.endpoint.destination {

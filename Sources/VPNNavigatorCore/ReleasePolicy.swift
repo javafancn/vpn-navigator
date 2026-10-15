@@ -1,0 +1,39 @@
+import Foundation
+
+/// Accept only stable, numeric macOS release versions.
+public struct ReleaseVersion: Comparable, Equatable, Sendable, CustomStringConvertible {
+    public let major: Int
+    public let minor: Int
+    public let patch: Int
+
+    public init?(_ value: String) {
+        let raw = value.hasPrefix("v") ? String(value.dropFirst()) : value
+        let components = raw.split(separator: ".", omittingEmptySubsequences: false)
+        guard components.count == 3 else { return nil }
+        var numbers: [Int] = []
+        for component in components {
+            guard !component.isEmpty,
+                  component.allSatisfy({ $0.isASCII && $0.isNumber }),
+                  let number = Int(component), number >= 0 else { return nil }
+            numbers.append(number)
+        }
+        major = numbers[0]; minor = numbers[1]; patch = numbers[2]
+    }
+
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        (lhs.major, lhs.minor, lhs.patch) < (rhs.major, rhs.minor, rhs.patch)
+    }
+    public var description: String { "\(major).\(minor).\(patch)" }
+}
+
+public enum ReleaseAssetPolicy {
+    public static func isApprovedReleasePage(_ url: URL) -> Bool {
+        url.scheme == "https" && url.host == "github.com" &&
+        url.path.hasPrefix("/javafancn/vpn-navigator/releases/tag/")
+    }
+    public static func isApprovedInstaller(_ url: URL) -> Bool {
+        url.scheme == "https" && url.host == "github.com" &&
+        url.path.hasPrefix("/javafancn/vpn-navigator/releases/download/") &&
+        url.pathExtension.lowercased() == "pkg"
+    }
+}

@@ -31,6 +31,10 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
     }
     func updateRules(_ text: String, reply: @escaping (String) -> Void) {
         queue.async {
+            if self.engine.state != .connected || self.engine.activeSplitRoutes == false {
+                reply("NO_ACTIVE_SPLIT")
+                return
+            }
             do { try self.engine.changeRules(text); reply("Rules applied") }
             catch { reply("ERROR: \(error.localizedDescription)") }
         }

@@ -24,6 +24,7 @@ final class ManagedTunnel {
     }
     private(set) var state: TunnelState = .disconnected
     private(set) var message = "Disconnected"
+    var activeSplitRoutes: Bool { activeMode == .chinaDirect && routing != nil }
 
     func start(profile text: String, mode: RoutingMode, ruleText: String,
                username: String, password: String) throws {

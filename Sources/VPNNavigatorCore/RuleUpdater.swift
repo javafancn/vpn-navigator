@@ -23,6 +23,25 @@ public actor RuleUpdater {
         return validated
     }
     public func commit(_ value: RuleSet) throws {
+        if let previous = try cached() {
+            try Self.validateChange(previous: previous, next: value)
+        }
+        try save(value)
+    }
+    public static func validateChange(previous: RuleSet, next: RuleSet) throws {
+        guard previous.routes.count > 0 else { throw RuleError.empty }
+        let old = previous.routes.count, current = next.routes.count
+        // Country route lists usually change incrementally. Reject abrupt
+        // feed corruption or hijacks without replacing the last known-good copy.
+        guard current >= old * 85 / 100, current <= old * 115 / 100 else {
+            throw RuleError.suspiciousChange
+        }
+        let delta = next.diff(from: previous)
+        guard delta.added.count + delta.removed.count <= max(100, old / 3) else {
+            throw RuleError.suspiciousChange
+        }
+    }
+    private func save(_ value: RuleSet) throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
         let target = folder.appendingPathComponent("china-ipv4.txt")

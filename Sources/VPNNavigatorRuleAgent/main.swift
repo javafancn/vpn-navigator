@@ -24,7 +24,7 @@ enum RuleAgent {
                 let result = await HelperMessage.request { api, reply in
                     api.updateRules(candidate.routes.map(\.description).joined(separator: "\n"), reply: reply)
                 }
-                guard result == "Rules applied" else {
+                guard result == "Rules applied" || result == "NO_ACTIVE_SPLIT" else {
                     fputs("Active route update failed; previous cache preserved.\n", stderr)
                     return
                 }

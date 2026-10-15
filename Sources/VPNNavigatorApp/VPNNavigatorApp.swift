@@ -76,9 +76,9 @@ final class AppModel: ObservableObject {
         busy = true; defer { busy = false }
         do {
             let candidate = try await updater.fetchCandidate()
-            if connected, selected?.mode == .chinaDirect {
+            if connected {
                 let response = await helper.updateRules(candidate.routes.map(\.description).joined(separator: "\n"))
-                guard !response.hasPrefix("ERROR:") else {
+                guard response == "Rules applied" || response == "NO_ACTIVE_SPLIT" else {
                     message = "Existing routes unchanged. \(response)"
                     return
                 }

@@ -3,6 +3,8 @@ import Foundation
 public struct RuleSet: Sendable {
     public let routes: [IPv4CIDR]
     public init(text: String) throws {
+        // Also enforced on data received over XPC, not only HTTP downloads.
+        guard text.utf8.count <= 2_000_000 else { throw RuleError.tooLarge }
         var result = Set<IPv4CIDR>()
         for row in text.components(separatedBy: .newlines) {
             let line = row.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -12,6 +14,7 @@ public struct RuleSet: Sendable {
             // Refuse default-route and private/special prefixes from a third-party GeoIP feed.
             guard route.prefix >= 8, !Self.isSpecial(route) else { throw CIDRError.invalid(line) }
             result.insert(route)
+            guard result.count <= 30_000 else { throw RuleError.tooLarge }
         }
         guard !result.isEmpty else { throw RuleError.empty }
         routes = result.sorted()

@@ -391,35 +391,59 @@ final class ManagedTunnel {
         networkWatchdog?.cancel()
         networkWatchdog = nil
         lastError = nil
-        // Roll back routes before terminating the tunnel.
-        routing?.rollback()
-        routing = nil
-        activePlan = nil
-        protectedLocalNetworks = []
+        state = .stopping
+        message = "Stopping OpenVPN before restoring network routes"
         management?.close()
         management = nil
+
+        // Releasing /1 VPN routes while OpenVPN is still running may expose
+        // connections over the physical default gateway. Terminate the child
+        // before restoring routes, and never erase crash evidence on uncertainty.
         if let task = process, task.isRunning {
             task.terminate()
-            let until = Date().addingTimeInterval(2.0)
-            while task.isRunning && Date() < until {
+            let gracefulDeadline = Date().addingTimeInterval(2.0)
+            while task.isRunning && Date() < gracefulDeadline {
                 Thread.sleep(forTimeInterval: 0.05)
             }
             if task.isRunning {
                 _ = Darwin.kill(task.processIdentifier, SIGKILL)
+                let forcedDeadline = Date().addingTimeInterval(2.0)
+                while task.isRunning && Date() < forcedDeadline {
+                    Thread.sleep(forTimeInterval: 0.05)
+                }
+            }
+            if task.isRunning {
+                lastError = "OpenVPN did not exit. Routes and session marker were retained; inspect the child process before retrying."
+                state = .failed
+                message = lastError!
+                return
             }
         }
         stopRoutesAndReset()
     }
+
     private func stopRoutesAndReset() {
+        // Invoked by both explicit disconnect and a natural process-exit
+        // callback. A stale callback must never restore routes for a live VPN.
+        guard TunnelShutdownPolicy.mayRestoreRoutes(openVPNExited: process?.isRunning != true) else {
+            state = .failed
+            message = "OpenVPN is still running; preserving VPN routes and recovery evidence."
+            return
+        }
         routing?.rollback()
         routing = nil
         activePlan = nil
         protectedLocalNetworks = []
         process = nil
         traffic = nil
-        let unresolved = FileManager.default.fileExists(atPath: workdir.appendingPathComponent("routes.journal").path)
+        let unresolved = FileManager.default.fileExists(
+            atPath: workdir.appendingPathComponent("routes.journal").path)
         state = unresolved || lastError != nil ? .failed : .disconnected
-        message = unresolved ? "VPN stopped, but some routes require safe recovery." : (lastError ?? "Disconnected")
+        message = unresolved ?
+            "OpenVPN exited, but some routes still require manual recovery." :
+            (lastError ?? "Disconnected")
+        // The active profile is only cleared once the child is known to have
+        // stopped. A persistent route journal independently blocks reconnect.
         for name in ["active.ovpn", "management.sock", "auth.txt"] {
             try? FileManager.default.removeItem(at: workdir.appendingPathComponent(name))
         }

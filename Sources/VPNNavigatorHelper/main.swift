@@ -24,7 +24,14 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
         }
     }
     func disconnect(reply: @escaping (String) -> Void) {
-        queue.async { self.engine.stop(); reply("Disconnected") }
+        queue.async {
+            self.engine.stop()
+            if self.engine.state == .disconnected {
+                reply("Disconnected")
+            } else {
+                reply("ERROR: " + self.engine.message)
+            }
+        }
     }
     func connectionStatus(reply: @escaping (String) -> Void) {
         queue.async { reply("\(self.engine.state.rawValue): \(self.engine.message)") }

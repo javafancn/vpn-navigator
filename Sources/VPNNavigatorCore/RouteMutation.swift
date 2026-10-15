@@ -26,3 +26,11 @@ public enum RouteRecoveryGate {
         !hasPendingMutation && !hasOrphanedOpenVPN
     }
 }
+
+public enum TunnelShutdownPolicy {
+    /// Routes must not be restored while a potentially active OpenVPN process
+    /// still owns the tunnel. This does not substitute for a PF kill switch.
+    public static func mayRestoreRoutes(openVPNExited: Bool) -> Bool {
+        openVPNExited
+    }
+}

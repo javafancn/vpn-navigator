@@ -36,7 +36,7 @@ struct MainView: View {
         ZStack {
             GlassAtmosphere()
             HStack(spacing: 0) {
-                sidebar.frame(width: 188)
+                sidebar.frame(width: 180)
                 Rectangle().fill(Color.white.opacity(0.26)).frame(width: 1)
                 VStack(spacing: 0) {
                     topBar
@@ -54,7 +54,7 @@ struct MainView: View {
                 }
             }
         }
-        .frame(minWidth: 1030, minHeight: 655)
+        .frame(minWidth: 990, minHeight: 635)
         .preferredColorScheme(nil)
         .fileImporter(isPresented: $importing,
                       allowedContentTypes: [.init(filenameExtension: "ovpn")!],
@@ -96,8 +96,8 @@ struct MainView: View {
             }
             .padding(.leading, 16)
             .padding(.trailing, 8)
-            .padding(.top, 63)
-            .padding(.bottom, 28)
+            .padding(.top, 42)
+            .padding(.bottom, 21)
 
             ForEach(WorkspaceTab.allCases) { item in
                 Button { withAnimation(.easeInOut(duration: 0.16)) { tab = item } } label: {
@@ -110,7 +110,7 @@ struct MainView: View {
                     }
                     .foregroundStyle(tab == item ? Color.white : Color.primary)
                     .padding(.horizontal, 12)
-                    .frame(height: 37)
+                    .frame(height: 34)
                     .background {
                         if tab == item {
                             RoundedRectangle(cornerRadius: 9)
@@ -126,7 +126,7 @@ struct MainView: View {
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(tab == item ? .isSelected : [])
                 .padding(.horizontal, 10)
-                .padding(.bottom, 5)
+                .padding(.bottom, 4)
             }
             Spacer(minLength: 20)
             VStack(alignment: .leading, spacing: 8) {
@@ -150,6 +150,7 @@ struct MainView: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 14)
         }
+        .background(Color.white.opacity(0.39))
         .background(.ultraThinMaterial)
     }
 
@@ -172,7 +173,8 @@ struct MainView: View {
             .controlSize(.regular)
         }
         .padding(.leading, 24).padding(.trailing, 20)
-        .frame(height: 53)
+        .frame(height: 45)
+        .background(Color.white.opacity(0.42))
         .background(.ultraThinMaterial)
     }
 }
@@ -186,13 +188,13 @@ struct WorkspaceHeading: View {
             Image(systemName: symbol)
                 .font(.system(size: 24, weight: .medium))
                 .foregroundStyle(.blue)
-                .frame(width: 46, height: 46)
+                .frame(width: 40, height: 40)
                 .background(Color.blue.opacity(0.1),
                             in: RoundedRectangle(cornerRadius: 13))
                 .overlay(RoundedRectangle(cornerRadius: 13)
                     .strokeBorder(Color.white.opacity(0.45)))
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 22, weight: .bold, design: .rounded))
+                Text(title).font(.system(size: 21, weight: .bold, design: .rounded))
                 Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
@@ -213,12 +215,12 @@ struct VPNPanel<Content: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: symbol)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(GlassPalette.ink.opacity(0.83))
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassCard(cornerRadius: 16)
+        .padding(14)
+        .glassCard(cornerRadius: 14)
     }
 }
 
@@ -350,7 +352,7 @@ private struct ConnectionOverview: View {
                                   value: model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
                 }
             }
-            .padding(22)
+            .padding(19)
             .frame(maxWidth: 1060, alignment: .leading)
         }
         .confirmationDialog("切换 VPN 配置？", isPresented: $confirmSwitch) {

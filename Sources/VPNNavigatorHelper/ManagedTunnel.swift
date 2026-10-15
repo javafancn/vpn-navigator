@@ -136,6 +136,20 @@ final class ManagedTunnel {
             routing = nil
             activePlan = nil
         }
+        if snapshot.state == .connected, activeMode == .fullVPN {
+            do {
+                try verifyForeignVPNRoute(knownTunnel: nil)
+                state = .connected
+                message = "Connected · global VPN route verified"
+            } catch {
+                let reason = "Full VPN routing is not active: \(error.localizedDescription)"
+                stop()
+                lastError = reason
+                state = .failed
+                message = reason
+            }
+            return
+        }
         guard snapshot.state == .connected, activeMode == .chinaDirect,
               routing == nil, let remote = snapshot.remoteIPv4, let tunnelIP = snapshot.localTunnelIPv4,
               let rules else { return }
@@ -153,6 +167,7 @@ final class ManagedTunnel {
                                               vpnInterface: utun, localPrefixes: [], china: rules)
             let executor = RouteExecutor(journal: workdir.appendingPathComponent("routes.journal"))
             try executor.apply(plan.installOrder)
+            try verifySplitRoutes(plan: plan, country: rules)
             activePlan = plan
             routing = executor
             state = .connected
@@ -181,6 +196,30 @@ final class ManagedTunnel {
         }
         return nil
     }
+    private func verifyForeignVPNRoute(knownTunnel: String?) throws {
+        let observation = try RouteExecutor.command("/sbin/route", ["-n", "get", "8.8.8.8"])
+        guard let path = Self.parseValue("interface:", in: observation),
+              path.hasPrefix("utun"),
+              knownTunnel == nil || path == knownTunnel else {
+            throw TunnelError.routeVerificationFailed
+        }
+    }
+
+    private func verifySplitRoutes(plan: RoutePlan, country: RuleSet) throws {
+        guard case .interface(let utun) = plan.vpnDefaults[0].destination,
+              case .viaGateway(let physical) = plan.endpoint.destination,
+              let direct = country.routes.first(where: { $0.prefix < 32 }) else {
+            throw TunnelError.routeVerificationFailed
+        }
+        let sample = IPv4CIDR.parseAddressString(direct.network + 1)
+        let observation = try RouteExecutor.command("/sbin/route", ["-n", "get", sample])
+        guard Self.parseValue("gateway:", in: observation) == physical,
+              Self.parseValue("interface:", in: observation)?.hasPrefix("en") == true else {
+            throw TunnelError.routeVerificationFailed
+        }
+        try verifyForeignVPNRoute(knownTunnel: utun)
+    }
+
     private func startNetworkWatchdog() {
         networkWatchdog?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -256,7 +295,7 @@ final class ManagedTunnel {
 }
 enum TunnelError: Error, LocalizedError {
     case needRoot, alreadyRunning, missingRules, badCredential, engineMissing,
-         managementUnavailable, noPhysicalGateway, noTunnelInterface, noActiveRoutePlan, ipv6Unsafe, unresolvedRoutes
+         managementUnavailable, noPhysicalGateway, noTunnelInterface, noActiveRoutePlan, ipv6Unsafe, unresolvedRoutes, routeVerificationFailed
 
     var errorDescription: String? {
         switch self {
@@ -271,6 +310,7 @@ enum TunnelError: Error, LocalizedError {
         case .noTunnelInterface: return "Cannot verify the OpenVPN utun interface."
         case .noActiveRoutePlan: return "No active split-routing session."
         case .unresolvedRoutes: return "Unresolved routes remain from an earlier session. Diagnose and safely restore them before reconnecting."
+        case .routeVerificationFailed: return "macOS route lookup does not match the requested VPN policy."
         }
     }
 }

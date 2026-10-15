@@ -14,10 +14,33 @@ public struct VPNProfile: Codable, Identifiable, Equatable, Sendable {
     public var relativePath: String
     public var mode: RoutingMode
     public var importedAt: Date
+    public var group: String
+    public var notes: String
+    public var isFavorite: Bool
+
     public init(id: UUID = UUID(), name: String, sourceFilename: String,
-                relativePath: String, mode: RoutingMode = .original, importedAt: Date = Date()) {
+                relativePath: String, mode: RoutingMode = .original, importedAt: Date = Date(),
+                group: String = "Personal", notes: String = "", isFavorite: Bool = false) {
         self.id = id; self.name = name; self.sourceFilename = sourceFilename
         self.relativePath = relativePath; self.mode = mode; self.importedAt = importedAt
+        self.group = group; self.notes = notes; self.isFavorite = isFavorite
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, sourceFilename, relativePath, mode, importedAt, group, notes, isFavorite
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        sourceFilename = try container.decode(String.self, forKey: .sourceFilename)
+        relativePath = try container.decode(String.self, forKey: .relativePath)
+        mode = try container.decode(RoutingMode.self, forKey: .mode)
+        importedAt = try container.decode(Date.self, forKey: .importedAt)
+        group = try container.decodeIfPresent(String.self, forKey: .group) ?? "Personal"
+        notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
     }
 }
 

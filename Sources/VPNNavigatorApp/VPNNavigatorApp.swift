@@ -90,6 +90,46 @@ final class AppModel: ObservableObject {
         catch { message = error.localizedDescription }
     }
 
+    func editSource(for profile: VPNProfile) async -> String? {
+        do { return try await store.runtimeConfig(for: profile) }
+        catch { message = "Cannot open configuration: \(error.localizedDescription)"; return nil }
+    }
+
+    func saveSource(for profile: VPNProfile, text: String) async -> Bool {
+        guard !connected && !connecting else {
+            message = "Disconnect before editing a VPN profile."
+            return false
+        }
+        do {
+            try await store.revise(profile, text: text)
+            message = "Configuration saved and previous version archived."
+            return true
+        } catch {
+            message = "Configuration was not saved: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    func revisions(for profile: VPNProfile) async -> [ProfileRevision] {
+        do { return try await store.revisions(for: profile) }
+        catch { message = "Cannot read profile history: \(error.localizedDescription)"; return [] }
+    }
+
+    func restoreSource(for profile: VPNProfile, revision: String) async -> Bool {
+        guard !connected && !connecting else {
+            message = "Disconnect before restoring a VPN profile."
+            return false
+        }
+        do {
+            try await store.restore(profile, revision: revision)
+            message = "Previous configuration restored. The newer version was archived."
+            return true
+        } catch {
+            message = "Restore refused: \(error.localizedDescription)"
+            return false
+        }
+    }
+
     func deleteSelected() async {
         guard let item = selected else { return }
         do { try await store.delete(id: item.id); KeychainVault.remove(id: item.id); selectedID = nil; await load() }

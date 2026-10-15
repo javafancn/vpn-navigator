@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import VPNNavigatorCore
 
 /// Root-only route executor. Every OS mutation is bracketed by durable
@@ -137,8 +138,16 @@ final class RouteExecutor {
         try handle.synchronize()
     }
 
+    /// Bounded system-tool invocation: never run a shell or external profile
+    /// commands, and never let a stuck route/netstat command hang the root queue.
     @discardableResult
     static func command(_ executable: String, _ arguments: [String]) throws -> String {
+        let allowlisted: Set<String> = [
+            "/sbin/route", "/usr/sbin/netstat", "/sbin/ifconfig"
+        ]
+        guard allowlisted.contains(executable) else {
+            throw RouteExecutionError.disallowedExecutable
+        }
         let task = Process()
         task.executableURL = URL(fileURLWithPath: executable)
         task.arguments = arguments
@@ -146,8 +155,23 @@ final class RouteExecutor {
         task.standardOutput = output
         task.standardError = output
         try task.run()
+
+        let timeout = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+        timeout.schedule(deadline: .now() + .seconds(12))
+        timeout.setEventHandler { [weak task] in
+            guard let task, task.isRunning else { return }
+            task.terminate()
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + .seconds(2)) {
+                if task.isRunning { _ = Darwin.kill(task.processIdentifier, SIGKILL) }
+            }
+        }
+        timeout.resume()
         let data = output.fileHandleForReading.readDataToEndOfFile()
         task.waitUntilExit()
+        timeout.cancel()
+        guard data.count <= 8_000_000 else {
+            throw RouteExecutionError.commandOutputTooLarge
+        }
         guard task.terminationStatus == 0 else {
             throw RouteExecutionError.commandFailed(executable)
         }
@@ -155,7 +179,26 @@ final class RouteExecutor {
     }
 }
 
-enum RouteExecutionError: Error {
+enum RouteExecutionError: Error, LocalizedError {
     case existingRoute(String), commandFailed(String), routeOwnershipLost(String)
-    case ambiguousJournal, journalFailure
+    case ambiguousJournal, journalFailure, disallowedExecutable, commandOutputTooLarge
+
+    var errorDescription: String? {
+        switch self {
+        case .existingRoute(let prefix):
+            return "An existing system route already covers \(prefix)."
+        case .commandFailed(let command):
+            return "The system network command failed: \(command)."
+        case .routeOwnershipLost(let prefix):
+            return "Cannot verify ownership of route \(prefix); refusing to delete it."
+        case .ambiguousJournal:
+            return "A previous route mutation may be incomplete. Manual network verification is required."
+        case .journalFailure:
+            return "Cannot durably record route changes. System routing has not been modified."
+        case .disallowedExecutable:
+            return "System tool is not permitted for privileged route execution."
+        case .commandOutputTooLarge:
+            return "Unexpectedly large system routing output; operation aborted."
+        }
+    }
 }

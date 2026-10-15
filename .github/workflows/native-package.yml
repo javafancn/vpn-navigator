@@ -46,6 +46,22 @@ jobs:
           codesign --force --sign - --identifier com.javafancn.vpn-navigator "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
           echo 'This ad-hoc signature is NOT an Apple Developer ID signature and is NOT notarized.'
+      - name: Best-effort native UI screenshot (macOS CI)
+        continue-on-error: true
+        run: |
+          APP='dist/VPN Navigator.app'
+          open "$APP" || true
+          sleep 5
+          screencapture -x "$RUNNER_TEMP/VPNNavigator-UI-Screenshot.png" || true
+          if [[ ! -s "$RUNNER_TEMP/VPNNavigator-UI-Screenshot.png" ]]; then
+            echo 'No interactive WindowServer screenshot available on this runner.'
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VPNNavigator-visual-smoke
+          path: ${{ runner.temp }}/VPNNavigator-UI-Screenshot.png
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Package verified .app using macOS ditto
         run: |
           APP='dist/VPN Navigator.app'

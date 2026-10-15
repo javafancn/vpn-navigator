@@ -17,12 +17,14 @@ final class ManagedTunnel {
     private var protectedLocalNetworks: [IPv4CIDR] = []
     private var protectedPhysicalInterface: String?
     private var lastError: String?
+    private var orphanRecordFile: URL { workdir.appendingPathComponent("openvpn-child.json") }
 
     init() {
         // Never remove routes while an OpenVPN process may still be alive
         // after an unexpected root-helper crash.
         let orphan = workdir.appendingPathComponent("active.ovpn")
-        if FileManager.default.fileExists(atPath: orphan.path) {
+        if FileManager.default.fileExists(atPath: orphan.path) ||
+           FileManager.default.fileExists(atPath: orphanRecordFile.path) {
             state = .failed
             message = "Unverified previous OpenVPN session; do not automatically reclaim routes."
             return
@@ -44,7 +46,8 @@ final class ManagedTunnel {
     func start(profile text: String, profileID: UUID, mode: RoutingMode, ruleText: String,
                username: String, password: String) throws {
         guard getuid() == 0 else { throw TunnelError.needRoot }
-        guard !FileManager.default.fileExists(atPath: workdir.appendingPathComponent("active.ovpn").path) else {
+        guard !FileManager.default.fileExists(atPath: workdir.appendingPathComponent("active.ovpn").path),
+              !FileManager.default.fileExists(atPath: orphanRecordFile.path) else {
             throw TunnelError.orphanedSession
         }
         guard !FileManager.default.fileExists(atPath: workdir.appendingPathComponent("routes.journal").path) else {
@@ -113,6 +116,10 @@ final class ManagedTunnel {
         message = "OpenVPN is starting"
         do {
             try task.run()
+            let record = try OrphanProcessRecord(pid: task.processIdentifier)
+            try JSONEncoder().encode(record).write(to: orphanRecordFile, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                  ofItemAtPath: orphanRecordFile.path)
             let socket = ManagementSocket()
             if validated.requestsCredentials {
                 socket.setCredentials(username: username, password: password)
@@ -355,12 +362,43 @@ final class ManagedTunnel {
         guard process == nil else {
             return "ERROR: Disconnect the current VPN before recovering routes."
         }
-        guard !FileManager.default.fileExists(atPath: workdir.appendingPathComponent("active.ovpn").path) else {
-            return "ERROR: An unverified OpenVPN child process may still be running. Do not clean up blindly."
+        let orphanProfile = workdir.appendingPathComponent("active.ovpn")
+        if FileManager.default.fileExists(atPath: orphanProfile.path) ||
+           FileManager.default.fileExists(atPath: orphanRecordFile.path) {
+            // Refuse any automatic kill. Only ESRCH conclusively tells us the
+            // recorded child PID is no longer active. PID reuse is blocked.
+            guard let bytes = try? Data(contentsOf: orphanRecordFile),
+                  let record = try? JSONDecoder().decode(OrphanProcessRecord.self, from: bytes),
+                  record.pid > 1 else {
+                return "ERROR: A previous session has no trustworthy process record."
+            }
+            errno = 0
+            let result = Darwin.kill(record.pid, 0)
+            guard OrphanProcessRecovery.canClearStaleMarker(
+                pidRecordPresent: true,
+                pidConfirmedAbsent: result == -1 && errno == ESRCH) else {
+                return "ERROR: The previous process PID still exists or cannot be verified. No signals were sent."
+            }
+            // The exact prior child PID no longer exists, so no process can be
+            // using that identity. Any unfinished route operation remains gated
+            // by the independent durable route journal.
+            do {
+                try FileManager.default.removeItem(at: orphanRecordFile)
+                if FileManager.default.fileExists(atPath: orphanProfile.path) {
+                    try FileManager.default.removeItem(at: orphanProfile)
+                }
+                let staleSocket = workdir.appendingPathComponent("management.sock")
+                try? FileManager.default.removeItem(at: staleSocket)
+            } catch {
+                return "ERROR: Cannot clear verified stale process markers: \(error.localizedDescription)"
+            }
         }
         let journal = workdir.appendingPathComponent("routes.journal")
         guard FileManager.default.fileExists(atPath: journal.path) else {
-            return "No orphaned VPN Navigator routes were found."
+            lastError = nil
+            state = .disconnected
+            message = "Verified previous OpenVPN process is gone and no orphaned routes remain."
+            return message
         }
         _ = RouteExecutor(journal: journal)
         if FileManager.default.fileExists(atPath: journal.path) {
@@ -478,7 +516,7 @@ final class ManagedTunnel {
             (lastError ?? "Disconnected")
         // The active profile is only cleared once the child is known to have
         // stopped. A persistent route journal independently blocks reconnect.
-        for name in ["active.ovpn", "management.sock", "auth.txt"] {
+        for name in ["active.ovpn", "management.sock", "auth.txt", "openvpn-child.json"] {
             try? FileManager.default.removeItem(at: workdir.appendingPathComponent(name))
         }
     }

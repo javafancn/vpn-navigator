@@ -15,3 +15,11 @@ Expected in China Direct: the mainland IP uses the physical `en*` interface and 
 Also test corporate split DNS, IPv6, interruption, Wi-Fi changes, sleep/wake, helper crash recovery, and uninstall/upgrade. Explicit failures must leave the machine's own network usable or provide an actionable restoration path.
 
 Do not upload real VPN profiles, passwords, private keys or private resolver domains to CI. This project does not claim production readiness until the checks in [QA.md](QA.md) are performed and recorded on actual hardware.
+
+## New negative-path acceptance checks
+
+Validate managed profile route collisions, server-pushed route behavior,
+tunnel reconnecting, DNS resolver restoration, orphan PID recovery and
+physical IPv6 emergence on an isolated test Mac. Root helper watchdog
+polling does **not** ensure packet-level leak freedom between samples.
+A true kill switch and IPv6 country routing remain release blockers.

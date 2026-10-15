@@ -108,3 +108,16 @@ signed Mac. See `docs/PF_LEAK_GUARD.md`.
 After abnormal process termination, route restoration is only attempted
 once the OpenVPN process has exited. Any inability to confirm exit retains
 the private session files and guards against competing new tunnels.
+
+## Bounded cleanup of a dead child process
+
+`OrphanProcessRecord` is created after `Process.run()`, and is deleted
+only once the child is known to have terminated. A restarted helper refuses
+automatic route cleanup while this record or `active.ovpn` is present.
+"Attempt Safe Network Recovery" checks an untrusted historical PID only for
+absence (ESRCH); it never sends SIGTERM/SIGKILL to it. When the old PID is
+absent, recovery removes the stale child markers and attempts an independent
+ownership-checked route-journal rollback. Ambiguous WAL records still block.
+
+The route-managed reconnect event is a fail-safe disconnect, **not**
+seamless auto-reconnect and **not** an active PF firewall kill switch.

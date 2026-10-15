@@ -77,3 +77,24 @@ VPN release. See [QA](docs/QA.md).
 
 The shipping VPN remains **IPv4-only for non-original policies**, refuses
 unsafe IPv6 defaults and has no validated PF-enforced leak protection.
+
+## Route-management safety and recovery notes (October 2026)
+
+The managed Full VPN and China Direct modes now reject local `.ovpn`
+`route`/`route-ipv6`/`redirect-gateway` statements, and send
+OpenVPN compatibility `pull-filter` directives for server-pushed routes.
+The original profile remains available for Original mode. **These filters
+are not a hostile-server security boundary:** OpenVPN upstream warns that
+prefix matching may be bypassed by whitespace variations.
+
+On an OpenVPN RECONNECTING event, route-managed sessions terminate instead
+of releasing route ownership while the OpenVPN child is still alive. The
+Original mode continues to use OpenVPN's internal reconnect. Automatic safe
+reconnect for managed routes requires a verified firewall kill switch and
+hardware network-state testing; it is deliberately disabled for now.
+
+The helper writes a private root-owned `openvpn-child.json` containing the
+launched child PID. After an abnormal helper exit, **manual safe recovery**
+may clear the old session marker if `kill(pid, 0)` conclusively reports
+`ESRCH`. Any live/reused PID, missing record or ambiguous route journal
+blocks cleanup. No orphan is forcibly killed by PID.

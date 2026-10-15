@@ -73,3 +73,11 @@ The following checks must be executed on a disposable Mac after Developer ID sig
 | A53 | PF anchor syntax in CI | `pfctl -vnf` parses candidate without loading or enabling PF |
 | A54 | PF guard active on spare Mac (future) | Prove anchors evaluated, leak-free IPv4/IPv6 and emergency restoration |
 | A55 | Signed helper deregistration with unresolved routes | Refuse deregistration; require verified recovery |
+
+| A56 | Managed profile includes local `route` or `redirect-gateway` | Reject conflicting local routing directives before launching OpenVPN |
+| A57 | OpenVPN server pushes route and redirect-gateway | Validate suppressive compatibility filters; prove ownership of OS routes |
+| A58 | OpenVPN RECONNECTING during China Direct or Full VPN | Stop child before rollback; no automatic unprotected reconnect |
+| A59 | IPv6 default and foreign route change during Full VPN | Watchdog rejects unexpected network state |
+| A60 | Helper crash after PID record, child already exited | Recovery clears stale markers only when exact PID is absent |
+| A61 | Helper crash with alive or reused PID | Recovery does not send signals or clear evidence |
+| A62 | Client cert inline data contains directive-like text | Managed routing scanner ignores inline certificate material |

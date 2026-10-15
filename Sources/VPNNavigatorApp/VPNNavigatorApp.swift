@@ -224,6 +224,13 @@ final class AppModel: ObservableObject {
             message = "Disconnect VPN before disabling background services."
             return
         }
+        if helper.installationStatus == .enabled {
+            let actual = await helper.status()
+            guard actual.hasPrefix("disconnected:") else {
+                message = "Background helper reports an active, failed or unresolved session; verify recovery before disabling services: \(actual)"
+                return
+            }
+        }
         do {
             try await SMAppService.agent(plistName: "com.javafancn.vpn-navigator.rules.plist").unregister()
             try helper.unregister()

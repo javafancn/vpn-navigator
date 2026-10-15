@@ -70,6 +70,15 @@ final class ManagedTunnel {
         try FileManager.default.createDirectory(at: workdir, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: workdir.path)
         let configFile = workdir.appendingPathComponent("active.ovpn")
+        // Early file/permission failures happen before Process.run(). They
+        // must not leave a false orphan marker that permanently blocks startup.
+        defer {
+            if process == nil &&
+               !FileManager.default.fileExists(
+                   atPath: workdir.appendingPathComponent("routes.journal").path) {
+                try? FileManager.default.removeItem(at: configFile)
+            }
+        }
         try validated.text.write(to: configFile, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configFile.path)
         var options = ["--config", configFile.path]

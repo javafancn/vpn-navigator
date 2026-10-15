@@ -101,9 +101,9 @@ final class ManagedTunnel {
                 self?.queue.async { [weak self] in
                     guard let self, self.management === socket else { return }
                     self.stop()
-                    self?.lastError = "OpenVPN requested an unsupported authentication method."
-                    self?.state = .failed
-                    self?.message = self?.lastError ?? "Authentication failed"
+                    self.lastError = "OpenVPN requested an unsupported authentication method."
+                    self.state = .failed
+                    self.message = self.lastError ?? "Authentication failed"
                 }
             }
             socket.onExit = { [weak self, weak socket] in

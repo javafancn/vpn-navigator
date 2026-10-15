@@ -72,7 +72,7 @@ struct MainView: View {
                         .font(.caption2).foregroundStyle(.secondary)
                         .lineLimit(1)
                     Text("Alpha · macOS 13+")
-                        .font(.caption2).foregroundStyle(.tertiary)
+                        .font(.caption2).foregroundStyle(Color.secondary.opacity(0.7))
                 }
                 .padding(17).frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -165,7 +165,7 @@ struct VPNPanel<Content: View>: View {
         .padding(19)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 19))
         .overlay(RoundedRectangle(cornerRadius: 19)
-            .strokeBorder(.primary.opacity(0.07), lineWidth: 1))
+            .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1))
     }
 }
 
@@ -219,7 +219,7 @@ private struct ConnectionOverview: View {
                         .accessibilityLabel(model.connected ? "断开 VPN" : "连接 VPN")
                         Text(statusTitle)
                             .font(.system(size: 25, weight: .bold, design: .rounded))
-                            .foregroundStyle(model.connected ? .green : .primary)
+                            .foregroundStyle(model.connected ? Color.green : Color.primary)
                         Text(model.connectionStatus)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -239,7 +239,7 @@ private struct ConnectionOverview: View {
                     .padding(.vertical, 38).padding(.horizontal, 20)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 23))
                     .overlay(RoundedRectangle(cornerRadius: 23)
-                        .strokeBorder(.primary.opacity(0.07)))
+                        .strokeBorder(Color.primary.opacity(0.07)))
 
                     VStack(alignment: .leading, spacing: 16) {
                         VPNPanel("快速连接", symbol: "slider.horizontal.3") {
@@ -543,13 +543,13 @@ struct ProfileDetail: View {
                 }
                 VPNPanel("基本信息", symbol: "person.crop.rectangle") {
                     VStack(alignment: .leading, spacing: 10) {
-                        TextField("Display name", text: $draftName)
-                        TextField("Group", text: $draftGroup)
-                        Toggle("Favorite", isOn: $draftFavorite)
-                        TextField("Notes", text: $draftNotes)
+                        TextField("配置名称", text: $draftName)
+                        TextField("配置分组", text: $draftGroup)
+                        Toggle("收藏", isOn: $draftFavorite)
+                        TextField("备注", text: $draftNotes)
                         HStack {
                             Spacer()
-                            Button("Save Details") {
+                            Button("保存信息") {
                                 Task {
                                     await model.updateMetadata(name: draftName,
                                         group: draftGroup, notes: draftNotes, favorite: draftFavorite)
@@ -561,7 +561,7 @@ struct ProfileDetail: View {
                 VPNPanel("配置编辑与历史版本", symbol: "doc.text") {
                     VStack(alignment: .leading, spacing: 9) {
                         HStack {
-                            Button("Edit .ovpn…") {
+                            Button("编辑 .ovpn…") {
                                 Task {
                                     if let source = await model.editSource(for: profile) {
                                         editorText = source
@@ -570,14 +570,14 @@ struct ProfileDetail: View {
                                 }
                             }
                             Spacer()
-                            Button("Refresh History") {
+                            Button("刷新历史") {
                                 Task { history = await model.revisions(for: profile) }
                             }
                         }
-                        Text("The editor may display private keys. Revisions are kept only in the private local profile repository.")
+                        Text("配置编辑器可能显示私钥；历史版本仅保存在本机私有配置目录中。")
                             .font(.caption).foregroundStyle(.secondary)
                         if history.isEmpty {
-                            Text("No previous versions yet").foregroundStyle(.secondary)
+                            Text("暂无历史版本").foregroundStyle(.secondary)
                         }
                         ForEach(history.prefix(10)) { revision in
                             HStack {
@@ -585,7 +585,7 @@ struct ProfileDetail: View {
                                 Text(revision.createdAt, style: .time)
                                     .foregroundStyle(.secondary)
                                 Spacer()
-                                Button("Restore") {
+                                Button("恢复") {
                                     Task {
                                         if await model.restoreSource(for: profile, revision: revision.filename) {
                                             history = await model.revisions(for: profile)
@@ -601,12 +601,12 @@ struct ProfileDetail: View {
 
 
                 HStack {
-                    Button("Export configuration preview…") { Task { await model.exportPreview() } }
+                    Button("导出配置预览…") { Task { await model.exportPreview() } }
                         .disabled(profile.mode == .chinaDirect && model.rules == nil)
                     Spacer()
-                    Button("Remove Profile", role: .destructive) { Task { await model.deleteSelected() } }
+                    Button("删除配置", role: .destructive) { Task { await model.deleteSelected() } }
                 }
-                Text("The privileged helper requires a signed app bundle and installed OpenVPN CLI. Native route and DNS operations must be validated on your Mac before relying on this as a production VPN.")
+                Text("真实连接需要签名 Helper 与 OpenVPN 引擎；使用前应在自己的 Mac 上验证路由、DNS 和网络安全。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             .padding(26).frame(maxWidth: 820, alignment: .leading)
@@ -614,19 +614,19 @@ struct ProfileDetail: View {
         .navigationTitle(profile.name)
         .sheet(isPresented: $showingEditor) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Edit OpenVPN Configuration").font(.title2.bold())
-                Text("This configuration may include private keys. Unsafe scripts and unsupported options cannot be saved. Changes apply after reconnecting.")
+                Text("编辑 OpenVPN 配置").font(.title2.bold())
+                Text("文件可能包含私钥。危险脚本和不支持的配置不会被保存；修改需在重新连接后生效。")
                     .font(.callout).foregroundStyle(.secondary)
                 TextEditor(text: $editorText)
                     .font(.system(.body, design: .monospaced))
                     .border(Color.secondary.opacity(0.3))
                 HStack {
-                    Button("Cancel") {
+                    Button("取消") {
                         editorText = ""
                         showingEditor = false
                     }
                     Spacer()
-                    Button("Save Version") {
+                    Button("保存新版本") {
                         Task {
                             if await model.saveSource(for: profile, text: editorText) {
                                 editorText = ""

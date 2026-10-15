@@ -378,7 +378,7 @@ struct VPNNavigatorApp: App {
     var body: some Scene {
         WindowGroup("VPN Navigator") {
             MainView().environmentObject(model)
-                .frame(minWidth: 780, minHeight: 500)
+                .frame(minWidth: 1050, minHeight: 680)
         }
         MenuBarExtra("VPN Navigator", systemImage: "network") {
             Text("VPN Navigator")
@@ -401,23 +401,8 @@ struct VPNNavigatorApp: App {
             Text("\(model.profiles.count) saved profiles")
         }
         Settings {
-            Form {
-                LabeledContent("VPN engine", value: "Bundled OpenVPN CLI (requires signed distribution)")
-                LabeledContent("Background helper", value: model.helperStatus)
-                Button("Enable Privileged Helper…") { model.requestHelper() }
-                Button("Disable Background Services…") { Task { await model.disableServices() } }
-                Button("Attempt Safe Network Recovery…") { Task { await model.retryNetworkRecovery() } }
-                Button("Check for App Updates") { Task { await model.checkForUpdates() } }
-                Button("Download Verified Update…") { Task { await model.downloadVerifiedUpdate() } }
-                    .disabled(model.availableInstaller == nil || model.busy)
-                Button("View Release Notes…") { model.viewReleasePage() }
-                    .disabled(model.availableReleasePage == nil)
-                Text("This developer SwiftPM build cannot register a launch daemon by itself. Use the signed app bundle.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            .formStyle(.grouped)
-            .frame(width: 540)
-            .padding()
+            SystemSettingsPane().environmentObject(model)
+                .frame(minWidth: 650, minHeight: 620)
         }
     }
 }

@@ -5,42 +5,56 @@ struct NetworkDiagnosticsView: View {
     @EnvironmentObject private var model: AppModel
     @State private var address = "223.5.5.5"
     @State private var actualPath = ""
-    @State private var networkSummary = "Not checked"
+    @State private var networkSummary = "尚未检查"
+
     var body: some View {
-        Form {
-            Section("IPv4 route diagnosis") {
-                HStack {
-                    TextField("Destination IPv4", text: $address)
-                    Button("Inspect") { inspect() }
-                        .disabled(IPv4CIDR.parseAddress(address) == nil)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                WorkspaceHeading(title: "网络诊断",
+                    subtitle: "查看当前 macOS 路由与 DNS 摘要，不上传隐私数据",
+                    symbol: "waveform.path.ecg")
+                VPNPanel("IPv4 路由检查", symbol: "point.topleft.down.curvedto.point.bottomright.up") {
+                    HStack(spacing: 10) {
+                        TextField("输入 IPv4 地址", text: $address)
+                            .textFieldStyle(.roundedBorder)
+                        Button("检查路径") { inspect() }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(IPv4CIDR.parseAddress(address) == nil)
+                    }
+                    if let decision = IPDiagnostics.decide(
+                        ip: address, mode: model.selected?.mode ?? .original, rules: model.rules
+                    ) {
+                        LabeledContent("预期路径", value: decision.expected.rawValue)
+                        Text(decision.reason).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text(actualPath.isEmpty ? "尚未查询实际路由" : actualPath)
+                        .font(.system(.callout, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                 }
-                if let decision = IPDiagnostics.decide(
-                    ip: address, mode: model.selected?.mode ?? .original, rules: model.rules
-                ) {
-                    LabeledContent("Expected path", value: decision.expected.rawValue)
-                    Text(decision.reason).foregroundStyle(.secondary)
+                VPNPanel("本地网络健康", symbol: "heart.text.square") {
+                    HStack {
+                        Text("IPv6 默认路由、系统网卡与 DNS 解析器统计")
+                            .font(.callout).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("检查 IPv6 / DNS") { inspectHealth() }
+                    }
+                    Text(networkSummary)
+                        .font(.system(.callout, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    Text("仅展示接口名称和数量，不展示私有 DNS 域名或服务器地址。")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                Text(actualPath.isEmpty ? "No route checked" : actualPath)
-                    .font(.system(.footnote, design: .monospaced))
-                    .textSelection(.enabled)
+                VPNPanel("安全说明", symbol: "exclamationmark.shield") {
+                    Label("IPv4 分流不等于 IPv6 保护", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                    Text("路由表检查无法验证远端公网出口 IP。此页面不提供真实延迟测试、测速或零泄漏认证。")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
             }
-            Section("Local network health") {
-                Button("Inspect IPv6 and DNS") { inspectHealth() }
-                Text(networkSummary)
-                    .font(.system(.footnote, design: .monospaced))
-                    .textSelection(.enabled)
-                Text("Only counts and interface names are shown. Private DNS domains and server addresses are not displayed.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Network protections") {
-                Text("IPv4 rules do not control IPv6. Check macOS IPv6 routes and DNS before relying on a split-tunnel.")
-                    .foregroundStyle(.orange)
-                Text("Route output comes from macOS and does not prove the remote exit IP. A real VPN connection is required for end-to-end testing.")
-                    .foregroundStyle(.secondary)
-            }
+            .padding(28).frame(maxWidth: 950, alignment: .leading)
         }
-        .formStyle(.grouped)
-        .navigationTitle("Network Diagnostics")
     }
     private func inspect() {
         guard IPv4CIDR.parseAddress(address) != nil else { return }

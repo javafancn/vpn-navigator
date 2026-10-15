@@ -44,6 +44,17 @@ final class SafetyAndPlanningTests: XCTestCase {
                        ["-n", "add", "-net", "1.0.1.0/24", "192.168.1.1"])
         XCTAssertEqual(plan.removalOrder.first?.prefix.description, "128.0.0.0/1")
     }
+    func testCommonDeclarativeOpenVPNRoutingAndDNS() throws {
+        let config = inline + """
+        
+        redirect-gateway def1
+        route 10.20.0.0 255.255.0.0 vpn_gateway
+        dhcp-option DNS 10.8.0.1
+        """
+        XCTAssertNoThrow(try ProfileSafety.validate(config))
+        XCTAssertThrowsError(try ProfileSafety.validate(inline + "\nredirect-gateway block-local"))
+        XCTAssertThrowsError(try ProfileSafety.validate(inline + "\nroute-up /tmp/run.sh"))
+    }
     func testRejectBadInterfaceAndGateway() throws {
         let rules = try RuleSet(text: "223.5.5.0/24")
         XCTAssertThrowsError(try RoutePlanner.build(serverIPv4: "8.8.8.8", physicalGateway: "bad", vpnInterface: "utun0", localPrefixes: [], china: rules))

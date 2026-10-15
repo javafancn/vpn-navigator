@@ -12,7 +12,8 @@ public enum ProfileSafety {
         "explicit-exit-notify", "push-peer-info", "connect-retry", "connect-timeout",
         "keepalive", "ping", "ping-restart", "tun-mtu", "mssfix", "sndbuf",
         "rcvbuf", "float", "verify-x509-name", "auth-retry", "tls-timeout",
-        "remote-random-hostname", "topology", "pull", "allow-compression"
+        "remote-random-hostname", "topology", "pull", "allow-compression",
+        "redirect-gateway", "route", "route-ipv6", "dhcp-option", "dns"
     ]
     private static let inlineTags: Set<String> = [
         "ca", "cert", "key", "tls-auth", "tls-crypt", "tls-crypt-v2", "pkcs12"
@@ -71,6 +72,19 @@ public enum ProfileSafety {
                 requestsCredentials = true
             case "dev":
                 guard tokens.count == 2, tokens[1] == "tun" || tokens[1].hasPrefix("utun") else {
+                    throw ProfileValidationError.unsupported(offset + 1, line)
+                }
+            case "redirect-gateway":
+                let safeFlags: Set<String> = ["def1", "bypass-dhcp", "bypass-dns"]
+                guard tokens.dropFirst().allSatisfy({ safeFlags.contains($0) }) else {
+                    throw ProfileValidationError.unsupported(offset + 1, line)
+                }
+            case "route":
+                guard (3...5).contains(tokens.count),
+                      IPv4CIDR.parseAddress(tokens[1]) != nil,
+                      IPv4CIDR.parseAddress(tokens[2]) != nil || UInt8(tokens[2]) != nil,
+                      tokens.count < 4 || ["vpn_gateway", "net_gateway"].contains(tokens[3]) ||
+                          IPv4CIDR.parseAddress(tokens[3]) != nil else {
                     throw ProfileValidationError.unsupported(offset + 1, line)
                 }
             case "allow-compression":

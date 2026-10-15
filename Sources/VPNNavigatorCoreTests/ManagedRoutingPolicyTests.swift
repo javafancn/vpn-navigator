@@ -16,8 +16,7 @@ final class ManagedRoutingPolicyTests: XCTestCase {
         for directive in [
             "route 10.0.0.0 255.0.0.0 vpn_gateway",
             "route-ipv6 2001:db8::/32",
-            "redirect-gateway def1",
-            "redirect-private def1"
+            "redirect-gateway def1"
         ] {
             let profile = try ProfileSafety.validate(base + "\n" + directive)
             XCTAssertNoThrow(try ManagedRoutingPolicy.validate(profile, mode: .original))

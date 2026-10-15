@@ -132,8 +132,8 @@ final class ManagedTunnel {
             throw TunnelError.ipv6Unsafe
         }
         switch IPv6RouteSafety.evaluate(routes) {
-        case .noDefaultRoute, .tunnelOnly: return
-        case .physicalBypass, .unknown: throw TunnelError.ipv6Unsafe
+        case .noDefaultRoute: return
+        case .tunnelOnly, .physicalBypass, .unknown: throw TunnelError.ipv6Unsafe
         }
     }
     private func handle(_ snapshot: TunnelSnapshot) {
@@ -250,7 +250,7 @@ final class ManagedTunnel {
     private func startNetworkWatchdog() {
         networkWatchdog?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 15, repeating: .seconds(15))
+        timer.schedule(deadline: .now() + 5, repeating: .seconds(5))
         timer.setEventHandler { [weak self] in self?.verifyPhysicalNetwork() }
         networkWatchdog = timer
         timer.resume()
@@ -335,7 +335,7 @@ enum TunnelError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .ipv6Unsafe: return "IPv6 has a physical-network route; IPv4-only split routing would leak traffic. Use Original mode or disable IPv6 before enabling IPv4 splitting."
+        case .ipv6Unsafe: return "IPv4-only policies require no active IPv6 default route. Use Original mode or disable IPv6 before splitting. Polling is not a kill switch."
         case .engineMissing: return "Signed OpenVPN engine is not installed."
         case .needRoot: return "Approve the privileged helper in macOS."
         case .alreadyRunning: return "Another VPN session is active."

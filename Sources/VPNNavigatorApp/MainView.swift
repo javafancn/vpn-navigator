@@ -191,6 +191,22 @@ private struct ProfileDetail: View {
                         }
                         Text("Updates may be applied to an active split-tunnel session; errors retain the last validated rules.")
                             .font(.caption).foregroundStyle(.secondary)
+                        if !model.ruleSnapshots.isEmpty {
+                            Divider()
+                            Text("Rule history").font(.headline)
+                            ForEach(model.ruleSnapshots.prefix(5)) { snapshot in
+                                HStack {
+                                    Text(snapshot.savedAt, style: .date)
+                                    Text("\(snapshot.routeCount) networks")
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    Button("Restore") {
+                                        Task { await model.restoreRuleSnapshot(snapshot.id) }
+                                    }
+                                    .disabled(model.busy)
+                                }
+                            }
+                        }
                     }.padding(8)
                 }
                 HStack {

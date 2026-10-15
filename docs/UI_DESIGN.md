@@ -49,3 +49,10 @@ Profiles are split into a search list and an editable glass detail pane.
 Routing adopts side-by-side mode/data panels; diagnostics use side-by-side
 route/health panes without inventing network measurements. On macOS 13,
 these are native vibrancy materials, not macOS 26 Liquid Glass-only APIs.
+
+## Menu bar
+
+The system menu-bar control is now a native SwiftUI window-style popover
+with live helper status, active profile, cumulative traffic (no fabricated
+throughput), connect/disconnect, safe IPv4 refresh and main-window access.
+It uses the same compact glass card language.

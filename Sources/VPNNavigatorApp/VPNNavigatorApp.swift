@@ -381,25 +381,9 @@ struct VPNNavigatorApp: App {
                 .frame(minWidth: 1050, minHeight: 680)
         }
         MenuBarExtra("VPN Navigator", systemImage: "network") {
-            Text("VPN Navigator")
-            Text(model.connectionStatus).foregroundStyle(.secondary)
-            if let current = model.activeProfile { Text("Active: \(current.name)") }
-            if let traffic = model.traffic {
-                Text("↓ " + ByteCountFormatter.string(fromByteCount: Int64(clamping: traffic.receivedBytes), countStyle: .file) +
-                     "  ↑ " + ByteCountFormatter.string(fromByteCount: Int64(clamping: traffic.sentBytes), countStyle: .file))
-                    .foregroundStyle(.secondary)
-            }
-            Divider()
-            if model.connected || model.connecting {
-                Button("Disconnect") { Task { await model.disconnect() } }
-            } else {
-                Button("Connect Selected Profile") { Task { await model.connectSelected() } }
-                    .disabled(model.selected == nil)
-            }
-            Button("Check China IP Rules") { Task { await model.refreshRules() } }
-            Divider()
-            Text("\(model.profiles.count) saved profiles")
+            GlassMenuBarView().environmentObject(model)
         }
+        .menuBarExtraStyle(.window)
         Settings {
             SystemSettingsPane().environmentObject(model)
                 .frame(minWidth: 650, minHeight: 620)

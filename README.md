@@ -5,16 +5,17 @@ A native SwiftUI macOS OpenVPN CLI client project with a per-profile route polic
 ## Development status (alpha; not yet production ready)
 
 - Native macOS SwiftUI app, menu bar, profiles and diagnostics
-- Local profile store; preserve original .ovpn; external relative certificate imports are converted to private runtime copies
+- Native profile store with configuration groups, favorites, full-text search, secure .ovpn editor, recoverable revisions, preserved original import and relative certificate materialization
 - Original / Full VPN / Mainland China IPv4 Direct policies
 - Country IPv4 rules with validated updates, CIDR diff and persistence
 - Swift helper code for OpenVPN process, Unix management socket, pinned endpoint, route transaction/rollback
 - XPC boundary requiring signed Team/allowed app identity
 - launchd LaunchAgent for daily IPv4 rule refresh
-- Standalone app packaging, signing, notarization and PKG packaging scripts
+- Standalone app packaging, signing, notarization and PKG packaging scripts with GPL source/notice checks
+- Verified GitHub Release PKG download (same Developer ID Team + Gatekeeper) with explicit system Installer handoff
 - Swift macOS CI unit tests and unsigned developer UI-only app build
 
-**Not yet proven or delivered as a production VPN client:** bundled audited OpenVPN binaries and dependent libraries, signed notarized distribution, real root Helper registration, live VPN + DNS/IPv6 integration tests, resilient fail-closed network transitions, full .ovpn directive compatibility, safe automatic kernel upgrades, network traffic leak audit.
+**Not yet proven or delivered as a production VPN client:** audited signed/distributed OpenVPN binaries and dependency notices, notarized distribution, real root Helper registration, live VPN + DNS/IPv6 integration tests, traffic leak testing, complete split-route reliability, true firewall kill switch, full historical .ovpn support or unattended kernel upgrades.
 
 ## Build (macOS 13+, Xcode Swift toolchain)
 

@@ -37,3 +37,20 @@ zsh scripts/build-app.sh
 The generated unsigned app is GUI-only without a signed, bundled OpenVPN engine.
 
 Do not claim production readiness based on green CI. Hardware tests in docs/QA.md are release gates.
+
+## New profile maintenance and release features
+
+ProfileStore now preserves validated, self-contained runtime versions alongside
+original-source revisions. Editing is disabled while a VPN session is active.
+The native SwiftUI editor warns that inline private keys can be visible.
+
+Release metadata is fetched only from the project's GitHub Releases API. A
+downloaded installer is accepted only from the same repository release path,
+after validation of the parent application's Developer ID Team, a matching
+Developer ID Installer certificate, and successful macOS Gatekeeper assessment.
+It is then **opened in the macOS Installer**, never executed as root by VPN
+Navigator. Updates refuse to run while the privileged helper is enabled.
+
+The package preinstall script also refuses to upgrade while active VPN processes
+or unresolved route journals remain. Signed release builds require a reviewed
+OpenVPN 2.7.x engine, matching GPL source archive and third-party notices.

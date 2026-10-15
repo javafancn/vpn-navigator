@@ -31,3 +31,18 @@ The following checks must be executed on a disposable Mac after Developer ID sig
 | A25 | CPU/memory/energy baseline vs OpenVPN Connect | Measured under same server/cipher/traffic |
 
 **No entry above is yet marked as passed by actual hardware testing.**
+
+## Additional release acceptance scenarios (not yet performed)
+
+| ID | Test | Expected |
+|---|---|---|
+| A26 | Edit .ovpn from native UI | Safe edits saved, previous config archived, still-private 0600 files |
+| A27 | Edit .ovpn containing external cert references | Runtime self-contained revision is restorable |
+| A28 | Attempt unsafe script directive in editor | Rejected and existing profile preserved |
+| A29 | Hostname/profile switch while VPN connected | Existing session unaffected and editable operations blocked |
+| A30 | Release update tampered URL/package | Repository URL, Team ID, Gatekeeper verification prevent install |
+| A31 | Signed package upgrade with helper still running | Installer refuses replacement without disabling services |
+| A32 | CN prefixes overlap on-link public subnet | Existing local route preferred and no conflicting rule installed |
+| A33 | IPv6 default appears while split tunnel active | Session is stopped; do not describe polling as a kill switch |
+| A34 | Route verification failure after installation | Transaction ownership journal enables rollback |
+| A35 | Old VPN process late exit during new session | Old callbacks cannot tear down new process |

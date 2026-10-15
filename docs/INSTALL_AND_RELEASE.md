@@ -112,3 +112,11 @@ To uninstall: disconnect, unregister the LaunchAgent and LaunchDaemon from
 the app, then remove the signed app. Leave user profiles in Application Support
 unless the user explicitly chooses to delete them. Validate routing recovery
 before deleting any old journal.
+
+## Manual verified update experience
+
+The signed app can check the latest GitHub Release, compare stable versions,
+download an official PKG, verify that its Developer ID Installer Team matches
+the running application's Developer ID Team, and request a Gatekeeper
+installation assessment. Only after these checks does it offer the file to
+macOS Installer. Automatic privileged installation is intentionally forbidden.

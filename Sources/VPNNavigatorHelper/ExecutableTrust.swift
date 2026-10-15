@@ -5,6 +5,20 @@ import Security
 /// /Applications/VPN Navigator.app/Contents/Resources/VPNNavigatorHelper
 /// It is a *tool*, not an app bundle: Bundle.main.bundleURL is not the .app root.
 enum ExecutableTrust {
+    static func trustedDNSUpDown() throws -> URL {
+        let engine = try trustedOpenVPN()
+        let script = engine.deletingLastPathComponent().appendingPathComponent("macos-dns-updown.sh")
+        let path = script.standardizedFileURL
+        guard path.resolvingSymlinksInPath() == path,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: path.path),
+              let owner = attrs[.ownerAccountID] as? NSNumber,
+              let permissions = attrs[.posixPermissions] as? NSNumber,
+              owner.intValue == 0, permissions.intValue & 0o022 == 0,
+              FileManager.default.isExecutableFile(atPath: path.path)
+        else { throw TrustError.unsafePermissions(path.path) }
+        return path
+    }
+
     static func trustedOpenVPN() throws -> URL {
         guard let executable = Bundle.main.executableURL?.standardizedFileURL.resolvingSymlinksInPath() else {
             throw TrustError.mustInstallToApplications

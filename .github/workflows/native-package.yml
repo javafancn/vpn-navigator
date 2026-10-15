@@ -18,6 +18,9 @@ jobs:
           test -x 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp'
           test -x 'dist/VPN Navigator.app/Contents/Resources/VPNNavigatorHelper'
           test -x 'dist/VPN Navigator.app/Contents/Resources/VPNNavigatorRuleAgent'
+          test -x 'dist/VPN Navigator.app/Contents/Resources/macos-dns-updown.sh'
+          test -f 'dist/VPN Navigator.app/Contents/Resources/LICENSES/OpenVPN-DNS-BSD-2-Clause.txt'
+          /bin/bash -n 'dist/VPN Navigator.app/Contents/Resources/macos-dns-updown.sh'
           test ! -f 'dist/VPN Navigator.app/Contents/Resources/openvpn'
       - uses: actions/upload-artifact@v4
         with:

@@ -57,6 +57,10 @@ final class ManagedTunnel {
         // OpenVPN must be provided by a separately vetted signed distribution.
         // NEVER launch an arbitrary executable from an imported .ovpn or client-supplied path.
         let binary = try ExecutableTrust.trustedOpenVPN().path
+        // The OpenVPN 2.7 platform DNS hook must ship with the standalone
+        // binary; otherwise a successful tunnel may silently retain wrong DNS.
+        let dnsHook = try ExecutableTrust.trustedDNSUpDown()
+        options += ["--script-security", "2", "--dns-updown", dnsHook.path]
         let task = Process()
         task.executableURL = URL(fileURLWithPath: binary)
         task.arguments = options

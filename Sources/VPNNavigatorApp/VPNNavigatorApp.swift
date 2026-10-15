@@ -17,6 +17,8 @@ final class AppModel: ObservableObject {
     @Published var busy = false
     @Published var message: String?
     @Published var helperStatus = "Unavailable"
+    @Published var availableInstaller: URL?
+    @Published var availableReleasePage: URL?
     @Published var connectionStatus = "disconnected: Not connected"
     @Published var username = ""
     @Published var password = ""
@@ -115,8 +117,53 @@ final class AppModel: ObservableObject {
     func checkForUpdates() async {
         do {
             let release = try await UpdateChecker.latestRelease()
-            message = "Latest published release: \(release.tag_name). Visit GitHub Releases to download a verified update."
-        } catch { message = "No published release is available yet, or update check failed." }
+            guard ReleaseAssetPolicy.isApprovedReleasePage(release.html_url) else {
+                message = "Release metadata failed URL verification."
+                return
+            }
+            availableReleasePage = release.html_url
+            guard let remote = ReleaseVersion(release.tag_name),
+                  let installed = ReleaseVersion(
+                    Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+                  ) else {
+                message = "Release version could not be verified."
+                return
+            }
+            if remote <= installed {
+                availableInstaller = nil
+                message = "VPN Navigator \(installed) is up to date."
+                return
+            }
+            availableInstaller = release.trustedInstallerURL
+            message = "VPN Navigator \(remote) is available. Downloading requires your approval; installation uses the macOS Installer."
+        } catch {
+            message = "Cannot check for application updates: \(error.localizedDescription)"
+        }
+    }
+    func downloadVerifiedUpdate() async {
+        guard !busy, let url = availableInstaller else { return }
+        guard !connected && !connecting, helper.installationStatus != .enabled else {
+            message = "Disconnect the VPN and disable VPN Navigator background services before upgrading."
+            return
+        }
+        busy = true
+        defer { busy = false }
+        do {
+            let local = try await InstallerUpdate.prepare(url)
+            // Never run /usr/sbin/installer automatically; the user remains
+            // in control of privileged changes via the macOS Installer UI.
+            let accepted = NSWorkspace.shared.open(local)
+            message = accepted ?
+                "Installer opened. Review and approve the signed update in macOS." :
+                "Verified installer saved at \(local.path); open it in Finder to continue."
+        } catch {
+            message = "Update verification failed: \(error.localizedDescription)"
+        }
+    }
+    func viewReleasePage() {
+        guard let url = availableReleasePage,
+              ReleaseAssetPolicy.isApprovedReleasePage(url) else { return }
+        NSWorkspace.shared.open(url)
     }
     func disableServices() async {
         guard !connected && !connecting else {
@@ -222,6 +269,10 @@ struct VPNNavigatorApp: App {
                 Button("Enable Privileged Helper…") { model.requestHelper() }
                 Button("Disable Background Services…") { Task { await model.disableServices() } }
                 Button("Check for App Updates") { Task { await model.checkForUpdates() } }
+                Button("Download Verified Update…") { Task { await model.downloadVerifiedUpdate() } }
+                    .disabled(model.availableInstaller == nil || model.busy)
+                Button("View Release Notes…") { model.viewReleasePage() }
+                    .disabled(model.availableReleasePage == nil)
                 Text("This developer SwiftPM build cannot register a launch daemon by itself. Use the signed app bundle.")
                     .font(.caption).foregroundStyle(.secondary)
             }

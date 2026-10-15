@@ -51,6 +51,7 @@ final class ManagedTunnel {
         }
         guard process == nil else { throw TunnelError.alreadyRunning }
         let validated = try ProfileSafety.validate(text)
+        try ManagedRoutingPolicy.validate(validated, mode: mode)
         // IPv4-only routing cannot protect IPv6. Refuse a non-original split or
         // full-VPN mode while native IPv6 has a non-tunnel path (fail closed).
         if mode != .original { try checkIPv6Bypass() }
@@ -82,8 +83,7 @@ final class ManagedTunnel {
         try validated.text.write(to: configFile, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configFile.path)
         var options = ["--config", configFile.path]
-        if mode == .chinaDirect { options += ["--route-noexec"] }
-        if mode == .fullVPN { options += ["--redirect-gateway", "def1"] }
+        options += ManagedRoutingPolicy.openVPNArguments(mode: mode)
         let managementPath = workdir.appendingPathComponent("management.sock").path
         try? FileManager.default.removeItem(atPath: managementPath)
         options += ["--management", managementPath, "unix", "--management-hold", "--management-up-down", "--management-query-passwords"]

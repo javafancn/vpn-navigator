@@ -13,7 +13,7 @@ jobs:
       - name: Verify plists and scripts
         run: |
           plutil -lint Resources/Info.plist Resources/LaunchDaemons/*.plist Resources/LaunchAgents/*.plist
-          zsh -n scripts/build-app.sh scripts/build-pkg.sh scripts/notarize.sh scripts/release-audit.sh scripts/pkg-scripts/preinstall
+          zsh -n scripts/build-app.sh scripts/build-pkg.sh scripts/notarize.sh scripts/release-audit.sh scripts/pkg-scripts/preinstall scripts/live-route-assert.sh
           python3 -m py_compile scripts/vendor-openvpn.py
       - name: Build unsigned developer-only app
         run: zsh scripts/build-app.sh

@@ -14,6 +14,7 @@ final class AppModel: ObservableObject {
         }
     }
     @Published var rules: RuleSet?
+    @Published var ruleSnapshots: [RuleSnapshot] = []
     @Published var busy = false
     @Published var message: String?
     @Published var helperStatus = "Unavailable"
@@ -56,6 +57,7 @@ final class AppModel: ObservableObject {
             profiles = try await store.list()
             if selectedID == nil { selectedID = profiles.first?.id }
             rules = try await updater.cached()
+            ruleSnapshots = try await updater.snapshots()
         } catch { message = error.localizedDescription }
     }
     func importFile(_ url: URL) async {
@@ -150,6 +152,7 @@ final class AppModel: ObservableObject {
             }
             try await updater.commit(candidate)
             rules = candidate
+            ruleSnapshots = try await updater.snapshots()
             message = "Validated and cached \(candidate.routes.count) IPv4 networks."
         } catch { message = "Update failed; old rules preserved. \(error.localizedDescription)" }
     }
@@ -227,6 +230,32 @@ final class AppModel: ObservableObject {
             message = "Service removal requires attention: \(error.localizedDescription)"
         }
     }
+    func restoreRuleSnapshot(_ id: UUID) async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            let restored = try await updater.archivedRules(id: id)
+            if let previous = try await updater.cached() {
+                try RuleUpdater.validateChange(previous: previous, next: restored)
+            }
+            if connected {
+                let result = await helper.updateRules(
+                    restored.routes.map(\.description).joined(separator: "\n"))
+                guard result == "Rules applied" || result == "NO_ACTIVE_SPLIT" else {
+                    message = "Previous rules preserved: \(result)"
+                    return
+                }
+            }
+            try await updater.commit(restored)
+            rules = restored
+            ruleSnapshots = try await updater.snapshots()
+            message = "Previous China IPv4 rules restored."
+        } catch {
+            message = "Rule rollback refused: \(error.localizedDescription)"
+        }
+    }
+
     func requestHelper() {
         do {
             try helper.requestRegistration()

@@ -52,7 +52,7 @@ jobs:
           # Test against a REAL macOS desktop image, not in-app scenery.
           # CI machines often start with a monochrome desktop which makes
           # transparent native material look opaque in screenshots.
-          WALLPAPER="$(find '/System/Library/Desktop Pictures' -type f \\( -iname '*.heic' -o -iname '*.jpg' -o -iname '*.png' \\) 2>/dev/null | head -n 1 || true)"
+          WALLPAPER="$(find '/System/Library/Desktop Pictures' -type f \( -iname '*.heic' -o -iname '*.jpg' -o -iname '*.png' \) 2>/dev/null | head -n 1 || true)"
           if [[ -n "$WALLPAPER" ]]; then
             export VPNNAV_TEST_WALLPAPER="$WALLPAPER"
             cat > "$RUNNER_TEMP/desktop-wallpaper.swift" <<'SWIFT'
@@ -63,9 +63,9 @@ jobs:
                   do {
                       try NSWorkspace.shared.setDesktopImageURL(
                           URL(fileURLWithPath: path), for: screen, options: [:])
-                      print("Desktop wallpaper configured: \\(path)")
+                      print("Desktop wallpaper configured: \(path)")
                   } catch {
-                      print("Desktop wallpaper update unavailable: \\(error)")
+                      print("Desktop wallpaper update unavailable: \(error)")
                   }
               }
           }

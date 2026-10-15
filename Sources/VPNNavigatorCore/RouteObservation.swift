@@ -28,7 +28,13 @@ public struct ObservedIPv4Route: Sendable {
         } else if let normalizedMask, normalizedMask != target.prefix.netmask {
             return false
         }
-        if let destination, let dest = IPv4CIDR.parseAddress(destination) {
+        // Require an exact destination for /32; otherwise a matching default
+        // gateway could falsely look like an owned host route.
+        if target.prefix.prefix == 32 {
+            guard let destination, IPv4CIDR.parseAddress(destination) == target.prefix.network else {
+                return false
+            }
+        } else if let destination, let dest = IPv4CIDR.parseAddress(destination) {
             guard dest == target.prefix.network else { return false }
         }
         switch target.destination {

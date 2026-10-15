@@ -24,6 +24,8 @@ final class AppModel: ObservableObject {
     @Published var connectionStatus = "disconnected: Not connected"
     @Published var activeProfileID: UUID?
     @Published var traffic: TunnelTraffic?
+    @Published var receiveTrend = TrafficTrend()
+    @Published var sendTrend = TrafficTrend()
     @Published var username = ""
     @Published var password = ""
     @Published var rememberCredentials = UserDefaults.standard.bool(forKey: "rememberCredentials") {
@@ -296,15 +298,26 @@ final class AppModel: ObservableObject {
                 connectionStatus = report.statusText
                 activeProfileID = report.activeProfileID
                 traffic = report.traffic
+                if report.state == .connected, let value = report.traffic {
+                    receiveTrend.record(cumulativeBytes: value.receivedBytes)
+                    sendTrend.record(cumulativeBytes: value.sentBytes)
+                } else {
+                    receiveTrend.reset()
+                    sendTrend.reset()
+                }
             } else {
                 connectionStatus = "failed: Privileged helper did not return a valid session snapshot"
                 activeProfileID = nil
                 traffic = nil
+                receiveTrend.reset()
+                sendTrend.reset()
             }
         } else {
             connectionStatus = "disconnected: Privileged helper not enabled"
             activeProfileID = nil
             traffic = nil
+            receiveTrend.reset()
+            sendTrend.reset()
         }
     }
     func connectSelected() async {

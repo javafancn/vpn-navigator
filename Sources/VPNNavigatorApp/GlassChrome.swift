@@ -170,3 +170,35 @@ struct GlassIcon: View {
                 .strokeBorder(Color.white.opacity(0.72), lineWidth: 1))
     }
 }
+
+struct TrafficSparkline: View {
+    let samples: [Double]
+    var color: Color = GlassPalette.blue
+
+    var body: some View {
+        if samples.count >= 3 {
+            GeometryReader { proxy in
+                let high = max(samples.max() ?? 1, 1)
+                Path { path in
+                    for (i, sample) in samples.enumerated() {
+                        let x = proxy.size.width * CGFloat(i) /
+                                CGFloat(max(1, samples.count - 1))
+                        let y = proxy.size.height *
+                                (0.88 - 0.76 * CGFloat(sample / high))
+                        if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
+                        else { path.addLine(to: CGPoint(x: x, y: y)) }
+                    }
+                }
+                .stroke(color, style: StrokeStyle(lineWidth: 1.6,
+                                                 lineCap: .round, lineJoin: .round))
+            }
+            .accessibilityLabel("真实 OpenVPN 流量趋势")
+        } else {
+            Text("连接后显示趋势")
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity,
+                       alignment: .leading)
+        }
+    }
+}

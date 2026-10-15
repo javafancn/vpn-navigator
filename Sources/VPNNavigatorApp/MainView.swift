@@ -345,9 +345,11 @@ private struct ConnectionOverview: View {
                 }
                 HStack(spacing: 12) {
                     miniStatistic("累计接收", symbol: "arrow.down.circle.fill",
-                                  value: formattedBytes(model.traffic?.receivedBytes))
+                                  value: formattedBytes(model.traffic?.receivedBytes),
+                                  samples: model.receiveTrend.samples
                     miniStatistic("累计发送", symbol: "arrow.up.circle.fill",
-                                  value: formattedBytes(model.traffic?.sentBytes))
+                                  value: formattedBytes(model.traffic?.sentBytes),
+                                  samples: model.sendTrend.samples
                     miniStatistic("中国 IPv4 规则", symbol: "globe.asia.australia.fill",
                                   value: model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
                 }
@@ -364,7 +366,7 @@ private struct ConnectionOverview: View {
     }
 
     private func miniStatistic(_ title: String, symbol: String,
-                               value: String) -> some View {
+                               value: String, samples: [Double] = []) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Label(title, systemImage: symbol)
                 .font(.system(size: 11, weight: .medium))
@@ -373,6 +375,10 @@ private struct ConnectionOverview: View {
                 .font(.system(size: 21, weight: .semibold, design: .rounded))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
+            if title != "中国 IPv4 规则" {
+                TrafficSparkline(samples: samples)
+                    .frame(height: 23)
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
         .padding(15)

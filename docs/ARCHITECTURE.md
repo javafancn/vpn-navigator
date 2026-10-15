@@ -76,3 +76,18 @@ OpenVPN 2.7.x engine, matching GPL source archive and third-party notices.
 a daemon crash; a stateful PF-based kill switch and full IPv6 geo-splitting;
 VPN/DNS packet-level leak certification; seamless, no-impact route update
 under every gateway and pushed corporate route configuration.
+
+## Durable route crash protocol
+
+The route executor now appends and fsyncs `begun` and `committed` events
+for each macOS route addition/removal. Replay distinguishes committed VPN
+routes from operations that were in flight when the helper stopped. If a
+mutation has no commit event, the system **does not delete or assume
+ownership** of that route, and blocks new connections. It also refuses to
+auto-clean a live route journal while the old OpenVPN session file remains,
+because the child process may have survived the helper.
+
+Recovering an ambiguous pending operation requires manual verification of
+the process and route table on a disposable test Mac; this is deliberately
+not automated. The append-only route journal replaces the earlier
+single-record pre-add intent implementation.

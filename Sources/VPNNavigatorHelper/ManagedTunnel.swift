@@ -17,20 +17,21 @@ final class ManagedTunnel {
     private var lastError: String?
 
     init() {
-        // Reconcile a previous helper crash before allowing a new VPN session.
+        // Never remove routes while an OpenVPN process may still be alive
+        // after an unexpected root-helper crash.
+        let orphan = workdir.appendingPathComponent("active.ovpn")
+        if FileManager.default.fileExists(atPath: orphan.path) {
+            state = .failed
+            message = "Unverified previous OpenVPN session; do not automatically reclaim routes."
+            return
+        }
         let leftover = workdir.appendingPathComponent("routes.journal")
         if FileManager.default.fileExists(atPath: leftover.path) {
             _ = RouteExecutor(journal: leftover)
             if FileManager.default.fileExists(atPath: leftover.path) {
                 state = .failed
-                message = "Unresolved routes remain from a previous VPN session."
+                message = "Unresolved or ambiguous route transaction requires manual verification."
             }
-        }
-        // An OpenVPN child can survive a helper crash. Do not silently
-        // overwrite its config and start a competing tunnel on the next launch.
-        if FileManager.default.fileExists(atPath: workdir.appendingPathComponent("active.ovpn").path) {
-            state = .failed
-            message = "An unverified OpenVPN session survived helper restart; manual process verification required."
         }
     }
     private(set) var state: TunnelState = .disconnected

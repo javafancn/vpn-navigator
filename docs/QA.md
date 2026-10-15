@@ -59,3 +59,9 @@ The following checks must be executed on a disposable Mac after Developer ID sig
 | A41 | Fake helper receives credentials from app | Client-side helper designated requirement rejects fake endpoint |
 | A42 | Rule update archives known-good snapshot | Snapshot remains local, 0600, can restore with policy checks |
 | A43 | Network diagnostics on corporate split DNS | Only resolver count and interface shown, private domain never logged |
+
+| A44 | Crash after route journal begun event, before route add | Replay marks ambiguous; no automatic delete or new tunnel |
+| A45 | Crash after route add, before commit event | Replay marks ambiguous, even if route appears to match physical gateway |
+| A46 | Crash after committed add | Replay verifies ownership and removes only confirmed VPN Navigator route |
+| A47 | Crash during route deletion | Recovery blocks; no speculative deletion |
+| A48 | Helper crash with OpenVPN still alive | No automatic route cleanup or competing child process |

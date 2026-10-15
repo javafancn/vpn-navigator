@@ -312,7 +312,8 @@ final class AppModel: ObservableObject {
         busy = true; defer { busy = false }
         do {
             let text = try await store.runtimeConfig(for: selected)
-            _ = try ProfileSafety.validate(text)
+            let validated = try ProfileSafety.validate(text)
+            try ManagedRoutingPolicy.validate(validated, mode: selected.mode)
             if selected.mode == .chinaDirect && rules == nil {
                 message = "Download China IPv4 rules before connecting."
                 return

@@ -100,8 +100,14 @@ public actor ProfileStore {
         try FileManager.default.createDirectory(at: history, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: history.path)
         let archived = history.appendingPathComponent(UUID().uuidString + ".ovpn")
-        try oldSource.write(to: archived, atomically: true, encoding: .utf8)
+        // Revisions restore from self-contained runtime copies, even when the
+        // imported source referenced certificates outside the profile store.
+        try oldRuntime.write(to: archived, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: archived.path)
+        let originalArchive = history.appendingPathComponent(
+            archived.deletingPathExtension().lastPathComponent + ".source.ovpn")
+        try oldSource.write(to: originalArchive, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: originalArchive.path)
         let sourceURL = root.appendingPathComponent(profile.relativePath)
         let runtimeURL = root.appendingPathComponent("\(profile.id.uuidString).runtime.ovpn")
         do {

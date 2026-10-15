@@ -26,6 +26,12 @@ final class ManagedTunnel {
                 message = "Unresolved routes remain from a previous VPN session."
             }
         }
+        // An OpenVPN child can survive a helper crash. Do not silently
+        // overwrite its config and start a competing tunnel on the next launch.
+        if FileManager.default.fileExists(atPath: workdir.appendingPathComponent("active.ovpn").path) {
+            state = .failed
+            message = "An unverified OpenVPN session survived helper restart; manual process verification required."
+        }
     }
     private(set) var state: TunnelState = .disconnected
     private(set) var message = "Disconnected"
@@ -34,6 +40,9 @@ final class ManagedTunnel {
     func start(profile text: String, mode: RoutingMode, ruleText: String,
                username: String, password: String) throws {
         guard getuid() == 0 else { throw TunnelError.needRoot }
+        guard !FileManager.default.fileExists(atPath: workdir.appendingPathComponent("active.ovpn").path) else {
+            throw TunnelError.orphanedSession
+        }
         guard !FileManager.default.fileExists(atPath: workdir.appendingPathComponent("routes.journal").path) else {
             throw TunnelError.unresolvedRoutes
         }
@@ -305,6 +314,9 @@ final class ManagedTunnel {
         guard process == nil else {
             return "ERROR: Disconnect the current VPN before recovering routes."
         }
+        guard !FileManager.default.fileExists(atPath: workdir.appendingPathComponent("active.ovpn").path) else {
+            return "ERROR: An unverified OpenVPN child process may still be running. Do not clean up blindly."
+        }
         let journal = workdir.appendingPathComponent("routes.journal")
         guard FileManager.default.fileExists(atPath: journal.path) else {
             return "No orphaned VPN Navigator routes were found."
@@ -405,7 +417,7 @@ final class ManagedTunnel {
 }
 enum TunnelError: Error, LocalizedError {
     case needRoot, alreadyRunning, missingRules, badCredential, engineMissing,
-         managementUnavailable, noPhysicalGateway, noTunnelInterface, noActiveRoutePlan, ipv6Unsafe, unresolvedRoutes, routeVerificationFailed
+         managementUnavailable, noPhysicalGateway, noTunnelInterface, noActiveRoutePlan, ipv6Unsafe, unresolvedRoutes, routeVerificationFailed, orphanedSession
 
     var errorDescription: String? {
         switch self {
@@ -420,6 +432,7 @@ enum TunnelError: Error, LocalizedError {
         case .noTunnelInterface: return "Cannot verify the OpenVPN utun interface."
         case .noActiveRoutePlan: return "No active split-routing session."
         case .unresolvedRoutes: return "Unresolved routes remain from an earlier session. Diagnose and safely restore them before reconnecting."
+        case .orphanedSession: return "An OpenVPN session was left by a helper crash. Verify the old process before reconnecting."
         case .routeVerificationFailed: return "macOS route lookup does not match the requested VPN policy."
         }
     }

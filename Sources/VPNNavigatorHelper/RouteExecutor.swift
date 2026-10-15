@@ -8,10 +8,16 @@ final class RouteExecutor {
     init(journal: URL) {
         self.journal = journal
         // Recover and clean up routes left by an unexpected helper termination.
-        if let data = try? Data(contentsOf: journal),
-           let previous = try? JSONDecoder().decode([RouteTarget].self, from: data) {
-            self.installed = previous
-            rollback()
+        if let data = try? Data(contentsOf: journal) {
+            if let previous = try? JSONDecoder().decode([RouteTarget].self, from: data) {
+                installed = previous  // migrate older array-style journals
+            } else if let text = String(data: data, encoding: .utf8) {
+                installed = text.split(separator: "\n").compactMap {
+                    try? JSONDecoder().decode(RouteTarget.self, from: Data($0.utf8))
+                }
+            }
+            // Do not silently delete a corrupted or unresolved journal.
+            if !installed.isEmpty { rollback() }
         }
     }
 
@@ -22,9 +28,9 @@ final class RouteExecutor {
         if output.split(separator: "\n").contains(where: {
             $0.split(whereSeparator: { $0.isWhitespace }).first.map(String.init) == prefixName
         }) { throw RouteExecutionError.existingRoute(prefixName) }
+        try recordIntent(route)
         try Self.command("/sbin/route", route.arguments(adding: true))
         installed.append(route)
-        try persistJournal()
     }
     func apply(_ routes: [RouteTarget]) throws {
         // Take a single route-table snapshot instead of running netstat for every CIDR.
@@ -37,9 +43,9 @@ final class RouteExecutor {
                 if occupied.contains(route.prefix.description) {
                     throw RouteExecutionError.existingRoute(route.prefix.description)
                 }
+                try recordIntent(route)
                 try Self.command("/sbin/route", route.arguments(adding: true))
                 installed.append(route)
-                try persistJournal()
             }
         } catch { rollback(); throw error }
     }
@@ -108,8 +114,30 @@ final class RouteExecutor {
         return ObservedIPv4Route(commandOutput: output)
     }
 
+    private func recordIntent(_ route: RouteTarget) throws {
+        let encoded = try JSONEncoder().encode(route)
+        var bytes = encoded
+        bytes.append(10)
+        if !FileManager.default.fileExists(atPath: journal.path) {
+            guard FileManager.default.createFile(atPath: journal.path, contents: Data(),
+                                                  attributes: [.posixPermissions: 0o600]) else {
+                throw RouteExecutionError.commandFailed("journal-create")
+            }
+        }
+        let handle = try FileHandle(forWritingTo: journal)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: bytes)
+        try handle.synchronize()
+    }
+
     private func persistJournal() throws {
-        let data = try JSONEncoder().encode(installed)
+        let encoder = JSONEncoder()
+        var data = Data()
+        for route in installed {
+            data.append(try encoder.encode(route))
+            data.append(10)
+        }
         try data.write(to: journal, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: journal.path)
     }

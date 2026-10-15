@@ -1,5 +1,7 @@
 name: Standalone OpenVPN engine smoke test
 on:
+  push:
+    branches: [feat/engine-management-and-routes]
   workflow_dispatch:
   pull_request:
     paths:

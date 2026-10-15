@@ -113,13 +113,18 @@ final class ManagedTunnel {
         }
     }
     private func checkIPv6Bypass() throws {
-        let output = try? RouteExecutor.command("/sbin/route",
-            ["-n", "get", "-inet6", "2606:4700:4700::1111"])
-        if let output, output.components(separatedBy: .newlines).contains(where: {
-            let line = $0.trimmingCharacters(in: .whitespaces)
-            return line.hasPrefix("interface:") && !line.contains("utun")
-        }) {
+        // The IPv6 policy must never treat a failed command as absence of
+        // IPv6. In dual-stack networks a physical IPv6 default bypasses
+        // an IPv4-only VPN split policy.
+        let routes: String
+        do {
+            routes = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet6"])
+        } catch {
             throw TunnelError.ipv6Unsafe
+        }
+        switch IPv6RouteSafety.evaluate(routes) {
+        case .noDefaultRoute, .tunnelOnly: return
+        case .physicalBypass, .unknown: throw TunnelError.ipv6Unsafe
         }
     }
     private func handle(_ snapshot: TunnelSnapshot) {
@@ -163,8 +168,13 @@ final class ManagedTunnel {
             guard let utun = Self.findTunnel(containing: tunnelIP, in: interfaces) else {
                 throw TunnelError.noTunnelInterface
             }
+            let physicalRoutes = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
+            let localPrefixes = LocalIPv4Networks.parse(netstat: physicalRoutes,
+                                                       physicalInterface: physicalInterface)
+            guard !localPrefixes.isEmpty else { throw TunnelError.noPhysicalGateway }
             let plan = try RoutePlanner.build(serverIPv4: remote, physicalGateway: gateway,
-                                              vpnInterface: utun, localPrefixes: [], china: rules)
+                                              vpnInterface: utun, localPrefixes: localPrefixes,
+                                              china: rules)
             let executor = RouteExecutor(journal: workdir.appendingPathComponent("routes.journal"))
             try executor.apply(plan.installOrder)
             try verifySplitRoutes(plan: plan, country: rules)
@@ -208,7 +218,7 @@ final class ManagedTunnel {
     private func verifySplitRoutes(plan: RoutePlan, country: RuleSet) throws {
         guard case .interface(let utun) = plan.vpnDefaults[0].destination,
               case .viaGateway(let physical) = plan.endpoint.destination,
-              let direct = country.routes.first(where: { $0.prefix < 32 }) else {
+              let direct = plan.direct.first(where: { $0.prefix.prefix < 32 })?.prefix else {
             throw TunnelError.routeVerificationFailed
         }
         let sample = IPv4CIDR.parseAddressString(direct.network + 1)

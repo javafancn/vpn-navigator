@@ -14,6 +14,7 @@ final class AppModel: ObservableObject {
         }
     }
     @Published var rules: RuleSet?
+    @Published var ipv6Preview: IPv6RuleSet?
     @Published var ruleSnapshots: [RuleSnapshot] = []
     @Published var busy = false
     @Published var message: String?
@@ -34,6 +35,7 @@ final class AppModel: ObservableObject {
 
     private let store: ProfileStore
     private let updater: RuleUpdater
+    private let ipv6Updater: APNICIPv6PreviewStore
     private let helper = HelperClient.shared
 
     init() {
@@ -41,6 +43,7 @@ final class AppModel: ObservableObject {
             .appendingPathComponent("VPNNavigator", isDirectory: true)
         store = ProfileStore(root: root.appendingPathComponent("Profiles"))
         updater = RuleUpdater(folder: root.appendingPathComponent("Rules"))
+        ipv6Updater = APNICIPv6PreviewStore(root: root.appendingPathComponent("Rules"))
         Task { await load() }
         Task {
             while !Task.isCancelled {
@@ -60,6 +63,7 @@ final class AppModel: ObservableObject {
             profiles = try await store.list()
             if selectedID == nil { selectedID = profiles.first?.id }
             rules = try await updater.cached()
+            ipv6Preview = try await ipv6Updater.cached()
             ruleSnapshots = try await updater.snapshots()
         } catch { message = error.localizedDescription }
     }
@@ -141,6 +145,17 @@ final class AppModel: ObservableObject {
         catch { message = error.localizedDescription }
     }
 
+    func updateIPv6Preview() async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            ipv6Preview = try await ipv6Updater.refresh()
+            message = "Downloaded \(ipv6Preview?.routes.count ?? 0) APNIC IPv6 allocation prefixes. This is a data preview only; it does not change VPN or system routes."
+        } catch {
+            message = "IPv6 preview update was refused; cached data preserved: \(error.localizedDescription)"
+        }
+    }
     func refreshRules() async {
         guard !busy else { return }
         busy = true; defer { busy = false }

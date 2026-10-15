@@ -224,6 +224,20 @@ private struct ProfileDetail: View {
                         }
                     }.padding(8)
                 }
+                GroupBox("IPv6 allocation preview — not active") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text(model.ipv6Preview.map { "\($0.routes.count) CN-registered IPv6 prefixes" } ?? "No cached APNIC IPv6 preview")
+                            Spacer()
+                            Button("Refresh Preview") {
+                                Task { await model.updateIPv6Preview() }
+                            }
+                            .disabled(model.busy)
+                        }
+                        Text("Registration country is not equivalent to actual IP location. This data is not installed as IPv6 routes and does not provide IPv6 VPN split-tunnelling or a kill switch.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }.padding(8)
+                }
                 HStack {
                     Button("Export configuration preview…") { Task { await model.exportPreview() } }
                         .disabled(profile.mode == .chinaDirect && model.rules == nil)

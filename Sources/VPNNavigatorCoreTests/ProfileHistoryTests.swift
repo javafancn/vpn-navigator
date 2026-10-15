@@ -21,12 +21,15 @@ final class ProfileHistoryTests: XCTestCase {
         let profile = try await store.importProfile(from: source)
         let revised = sample.replacingOccurrences(of: "vpn.example.com", with: "backup.example.com")
         try await store.revise(profile, text: revised)
-        XCTAssertEqual(try await store.original(for: profile), revised)
+        let updatedSource = try await store.original(for: profile)
+        XCTAssertEqual(updatedSource, revised)
         let revisions = try await store.revisions(for: profile)
         XCTAssertEqual(revisions.count, 1)
         try await store.restore(profile, revision: revisions[0].filename)
-        XCTAssertEqual(try await store.runtimeConfig(for: profile), sample)
-        XCTAssertEqual(try await store.revisions(for: profile).count, 2)
+        let restored = try await store.runtimeConfig(for: profile)
+        XCTAssertEqual(restored, sample)
+        let count = try await store.revisions(for: profile).count
+        XCTAssertEqual(count, 2)
     }
 
     func testRejectUnsafeRevisionAndTraversalRestore() async throws {
@@ -43,7 +46,8 @@ final class ProfileHistoryTests: XCTestCase {
             try await store.revise(profile, text: sample + "\nscript-security 3")
             XCTFail("Unsafe revision unexpectedly accepted")
         } catch {}
-        XCTAssertEqual(try await store.original(for: profile), sample)
+        let stillOriginal = try await store.original(for: profile)
+        XCTAssertEqual(stillOriginal, sample)
         do {
             try await store.restore(profile, revision: "../../evil.ovpn")
             XCTFail("Traversal unexpectedly accepted")

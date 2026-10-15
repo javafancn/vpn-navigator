@@ -48,6 +48,9 @@ private enum HelperMessage {
             connection.interruptionHandler = { once.finish("ERROR: Interrupted") }
             connection.invalidationHandler = { once.finish("ERROR: Unavailable") }
             connection.resume()
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 600) {
+                once.finish("ERROR: Timed out waiting for helper route transaction")
+            }
             guard let remote = connection.remoteObjectProxyWithErrorHandler({ _ in once.finish("ERROR: Unavailable") }) as? VPNNavigatorHelperAPI else {
                 once.finish("ERROR: Unavailable")
                 return

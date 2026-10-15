@@ -19,7 +19,7 @@ final class HelperClient {
         try SMAppService.daemon(plistName: HelperIdentity.plistName).unregister()
     }
 
-    private func ask(_ call: @escaping (VPNNavigatorHelperAPI, @escaping (String) -> Void) -> Void) async -> String {
+    private func ask(timeout: TimeInterval = 12, _ call: @escaping (VPNNavigatorHelperAPI, @escaping (String) -> Void) -> Void) async -> String {
         await withCheckedContinuation { continuation in
             let connection = NSXPCConnection(machServiceName: HelperIdentity.machService,
                                            options: .privileged)
@@ -31,8 +31,8 @@ final class HelperClient {
             connection.interruptionHandler = { completion.finish("ERROR: Helper interrupted") }
             connection.invalidationHandler = { completion.finish("ERROR: Helper unavailable or not authorized") }
             connection.resume()
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 12) {
-                completion.finish("ERROR: Privileged helper did not respond within 12 seconds")
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
+                completion.finish("ERROR: Privileged helper did not respond before the operation deadline")
             }
             guard let proxy = connection.remoteObjectProxyWithErrorHandler({ error in
                 completion.finish("ERROR: \(error.localizedDescription)")
@@ -57,10 +57,10 @@ final class HelperClient {
         }
     }
     func disconnect() async -> String {
-        await ask { helper, reply in helper.disconnect(reply: reply) }
+        await ask(timeout: 30) { helper, reply in helper.disconnect(reply: reply) }
     }
     func updateRules(_ rules: String) async -> String {
-        await ask { helper, reply in helper.updateRules(rules, reply: reply) }
+        await ask(timeout: 600) { helper, reply in helper.updateRules(rules, reply: reply) }
     }
 }
 

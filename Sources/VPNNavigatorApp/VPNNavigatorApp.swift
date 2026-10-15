@@ -36,7 +36,13 @@ final class AppModel: ObservableObject {
             .appendingPathComponent("VPNNavigator", isDirectory: true)
         store = ProfileStore(root: root.appendingPathComponent("Profiles"))
         updater = RuleUpdater(folder: root.appendingPathComponent("Rules"))
-        Task { await load(); await refreshConnectionStatus() }
+        Task { await load() }
+        Task {
+            while !Task.isCancelled {
+                await refreshConnectionStatus()
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
+        }
     }
 
     var selected: VPNProfile? { profiles.first { $0.id == selectedID } }

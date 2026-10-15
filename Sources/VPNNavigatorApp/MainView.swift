@@ -37,12 +37,6 @@ struct MainView: View {
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .task {
-            while !Task.isCancelled {
-                await model.refreshConnectionStatus()
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-            }
-        }
         .fileImporter(isPresented: $importing,
                       allowedContentTypes: [.init(filenameExtension: "ovpn")!],
                       allowsMultipleSelection: true) { result in

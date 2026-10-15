@@ -31,6 +31,9 @@ final class HelperClient {
             connection.interruptionHandler = { completion.finish("ERROR: Helper interrupted") }
             connection.invalidationHandler = { completion.finish("ERROR: Helper unavailable or not authorized") }
             connection.resume()
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 12) {
+                completion.finish("ERROR: Privileged helper did not respond within 12 seconds")
+            }
             guard let proxy = connection.remoteObjectProxyWithErrorHandler({ error in
                 completion.finish("ERROR: \(error.localizedDescription)")
             }) as? VPNNavigatorHelperAPI else {

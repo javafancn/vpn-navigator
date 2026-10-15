@@ -65,3 +65,7 @@ settings pane is a stack of compact icon-led action rows rather than oversized
 forms. Helper status is localized instead of displaying the raw Swift enum.
 Traffic mini-charts are derived only from actual OpenVPN byte-count differences
 and show a clear empty state otherwise; no dummy latency or speed data.
+
+## Wallpaper provenance correction (October 15)
+
+**Design reference clarification:** all mountain scenery is the user's **macOS desktop wallpaper**, not a VPN Navigator illustration or branded background. Removed MountainRidge, the full-window gradient and all app-drawn scenery. Main window uses a transparent NSWindow and a behind-window NSVisualEffectView to sample the current desktop. Cards are thin native system materials with a faint translucent tint (rather than 79% white), and the sidebar/toolbar likewise avoid opaque backgrounds. Results vary with macOS wallpaper, transparency accessibility preferences, and macOS appearance. This is a functional reproduction of the composition, not a pixel-locked wallpaper image. Real network state and data remain authoritative.

@@ -36,8 +36,8 @@ struct MainView: View {
         ZStack {
             GlassAtmosphere()
             HStack(spacing: 0) {
-                sidebar.frame(width: 180)
-                Rectangle().fill(Color.white.opacity(0.26)).frame(width: 1)
+                sidebar.frame(width: 201)
+                Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
                 VStack(spacing: 0) {
                     topBar
                     Rectangle().fill(Color.white.opacity(0.22)).frame(height: 1)
@@ -54,7 +54,7 @@ struct MainView: View {
                 }
             }
         }
-        .frame(minWidth: 990, minHeight: 635)
+        .frame(minWidth: 980, minHeight: 590)
         .preferredColorScheme(nil)
         .fileImporter(isPresented: $importing,
                       allowedContentTypes: [.init(filenameExtension: "ovpn")!],
@@ -138,13 +138,12 @@ struct MainView: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white.opacity(0.12),
-                        in: RoundedRectangle(cornerRadius: 12))
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
             .padding(.horizontal, 12)
             .padding(.bottom, 14)
         }
-        .background(Color.white.opacity(0.39))
         .background(.ultraThinMaterial)
+        .background(Color.white.opacity(0.07))
     }
 
     private var topBar: some View {
@@ -167,8 +166,8 @@ struct MainView: View {
         }
         .padding(.leading, 24).padding(.trailing, 20)
         .frame(height: 45)
-        .background(Color.white.opacity(0.42))
         .background(.ultraThinMaterial)
+        .background(Color.white.opacity(0.06))
     }
 }
 
@@ -301,7 +300,7 @@ private struct ConnectionOverview: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 275)
+                    .frame(maxWidth: .infinity, minHeight: 255)
                     .padding(.horizontal, 15)
                     .glassCard(cornerRadius: 18)
 

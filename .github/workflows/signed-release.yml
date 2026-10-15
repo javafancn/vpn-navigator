@@ -52,8 +52,8 @@ jobs:
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security list-keychains -d user -s "$KEYCHAIN"
-          printf '%s' "$APP_P12" | base64 --decode > "$RUNNER_TEMP/app.p12"
-          printf '%s' "$INSTALLER_P12" | base64 --decode > "$RUNNER_TEMP/installer.p12"
+          printf '%s' "$APP_P12" | base64 -D > "$RUNNER_TEMP/app.p12"
+          printf '%s' "$INSTALLER_P12" | base64 -D > "$RUNNER_TEMP/installer.p12"
           security import "$RUNNER_TEMP/app.p12" -k "$KEYCHAIN" -P "$APP_PASSWORD" -T /usr/bin/codesign
           security import "$RUNNER_TEMP/installer.p12" -k "$KEYCHAIN" -P "$INSTALLER_PASSWORD" -T /usr/bin/productbuild -T /usr/bin/pkgbuild
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
@@ -87,7 +87,7 @@ jobs:
         run: |
           set -euo pipefail
           : "${NOTARY_KEY_BASE64:?missing NOTARY_API_KEY_BASE64}"
-          printf '%s' "$NOTARY_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$NOTARY_KEY_BASE64" | base64 -D > "$RUNNER_TEMP/AuthKey.p8"
           xcrun notarytool store-credentials "vpn-navigator-release" \
             --key "$RUNNER_TEMP/AuthKey.p8" \
             --key-id "$NOTARY_KEY_ID" \

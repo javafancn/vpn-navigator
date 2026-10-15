@@ -1,43 +1,43 @@
 import Foundation
 import VPNNavigatorCore
 
-/// Execute only validated routes. No shell, no user-supplied executable/argv.
+/// Root-only route executor. Every OS mutation is bracketed by durable
+/// begin/commit records. A crash between them is considered ambiguous:
+/// never delete an unproven route or silently start another VPN.
 final class RouteExecutor {
     private(set) var installed: [RouteTarget] = []
     private let journal: URL
+    private var ambiguous = false
+
     init(journal: URL) {
         self.journal = journal
-        // Recover and clean up routes left by an unexpected helper termination.
-        if let data = try? Data(contentsOf: journal) {
-            if let previous = try? JSONDecoder().decode([RouteTarget].self, from: data) {
-                installed = previous  // migrate older array-style journals
-            } else if let text = String(data: data, encoding: .utf8) {
-                let lines = text.split(separator: "\n")
-                let recovered = lines.map {
-                    try? JSONDecoder().decode(RouteTarget.self, from: Data($0.utf8))
-                }
-                // If even one record is invalid, don't drop the recovery file.
-                guard !lines.isEmpty, recovered.allSatisfy({ $0 != nil }) else { return }
-                installed = recovered.compactMap { $0 }
+        guard let data = try? Data(contentsOf: journal) else { return }
+        let replay = RouteLedgerReplay(data: data)
+        installed = replay.installed
+        ambiguous = !replay.permitsAutomaticRecovery
+        if !ambiguous {
+            if installed.isEmpty {
+                try? FileManager.default.removeItem(at: journal)
+            } else {
+                rollback()
             }
-            // Do not silently delete a corrupted or unresolved journal.
-            if !installed.isEmpty { rollback() }
         }
     }
 
     func apply(_ route: RouteTarget) throws {
-        // Abort if another tunnel already owns this exact network (idempotence protects shared routes).
+        guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
         let output = try Self.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
-        let prefixName = route.prefix.description
+        let prefix = route.prefix.description
         if output.split(separator: "\n").contains(where: {
-            $0.split(whereSeparator: { $0.isWhitespace }).first.map(String.init) == prefixName
-        }) { throw RouteExecutionError.existingRoute(prefixName) }
-        try recordIntent(route)
-        try Self.command("/sbin/route", route.arguments(adding: true))
-        installed.append(route)
+            $0.split(whereSeparator: { $0.isWhitespace }).first.map(String.init) == prefix
+        }) {
+            throw RouteExecutionError.existingRoute(prefix)
+        }
+        try install(route)
     }
+
     func apply(_ routes: [RouteTarget]) throws {
-        // Take a single route-table snapshot instead of running netstat for every CIDR.
+        guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
         let snapshot = try Self.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
         let occupied = Set(snapshot.split(separator: "\n").compactMap {
             $0.split(whereSeparator: { $0.isWhitespace }).first.map(String.init)
@@ -47,69 +47,72 @@ final class RouteExecutor {
                 if occupied.contains(route.prefix.description) {
                     throw RouteExecutionError.existingRoute(route.prefix.description)
                 }
-                try recordIntent(route)
-                try Self.command("/sbin/route", route.arguments(adding: true))
-                installed.append(route)
+                try install(route)
             }
-        } catch { rollback(); throw error }
+        } catch {
+            rollback()
+            throw error
+        }
     }
-    /// Remove only routes that still point at our own expected destination.
-    /// If route lookup fails, retain the journal for a later recovery attempt.
+
+    private func install(_ route: RouteTarget) throws {
+        let mutation = RouteMutation(action: .add, route: route)
+        try append(.init(phase: .begun, mutation: mutation))
+        ambiguous = true
+        try Self.command("/sbin/route", route.arguments(adding: true))
+        try append(.init(phase: .committed, mutation: mutation))
+        installed.append(route)
+        ambiguous = false
+    }
+
+    /// Always verify route ownership before deleting. If a mutation was left
+    /// incomplete, leave the journal intact rather than guessing OS state.
     func rollback() {
-        var unresolved: [RouteTarget] = []
+        guard !ambiguous else { return }
+        if let data = try? Data(contentsOf: journal),
+           !RouteLedgerReplay(data: data).permitsAutomaticRecovery {
+            ambiguous = true
+            return
+        }
         for route in installed.reversed() {
             do {
                 let observation = try observe(route)
-                // A different gateway/interface means another owner took over;
-                // never delete that route.
-                guard observation.isExactly(route) else { continue }
-                try Self.command("/sbin/route", route.arguments(adding: false))
+                try release(route, deleteSystemRoute: observation.isExactly(route))
             } catch {
-                unresolved.append(route)
+                // No further cleanup is safe until the failing operation
+                // and its journal records can be inspected by an operator.
+                break
             }
         }
-        installed = unresolved.reversed()
-        if installed.isEmpty {
+        if !ambiguous && installed.isEmpty {
             try? FileManager.default.removeItem(at: journal)
-        } else {
-            try? persistJournal()
         }
     }
 
     func refreshDirectRoutes(added: [RouteTarget], removed: [RouteTarget]) throws {
-        var newlyAdded: [RouteTarget] = []
-        var deleted: [RouteTarget] = []
-        do {
-            for route in added {
-                try apply(route)
-                newlyAdded.append(route)
+        guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
+        // The owning tunnel is disconnected by the caller if any mutation fails.
+        for route in added { try apply(route) }
+        for route in removed {
+            guard installed.contains(route) else { continue }
+            let actual = try observe(route)
+            guard actual.isExactly(route) else {
+                throw RouteExecutionError.routeOwnershipLost(route.prefix.description)
             }
-            for route in removed {
-                guard installed.contains(route) else { continue }
-                guard try observe(route).isExactly(route) else {
-                    throw RouteExecutionError.routeOwnershipLost(route.prefix.description)
-                }
-                try Self.command("/sbin/route", route.arguments(adding: false))
-                installed.removeAll { $0 == route }
-                deleted.append(route)
-                try persistJournal()
-            }
-        } catch {
-            // Restore the last-known-good routing policy, best-effort.
-            for route in deleted.reversed() {
-                if (try? Self.command("/sbin/route", route.arguments(adding: true))) != nil {
-                    installed.append(route)
-                }
-            }
-            for route in newlyAdded.reversed() {
-                if let observation = try? observe(route), observation.isExactly(route),
-                   (try? Self.command("/sbin/route", route.arguments(adding: false))) != nil {
-                    installed.removeAll { $0 == route }
-                }
-            }
-            try? persistJournal()
-            throw error
+            try release(route, deleteSystemRoute: true)
         }
+    }
+
+    private func release(_ route: RouteTarget, deleteSystemRoute: Bool) throws {
+        let mutation = RouteMutation(action: .remove, route: route)
+        try append(.init(phase: .begun, mutation: mutation))
+        ambiguous = true
+        if deleteSystemRoute {
+            try Self.command("/sbin/route", route.arguments(adding: false))
+        }
+        try append(.init(phase: .committed, mutation: mutation))
+        installed.removeAll { $0 == route }
+        ambiguous = false
     }
 
     private func observe(_ route: RouteTarget) throws -> ObservedIPv4Route {
@@ -118,32 +121,20 @@ final class RouteExecutor {
         return ObservedIPv4Route(commandOutput: output)
     }
 
-    private func recordIntent(_ route: RouteTarget) throws {
-        let encoded = try JSONEncoder().encode(route)
-        var bytes = encoded
-        bytes.append(10)
+    private func append(_ event: RouteLedgerEvent) throws {
+        var data = try JSONEncoder().encode(event)
+        data.append(10)
         if !FileManager.default.fileExists(atPath: journal.path) {
             guard FileManager.default.createFile(atPath: journal.path, contents: Data(),
                                                   attributes: [.posixPermissions: 0o600]) else {
-                throw RouteExecutionError.commandFailed("journal-create")
+                throw RouteExecutionError.journalFailure
             }
         }
         let handle = try FileHandle(forWritingTo: journal)
         defer { try? handle.close() }
         try handle.seekToEnd()
-        try handle.write(contentsOf: bytes)
+        try handle.write(contentsOf: data)
         try handle.synchronize()
-    }
-
-    private func persistJournal() throws {
-        let encoder = JSONEncoder()
-        var data = Data()
-        for route in installed {
-            data.append(try encoder.encode(route))
-            data.append(10)
-        }
-        try data.write(to: journal, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: journal.path)
     }
 
     @discardableResult
@@ -155,11 +146,16 @@ final class RouteExecutor {
         task.standardOutput = output
         task.standardError = output
         try task.run()
-        // Bounded use: route/netstat/ifconfig commands terminate quickly.
         let data = output.fileHandleForReading.readDataToEndOfFile()
         task.waitUntilExit()
-        guard task.terminationStatus == 0 else { throw RouteExecutionError.commandFailed(executable) }
+        guard task.terminationStatus == 0 else {
+            throw RouteExecutionError.commandFailed(executable)
+        }
         return String(decoding: data, as: UTF8.self)
     }
 }
-enum RouteExecutionError: Error { case existingRoute(String), commandFailed(String), routeOwnershipLost(String) }
+
+enum RouteExecutionError: Error {
+    case existingRoute(String), commandFailed(String), routeOwnershipLost(String)
+    case ambiguousJournal, journalFailure
+}

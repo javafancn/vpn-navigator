@@ -18,6 +18,10 @@ final class ManagedTunnel {
     private var protectedPhysicalInterface: String?
     private var lastError: String?
     private var orphanRecordFile: URL { workdir.appendingPathComponent("openvpn-child.json") }
+    private var hasPersistentSessionEvidence: Bool {
+        FileManager.default.fileExists(atPath: workdir.appendingPathComponent("active.ovpn").path) ||
+        FileManager.default.fileExists(atPath: orphanRecordFile.path)
+    }
 
     init() {
         // Never remove routes while an OpenVPN process may still be alive
@@ -458,6 +462,16 @@ final class ManagedTunnel {
         }
     }
     func stop() {
+        // A restarted helper has no Process identity for an orphaned child.
+        // A plain Disconnect must never erase the very evidence that prevents
+        // route rollback and a competing tunnel. Recovery checks PID absence.
+        if process == nil && !TunnelShutdownPolicy.mayFinalizeSessionCleanup(
+            ownedChildProcess: false, childExited: false,
+            hasPersistentSessionEvidence: hasPersistentSessionEvidence) {
+            state = .failed
+            message = "Previous OpenVPN session is unverified. Use Safe Network Recovery; Disconnect cannot clear its evidence."
+            return
+        }
         networkWatchdog?.cancel()
         networkWatchdog = nil
         lastError = nil
@@ -492,11 +506,21 @@ final class ManagedTunnel {
     private func stopRoutesAndReset() {
         // Invoked by both explicit disconnect and a natural process-exit
         // callback. A stale callback must never restore routes for a live VPN.
-        guard TunnelShutdownPolicy.mayRestoreRoutes(openVPNExited: process?.isRunning != true) else {
+        guard TunnelShutdownPolicy.mayRestoreRoutes(openVPNExited: process?.isRunning != true),
+              TunnelShutdownPolicy.mayFinalizeSessionCleanup(
+                ownedChildProcess: process != nil,
+                childExited: process?.isRunning != true,
+                hasPersistentSessionEvidence: hasPersistentSessionEvidence) else {
             state = .failed
-            message = "OpenVPN is still running; preserving VPN routes and recovery evidence."
+            message = "OpenVPN exit or ownership is unverified; preserving routes and session evidence."
             return
         }
+        // Natural child exit may reach here before the management socket's
+        // EOF callback. Disable its stale callbacks and stop the watchdog.
+        networkWatchdog?.cancel()
+        networkWatchdog = nil
+        management?.close()
+        management = nil
         routing?.rollback()
         routing = nil
         activePlan = nil

@@ -81,3 +81,5 @@ The following checks must be executed on a disposable Mac after Developer ID sig
 | A60 | Helper crash after PID record, child already exited | Recovery clears stale markers only when exact PID is absent |
 | A61 | Helper crash with alive or reused PID | Recovery does not send signals or clear evidence |
 | A62 | Client cert inline data contains directive-like text | Managed routing scanner ignores inline certificate material |
+
+| A63 | Helper restarted with old active.ovpn/PID marker; user clicks Disconnect | No marker deletion or route rollback; only explicit absence-verified recovery can clear evidence |

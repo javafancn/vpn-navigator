@@ -65,3 +65,25 @@ unsigned files or an unsigned UI-only CI artifact as a working VPN.
 `release-audit.sh` checks binaries, identity, Team ID, libraries and plists;
 it **cannot** substitute for physical macOS networking, entitlement and
 notarization testing.
+
+## Required license materials for signed distribution
+
+The build intentionally refuses to sign a distributable binary without
+`OPENVPN_SOURCE_ARCHIVE` (matching the *actual* OpenVPN binary),
+`OPENVPN_SOURCE_SHA256`, and a reviewed `THIRD_PARTY_NOTICES` file.
+The source archive and notices ship inside the signed app bundle; this is
+one part of license compliance, **not** a legal certification. Ensure build
+scripts and source for all GPL-covered modifications are also supplied.
+
+```sh
+OPENVPN_BIN=/path/to/openvpn \
+OPENVPN_SOURCE_ARCHIVE=/path/to/matching-source.tar.gz \
+OPENVPN_SOURCE_SHA256="$(shasum -a 256 /path/to/matching-source.tar.gz | cut -d' ' -f1)" \
+THIRD_PARTY_NOTICES=/path/to/reviewed-notices.txt \
+DEVELOPER_ID_APPLICATION="Developer ID Application: ..." \
+zsh scripts/build-app.sh
+```
+
+Sign and build PKG, then invoke `scripts/notarize.sh` **after** the PKG
+is generated to notarize both the app and installer. For release review run
+`zsh scripts/release-audit.sh`, `spctl --assess`, and the real-Mac QA checklist.

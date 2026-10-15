@@ -8,6 +8,9 @@ on:
       - 'scripts/build-app.sh'
       - 'scripts/vendor-openvpn.py'
       - '.github/workflows/native-engine-smoke.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   vendor-engine:
     runs-on: macos-15

@@ -29,6 +29,23 @@ else
 fi
 
 if [[ -n "${DEVELOPER_ID_APPLICATION:-}" ]]; then
+  [[ -x "$APP/Contents/Resources/openvpn" ]] || { echo "Signed release requires OPENVPN_BIN"; exit 1; }
+  : "${OPENVPN_SOURCE_ARCHIVE:?Signed release requires matching GPLv2 OpenVPN source archive}"
+  : "${OPENVPN_SOURCE_SHA256:?Set verified source archive SHA256}"
+  : "${THIRD_PARTY_NOTICES:?Signed release requires reviewed dependency license notices}"
+  [[ -f "$OPENVPN_SOURCE_ARCHIVE" && -f "$THIRD_PARTY_NOTICES" ]] || {
+    echo "Source or third-party license notices missing"; exit 1
+  }
+  ACTUAL_SOURCE_SHA256="$(shasum -a 256 "$OPENVPN_SOURCE_ARCHIVE" | awk '{print $1}')"
+  [[ "$ACTUAL_SOURCE_SHA256" == "$OPENVPN_SOURCE_SHA256" ]] || {
+    echo "OpenVPN source archive hash mismatch"; exit 1
+  }
+  mkdir -p "$APP/Contents/Resources/Sources"
+  cp "$OPENVPN_SOURCE_ARCHIVE" "$APP/Contents/Resources/Sources/OpenVPN-source.tar.gz"
+  cp "$THIRD_PARTY_NOTICES" "$APP/Contents/Resources/LICENSES/THIRD_PARTY_NOTICES.txt"
+  [[ -s "$APP/Contents/Resources/Sources/OpenVPN-source.tar.gz" &&
+     -s "$APP/Contents/Resources/LICENSES/THIRD_PARTY_NOTICES.txt" ]] || exit 1
+
   # Sign relocated libraries first, then executables and the sealed outer bundle.
   for dylib in "$APP"/Contents/Frameworks/*.dylib(N); do
     codesign --force --timestamp --options runtime --sign "$DEVELOPER_ID_APPLICATION" "$dylib"

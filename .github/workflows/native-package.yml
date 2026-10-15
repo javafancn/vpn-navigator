@@ -2,6 +2,9 @@ name: Native development package
 on:
   workflow_dispatch:
   pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build-macos-app:
     runs-on: macos-15
@@ -10,7 +13,7 @@ jobs:
       - name: Verify plists and scripts
         run: |
           plutil -lint Resources/Info.plist Resources/LaunchDaemons/*.plist Resources/LaunchAgents/*.plist
-          zsh -n scripts/build-app.sh scripts/build-pkg.sh scripts/notarize.sh
+          zsh -n scripts/build-app.sh scripts/build-pkg.sh scripts/notarize.sh scripts/release-audit.sh
       - name: Build unsigned developer-only app
         run: zsh scripts/build-app.sh
       - name: Verify development bundle

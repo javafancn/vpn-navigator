@@ -52,7 +52,7 @@ jobs:
           OUT="$RUNNER_TEMP/VPN-Navigator-0.1.0-macOS-Universal-UI-Test.zip"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT"
           unzip -t "$OUT"
-          shasum -a 256 "$OUT" | tee "$RUNNER_TEMP/VPN-Navigator-0.1.0-macOS-Universal-UI-Test.sha256"
+          (cd "$RUNNER_TEMP" && shasum -a 256 "$(basename "$OUT")" | tee VPN-Navigator-0.1.0-macOS-Universal-UI-Test.sha256)
           ls -lh "$OUT"
       - uses: actions/upload-artifact@v4
         with:

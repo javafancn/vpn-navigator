@@ -54,3 +54,25 @@ Navigator. Updates refuse to run while the privileged helper is enabled.
 The package preinstall script also refuses to upgrade while active VPN processes
 or unresolved route journals remain. Signed release builds require a reviewed
 OpenVPN 2.7.x engine, matching GPL source archive and third-party notices.
+
+## Additional boundaries: October 2026
+
+- Incoming and outgoing XPC peers are checked by macOS connection-level
+  designated code-signing requirements (macOS 13+), not only process PID.
+- Country route feeds are bounded to 2 MB / 30,000 unique entries. Special
+  ranges are excluded by CIDR *overlap* including broader aggregates.
+- Live route updates compare filtered route-plan targets after protecting
+  on-link LAN prefixes and pinning the VPN server endpoint.
+- RuleUpdater maintains at most ten validated snapshots and supports guarded
+  UI-driven rollback (also subject to the candidate change policy).
+- If a helper restarts and finds a possible orphaned OpenVPN session, it
+  refuses another connection instead of assuming the old process is dead.
+  Recovery of the root process requires real process identity verification
+  and is deliberately not automated.
+- Read-only diagnostics expose route interface/IPv6 category/resolver counts;
+  private DNS domains are not displayed in the GUI.
+
+**Not implemented:** reliably terminating orphaned OpenVPN processes after
+a daemon crash; a stateful PF-based kill switch and full IPv6 geo-splitting;
+VPN/DNS packet-level leak certification; seamless, no-impact route update
+under every gateway and pushed corporate route configuration.

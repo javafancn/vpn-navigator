@@ -46,3 +46,16 @@ The following checks must be executed on a disposable Mac after Developer ID sig
 | A33 | IPv6 default appears while split tunnel active | Session is stopped; do not describe polling as a kill switch |
 | A34 | Route verification failure after installation | Transaction ownership journal enables rollback |
 | A35 | Old VPN process late exit during new session | Old callbacks cannot tear down new process |
+
+## Additional safety regression gates
+
+| ID | Test | Expected |
+|---|---|---|
+| A36 | Malformed country CIDR overlapping 192.168/16, multicast, CGNAT | Feed rejected, last known-good routes retained |
+| A37 | Live feed adds CN CIDR overlapping connected LAN | Effective route diff protects LAN before any add |
+| A38 | Large/malicious CIDR feed through root XPC | Input rejected before parsing unbounded entries |
+| A39 | Crash helper while OpenVPN child remains alive | New session is blocked pending manual identity verification |
+| A40 | Unsigned/lookalike app contacts signed root helper | OS-enforced XPC code requirement rejects peer |
+| A41 | Fake helper receives credentials from app | Client-side helper designated requirement rejects fake endpoint |
+| A42 | Rule update archives known-good snapshot | Snapshot remains local, 0600, can restore with policy checks |
+| A43 | Network diagnostics on corporate split DNS | Only resolver count and interface shown, private domain never logged |

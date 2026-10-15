@@ -38,3 +38,23 @@ No arbitrary scripts or plugins in imported OpenVPN profile are run as root. Onl
 For architectural and safety caveats, read [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 Rule feed: [chnroutes2](https://github.com/misakaio/chnroutes2), which requires license/attribution review for redistributions. OpenVPN Community 2.x has separate GPL obligations.
+
+## October 2026 safety and maintenance hardening
+
+- IPv4 country feeds now reject CIDRs that overlap RFC-reserved, multicast,
+  CGNAT and local-use ranges. Inputs from HTTP and XPC have byte/count limits.
+- Live rule updates rebuild the *effective* route plan with on-link LAN
+  exclusions instead of blindly applying changes in the source feed.
+- Before every country rules commit, a validated previous version is archived
+  under private Application Support; recent snapshots can be restored from UI.
+- Root XPC now uses macOS 13 `setCodeSigningRequirement` rather than
+  validating a peer by PID. Clients also validate the root helper's signing
+  identity before sending authentication credentials.
+- A previous root-helper crash with a leftover active OpenVPN configuration
+  refuses to start another session until the orphan is investigated.
+- The diagnostics view can show IPv6 default-route risk and DNS resolver counts
+  without revealing private domain names.
+
+These additions require real signed-macOS device testing. They are NOT
+equivalent to an audited kill switch, traffic leak guarantees or a production
+VPN release. See [QA](docs/QA.md).

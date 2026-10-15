@@ -155,10 +155,10 @@ private struct ProfileDetail: View {
                 GroupBox("Connection") {
                     VStack(alignment: .leading, spacing: 10) {
                         Label(model.connectionStatus, systemImage: model.connected ? "checkmark.shield" : "circle.dotted")
+                            .foregroundStyle(model.connected ? .green : .secondary)
                         if let active = model.activeProfile {
                             LabeledContent("Active profile", value: active.name)
                         }
-                            .foregroundStyle(model.connected ? .green : .secondary)
                         TextField("Username (if required)", text: $model.username)
                         SecureField("Password (if required)", text: $model.password)
                         Toggle("Remember credentials in macOS Keychain", isOn: $model.rememberCredentials)

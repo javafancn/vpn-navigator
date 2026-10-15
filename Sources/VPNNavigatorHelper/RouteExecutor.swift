@@ -43,35 +43,69 @@ final class RouteExecutor {
             }
         } catch { rollback(); throw error }
     }
+    /// Remove only routes that still point at our own expected destination.
+    /// If route lookup fails, retain the journal for a later recovery attempt.
     func rollback() {
+        var unresolved: [RouteTarget] = []
         for route in installed.reversed() {
-            _ = try? Self.command("/sbin/route", route.arguments(adding: false))
+            do {
+                let observation = try observe(route)
+                // A different gateway/interface means another owner took over;
+                // never delete that route.
+                guard observation.isExactly(route) else { continue }
+                try Self.command("/sbin/route", route.arguments(adding: false))
+            } catch {
+                unresolved.append(route)
+            }
         }
-        installed.removeAll()
-        try? FileManager.default.removeItem(at: journal)
+        installed = unresolved.reversed()
+        if installed.isEmpty {
+            try? FileManager.default.removeItem(at: journal)
+        } else {
+            try? persistJournal()
+        }
     }
+
     func refreshDirectRoutes(added: [RouteTarget], removed: [RouteTarget]) throws {
-        // Addition first avoids temporarily losing direct routes during an update.
-        var created: [RouteTarget] = []
+        var newlyAdded: [RouteTarget] = []
+        var deleted: [RouteTarget] = []
         do {
             for route in added {
                 try apply(route)
-                created.append(route)
+                newlyAdded.append(route)
+            }
+            for route in removed {
+                guard installed.contains(route) else { continue }
+                guard try observe(route).isExactly(route) else {
+                    throw RouteExecutionError.routeOwnershipLost(route.prefix.description)
+                }
+                try Self.command("/sbin/route", route.arguments(adding: false))
+                installed.removeAll { $0 == route }
+                deleted.append(route)
+                try persistJournal()
             }
         } catch {
-            for route in created.reversed() {
-                _ = try? Self.command("/sbin/route", route.arguments(adding: false))
-                installed.removeAll { $0 == route }
+            // Restore the last-known-good routing policy, best-effort.
+            for route in deleted.reversed() {
+                if (try? Self.command("/sbin/route", route.arguments(adding: true))) != nil {
+                    installed.append(route)
+                }
+            }
+            for route in newlyAdded.reversed() {
+                if let observation = try? observe(route), observation.isExactly(route),
+                   (try? Self.command("/sbin/route", route.arguments(adding: false))) != nil {
+                    installed.removeAll { $0 == route }
+                }
             }
             try? persistJournal()
             throw error
         }
-        for route in removed {
-            guard installed.contains(route) else { continue }
-            try Self.command("/sbin/route", route.arguments(adding: false))
-            installed.removeAll { $0 == route }
-        }
-        try persistJournal()
+    }
+
+    private func observe(_ route: RouteTarget) throws -> ObservedIPv4Route {
+        let output = try Self.command("/sbin/route",
+                                      ["-n", "get", "-net", route.prefix.description])
+        return ObservedIPv4Route(commandOutput: output)
     }
 
     private func persistJournal() throws {
@@ -96,4 +130,4 @@ final class RouteExecutor {
         return String(decoding: data, as: UTF8.self)
     }
 }
-enum RouteExecutionError: Error { case existingRoute(String), commandFailed(String) }
+enum RouteExecutionError: Error { case existingRoute(String), commandFailed(String), routeOwnershipLost(String) }

@@ -15,6 +15,7 @@ final class ManagedTunnel {
     private var rules: RuleSet?
     private var activePlan: RoutePlan?
     private var protectedLocalNetworks: [IPv4CIDR] = []
+    private var protectedPhysicalInterface: String?
     private var lastError: String?
 
     init() {
@@ -189,25 +190,29 @@ final class ManagedTunnel {
             message = failure
             return
         }
+        if snapshot.state == .reconnecting,
+           TunnelReconnectPolicy.action(for: activeMode) == .stopAndRestoreOnlyAfterExit {
+            // Releasing route ownership while OpenVPN is still reconnecting
+            // silently creates a path back to the physical network. A managed
+            // reconnect requires a proven PF kill switch that does not exist yet.
+            stop()
+            lastError = "OpenVPN lost its connection. Managed VPN stopped instead of reconnecting with unprotected routing."
+            state = .failed
+            message = lastError!
+            return
+        }
         state = snapshot.state
         message = snapshot.message
         if snapshot.state == .connected && activeMode == .chinaDirect {
             state = .connecting
             message = "Applying and validating China IPv4 routes"
         }
-        if snapshot.state == .reconnecting {
-            networkWatchdog?.cancel()
-            networkWatchdog = nil
-            routing?.rollback()
-            routing = nil
-            activePlan = nil
-            protectedLocalNetworks = []
-        }
         if snapshot.state == .connected, activeMode == .fullVPN {
             do {
                 try verifyForeignVPNRoute(knownTunnel: nil)
                 state = .connected
                 message = "Connected · global VPN route verified"
+                startNetworkWatchdog()
             } catch {
                 let reason = "Full VPN routing is not active: \(error.localizedDescription)"
                 stop()
@@ -251,6 +256,7 @@ final class ManagedTunnel {
             try verifySplitRoutes(plan: plan, country: rules)
             activePlan = plan
             protectedLocalNetworks = localPrefixes
+            protectedPhysicalInterface = physicalInterface
             state = .connected
             message = "Connected · China IPv4 split routing enabled"
             startNetworkWatchdog()
@@ -311,18 +317,33 @@ final class ManagedTunnel {
     }
 
     private func verifyPhysicalNetwork() {
-        guard state == .connected, activeMode == .chinaDirect,
-              let plan = activePlan else { return }
-        guard case .viaGateway(let expected) = plan.endpoint.destination else { return }
+        guard state == .connected, activeMode != .original else { return }
         do {
-            let route = try RouteExecutor.command("/sbin/route", ["-n", "get", "default"])
-            guard Self.parseValue("gateway:", in: route) == expected,
-                  Self.parseValue("interface:", in: route)?.hasPrefix("en") == true else {
+            try checkIPv6Bypass()
+            if activeMode == .fullVPN {
+                try verifyForeignVPNRoute(knownTunnel: nil)
+                return
+            }
+            guard activeMode == .chinaDirect, let plan = activePlan,
+                  let physicalInterface = protectedPhysicalInterface,
+                  case .viaGateway(let expected) = plan.endpoint.destination else {
+                throw TunnelError.routeVerificationFailed
+            }
+            let defaultRoute = try RouteExecutor.command("/sbin/route", ["-n", "get", "default"])
+            guard Self.parseValue("gateway:", in: defaultRoute) == expected,
+                  Self.parseValue("interface:", in: defaultRoute) == physicalInterface else {
                 throw TunnelError.noPhysicalGateway
             }
-            try checkIPv6Bypass()
+            let localTable = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
+            let onLink = LocalIPv4Networks.parse(
+                netstat: localTable, physicalInterface: physicalInterface)
+            guard !onLink.isEmpty, Set(onLink) == Set(protectedLocalNetworks) else {
+                throw TunnelError.noPhysicalGateway
+            }
+            guard let rules else { throw TunnelError.missingRules }
+            try verifySplitRoutes(plan: plan, country: rules)
         } catch {
-            let failure = "Physical network changed or IPv6 became unsafe; VPN disconnected: \(error.localizedDescription)"
+            let failure = "Network route/IPv6 protection changed; VPN disconnected: \(error.localizedDescription)"
             stop()
             lastError = failure
             state = .failed
@@ -445,6 +466,7 @@ final class ManagedTunnel {
         routing = nil
         activePlan = nil
         protectedLocalNetworks = []
+        protectedPhysicalInterface = nil
         process = nil
         activeProfileID = nil
         traffic = nil

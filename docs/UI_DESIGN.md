@@ -73,3 +73,7 @@ and show a clear empty state otherwise; no dummy latency or speed data.
 ### CI visual validation
 
 The optional macOS CI screenshot attempts to choose an existing **operating-system desktop wallpaper** through `NSWorkspace.setDesktopImageURL`, captures the desktop before opening the app, and captures the real app window afterward. Neither image is an application asset. If the runner disallows wallpaper changes, the screenshot still validates app structure and build, but transparency fidelity requires a user-device capture against a distinctive wallpaper.
+
+### Native material opacity calibration
+
+A wallpaper-on-CI comparison showed that macOS `underWindowBackground` at full compositor opacity still hides the desktop even when the NSWindow is clear. The backdrop NSVisualEffectView now uses a fractional alpha (0.38). Sidebar, toolbar and card materials have their own reduced-opacity blur composition (0.32–0.38), with thin clear tints instead of an opaque sheet. The system wallpaper must remain visible behind the root panel, while readability is maintained via contrast-preserving native text and an accessibility Reduce Transparency fallback for cards. Visual fidelity should be validated against the before/after wallpaper capture, not inferred from code alone.

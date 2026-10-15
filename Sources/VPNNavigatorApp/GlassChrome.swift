@@ -44,10 +44,14 @@ struct DesktopVisualEffect: NSViewRepresentable {
         view.material = .underWindowBackground
         view.blendingMode = .behindWindow
         view.state = .active
+        // A fully opaque under-window material hides colorful wallpapers.
+        // Compose only a fraction of the native blur over a CLEAR NSWindow.
+        view.alphaValue = 0.38
         return view
     }
     func updateNSView(_ view: NativeWindowGlass, context: Context) {
         view.configureWindow()
+        view.alphaValue = 0.38
     }
 }
 
@@ -69,9 +73,13 @@ private struct GlassCardModifier: ViewModifier {
                     .fill(reduceTransparency ?
                           Color(nsColor: .windowBackgroundColor).opacity(0.96) :
                           (appearance == .dark ?
-                           Color.black.opacity(0.19) :
-                           Color.white.opacity(0.18)))
-                    .background(.ultraThinMaterial, in: corners)
+                           Color.black.opacity(0.24) :
+                           Color.white.opacity(0.17)))
+                    .background {
+                        if !reduceTransparency {
+                            corners.fill(.ultraThinMaterial).opacity(0.38)
+                        }
+                    }
             }
             .overlay {
                 corners.strokeBorder(

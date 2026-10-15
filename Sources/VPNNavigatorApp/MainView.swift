@@ -138,12 +138,17 @@ struct MainView: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .background {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.ultraThinMaterial).opacity(0.35)
+            }
             .padding(.horizontal, 12)
             .padding(.bottom, 14)
         }
-        .background(.ultraThinMaterial)
-        .background(Color.white.opacity(0.07))
+        .background {
+            Rectangle().fill(.ultraThinMaterial).opacity(0.36)
+        }
+        .background(Color.white.opacity(0.06))
     }
 
     private var topBar: some View {
@@ -166,8 +171,10 @@ struct MainView: View {
         }
         .padding(.leading, 24).padding(.trailing, 20)
         .frame(height: 45)
-        .background(.ultraThinMaterial)
-        .background(Color.white.opacity(0.06))
+        .background {
+            Rectangle().fill(.ultraThinMaterial).opacity(0.32)
+        }
+        .background(Color.white.opacity(0.05))
     }
 }
 

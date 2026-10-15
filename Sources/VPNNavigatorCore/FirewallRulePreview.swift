@@ -23,11 +23,21 @@ public struct FirewallRulePreview: Sendable {
     public init(physicalInterface: String, tunnelInterface: String,
                 endpointIPv4: String, endpointPort: UInt16, transport: Transport,
                 policy: Policy, localNetworks: [IPv4CIDR]) throws {
-        guard Self.validInterface(physicalInterface, prefix: "en"),
+        // A broad direct exception would silently defeat the physical egress block.
+        // Treat all inputs as untrusted, including caller-provided country routes.
+        let countryRoutesAreBounded: Bool
+        switch policy {
+        case .fullVPN: countryRoutesAreBounded = true
+        case .chinaDirect(let routes):
+            countryRoutesAreBounded = !routes.isEmpty && routes.allSatisfy { $0.prefix >= 8 }
+        }
+        guard countryRoutesAreBounded,
+              Self.validInterface(physicalInterface, prefix: "en"),
               Self.validInterface(tunnelInterface, prefix: "utun"),
               endpointPort > 0,
               IPv4CIDR.parseAddress(endpointIPv4) != nil,
-              !localNetworks.isEmpty else {
+              !localNetworks.isEmpty,
+              localNetworks.allSatisfy({ $0.prefix >= 8 }) else {
             throw FirewallPreviewError.invalidInput
         }
         self.physicalInterface = physicalInterface

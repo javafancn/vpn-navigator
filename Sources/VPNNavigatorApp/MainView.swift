@@ -398,7 +398,7 @@ private struct ProfileLibrary: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("配置文件").font(.system(size: 26, weight: .bold, design: .rounded))
-                    Text("\(model.profiles.count) 份配置 · 安全存储于本机")
+                    Text("\(model.profiles.count) 份配置 · OpenVPN 配置库")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -418,7 +418,7 @@ private struct ProfileLibrary: View {
                                 Button { model.selectedID = profile.id } label: {
                                     HStack(spacing: 11) {
                                         Image(systemName: "network")
-                                            .foregroundStyle(.blue)
+                                            .foregroundStyle(GlassPalette.blue)
                                             .frame(width: 35, height: 35)
                                             .background(.blue.opacity(0.09),
                                                         in: RoundedRectangle(cornerRadius: 10))
@@ -437,7 +437,7 @@ private struct ProfileLibrary: View {
                                     .padding(9)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .background(model.selectedID == profile.id ?
-                                        Color.accentColor.opacity(0.13) : Color.clear,
+                                        GlassPalette.blue.opacity(0.17) : Color.white.opacity(0.17),
                                         in: RoundedRectangle(cornerRadius: 12))
                                     .contentShape(Rectangle())
                                 }
@@ -447,7 +447,7 @@ private struct ProfileLibrary: View {
                     }
                 }
                 .padding(12)
-                .frame(width: 235)
+                .frame(width: 225)
                 .glassCard(cornerRadius: 17)
                 if let profile = model.selected {
                     ProfileDetail(profile: profile).id(profile.id)
@@ -616,108 +616,104 @@ struct SystemSettingsPane: View {
     }
 }
 
+private enum ProfileInspectorTab: String, CaseIterable, Identifiable {
+    case details = "基本信息"
+    case advanced = "高级设置"
+    case route = "路由策略"
+    case history = "历史版本"
+    var id: String { rawValue }
+}
+
 struct ProfileDetail: View {
     @EnvironmentObject private var model: AppModel
     let profile: VPNProfile
+    @State private var tab: ProfileInspectorTab = .details
     @State private var draftName = ""
     @State private var draftGroup = ""
     @State private var draftNotes = ""
     @State private var draftFavorite = false
     @State private var editorText = ""
     @State private var showingEditor = false
+    @State private var confirmDelete = false
     @State private var history: [ProfileRevision] = []
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 14) {
-                    Image(systemName: "network.badge.shield.half.filled")
-                        .font(.system(size: 35)).foregroundStyle(.tint)
-                    VStack(alignment: .leading) {
-                        Text(profile.name).font(.title2.bold())
-                        Text(profile.sourceFilename).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 13) {
+                HStack(spacing: 13) {
+                    GlassIcon(symbol: "network.badge.shield.half.filled", size: 48)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(profile.name)
+                            .font(.system(size: 21, weight: .bold, design: .rounded))
+                        Text(profile.sourceFilename)
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                     Spacer()
+                    Button {
+                        draftFavorite.toggle()
+                        Task {
+                            await model.updateMetadata(
+                                name: draftName, group: draftGroup,
+                                notes: draftNotes, favorite: draftFavorite)
+                        }
+                    } label: {
+                        Image(systemName: draftFavorite ? "star.fill" : "star")
+                            .foregroundStyle(draftFavorite ? .orange : .secondary)
+                    }
+                    .buttonStyle(.bordered)
+                    .help("收藏此配置")
                 }
-                VPNPanel("基本信息", symbol: "person.crop.rectangle") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        TextField("配置名称", text: $draftName)
-                        TextField("配置分组", text: $draftGroup)
-                        Toggle("收藏", isOn: $draftFavorite)
-                        TextField("备注", text: $draftNotes)
-                        HStack {
-                            Spacer()
-                            Button("保存信息") {
-                                Task {
-                                    await model.updateMetadata(name: draftName,
-                                        group: draftGroup, notes: draftNotes, favorite: draftFavorite)
-                                }
-                            }
-                        }
-                    }.padding(8)
+                Picker("配置页面", selection: $tab) {
+                    ForEach(ProfileInspectorTab.allCases) { section in
+                        Text(section.rawValue).tag(section)
+                    }
                 }
-                VPNPanel("配置编辑与历史版本", symbol: "doc.text") {
-                    VStack(alignment: .leading, spacing: 9) {
-                        HStack {
-                            Button("编辑 .ovpn…") {
-                                Task {
-                                    if let source = await model.editSource(for: profile) {
-                                        editorText = source
-                                        showingEditor = true
-                                    }
-                                }
-                            }
-                            Spacer()
-                            Button("刷新历史") {
-                                Task { history = await model.revisions(for: profile) }
-                            }
-                        }
-                        Text("配置编辑器可能显示私钥；历史版本仅保存在本机私有配置目录中。")
-                            .font(.caption).foregroundStyle(.secondary)
-                        if history.isEmpty {
-                            Text("暂无历史版本").foregroundStyle(.secondary)
-                        }
-                        ForEach(history.prefix(10)) { revision in
-                            HStack {
-                                Text(revision.createdAt, style: .date)
-                                Text(revision.createdAt, style: .time)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Button("恢复") {
-                                    Task {
-                                        if await model.restoreSource(for: profile, revision: revision.filename) {
-                                            history = await model.revisions(for: profile)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }.padding(8)
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.large)
+
+                Group {
+                    switch tab {
+                    case .details: metadata
+                    case .advanced: advanced
+                    case .route: routeMode
+                    case .history: revisions
+                    }
                 }
-
-
-
-
+                Spacer(minLength: 0)
                 HStack {
-                    Button("导出配置预览…") { Task { await model.exportPreview() } }
-                        .disabled(profile.mode == .chinaDirect && model.rules == nil)
+                    Text("导入：")
+                        .foregroundStyle(.secondary)
+                    Text(profile.importedAt, format: .dateTime.year().month().day())
                     Spacer()
-                    Button("删除配置", role: .destructive) { Task { await model.deleteSelected() } }
+                    Button("导出预览…") { Task { await model.exportPreview() } }
+                        .disabled(profile.mode == .chinaDirect && model.rules == nil)
+                    Button("删除配置…", role: .destructive) { confirmDelete = true }
                 }
-                Text("真实连接需要签名 Helper 与 OpenVPN 引擎；使用前应在自己的 Mac 上验证路由、DNS 和网络安全。")
-                    .font(.footnote).foregroundStyle(.secondary)
+                .font(.system(size: 11))
+                .padding(.top, 6)
             }
-            .padding(19).frame(maxWidth: 780, alignment: .leading)
+            .padding(19)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .navigationTitle(profile.name)
+        .confirmationDialog("确定要删除此配置？", isPresented: $confirmDelete) {
+            Button("删除配置", role: .destructive) {
+                Task { await model.deleteSelected() }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("会删除本机存储的配置及相应凭据，且无法撤销。")
+        }
         .sheet(isPresented: $showingEditor) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("编辑 OpenVPN 配置").font(.title2.bold())
-                Text("文件可能包含私钥。危险脚本和不支持的配置不会被保存；修改需在重新连接后生效。")
+                Text("编辑 OpenVPN 配置")
+                    .font(.system(size: 20, weight: .bold))
+                Text("文件可能含有私钥。危险脚本和不受支持的配置不能保存；修改在重新连接后生效。")
                     .font(.callout).foregroundStyle(.secondary)
                 TextEditor(text: $editorText)
                     .font(.system(.body, design: .monospaced))
-                    .border(Color.secondary.opacity(0.3))
+                    .padding(5)
+                    .glassCard(cornerRadius: 12)
                 HStack {
                     Button("取消") {
                         editorText = ""
@@ -736,8 +732,9 @@ struct ProfileDetail: View {
                     .buttonStyle(.borderedProminent)
                 }
             }
-            .padding(22)
-            .frame(minWidth: 720, minHeight: 530)
+            .padding(24)
+            .frame(minWidth: 690, minHeight: 505)
+            .background(GlassAtmosphere())
         }
         .onAppear {
             draftName = profile.name
@@ -745,6 +742,139 @@ struct ProfileDetail: View {
             draftNotes = profile.notes
             draftFavorite = profile.isFavorite
             Task { history = await model.revisions(for: profile) }
+        }
+    }
+
+    private var metadata: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            editorRow("名称") {
+                TextField("配置名称", text: $draftName)
+                    .textFieldStyle(.roundedBorder)
+            }
+            editorRow("分组") {
+                TextField("分组名称", text: $draftGroup)
+                    .textFieldStyle(.roundedBorder)
+            }
+            editorRow("配置文件") {
+                Label(profile.sourceFilename, systemImage: "doc.text")
+                    .font(.system(size: 12)).lineLimit(1)
+                Spacer()
+            }
+            editorRow("备注") {
+                TextField("添加备注信息", text: $draftNotes)
+                    .textFieldStyle(.roundedBorder)
+            }
+            HStack {
+                Text("OpenVPN · 本地配置")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                Spacer()
+                Button("保存更改") {
+                    Task {
+                        await model.updateMetadata(name: draftName,
+                            group: draftGroup, notes: draftNotes, favorite: draftFavorite)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(16)
+        .glassCard(cornerRadius: 14)
+    }
+
+    private var advanced: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("安全编辑", systemImage: "curlybraces")
+                .font(.system(size: 14, weight: .semibold))
+            Text("保留原始 .ovpn 文件及版本快照，不会执行导入文件中的脚本。")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+            Button("编辑 .ovpn 文件…") {
+                Task {
+                    if let text = await model.editSource(for: profile) {
+                        editorText = text
+                        showingEditor = true
+                    }
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            LabeledContent("源文件", value: profile.sourceFilename)
+            LabeledContent("保存位置", value: "本机私有配置仓库")
+            Text("只有断开连接后才能更改或恢复配置。")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+        .padding(17)
+        .glassCard(cornerRadius: 14)
+    }
+
+    private var routeMode: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("所选配置的默认路由策略")
+                .font(.system(size: 12, weight: .medium))
+            Picker("模式", selection: Binding(
+                get: { profile.mode },
+                set: { value in Task { await model.setMode(value) } }
+            )) {
+                Text("遵循原始配置").tag(RoutingMode.original)
+                Text("全局 VPN").tag(RoutingMode.fullVPN)
+                Text("中国 IPv4 直连").tag(RoutingMode.chinaDirect)
+            }
+            .pickerStyle(.radioGroup)
+            .disabled(model.busy || model.connected || model.connecting)
+            Text("中国 IPv4 直连需要已经下载的网段规则；IPv6 分流与 Kill Switch 尚未实现。")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+        .padding(17)
+        .glassCard(cornerRadius: 14)
+    }
+
+    private var revisions: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("已保存的配置版本")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button("刷新历史") {
+                    Task { history = await model.revisions(for: profile) }
+                }
+                .controlSize(.small)
+            }
+            if history.isEmpty {
+                Label("暂无历史版本", systemImage: "clock.arrow.circlepath")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(history.prefix(10)) { revision in
+                    HStack {
+                        Image(systemName: "clock").foregroundStyle(.blue)
+                        Text(revision.createdAt, format: .dateTime.year().month().day().hour().minute())
+                        Spacer()
+                        Button("恢复此版本") {
+                            Task {
+                                if await model.restoreSource(for: profile, revision: revision.filename) {
+                                    history = await model.revisions(for: profile)
+                                }
+                            }
+                        }
+                        .disabled(model.connected || model.connecting)
+                    }
+                    .font(.system(size: 11))
+                    Divider().opacity(0.3)
+                }
+            }
+            Text("版本保存在本机，不会上传至云端。")
+                .font(.system(size: 10)).foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .glassCard(cornerRadius: 14)
+    }
+
+    private func editorRow<Content: View>(
+        _ title: String, @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .frame(width: 64, alignment: .leading)
+            content()
         }
     }
 }

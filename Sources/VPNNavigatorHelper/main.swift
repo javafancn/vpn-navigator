@@ -52,7 +52,9 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
 final class HelperDelegate: NSObject, NSXPCListenerDelegate {
     private let service = HelperService()
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
-        guard PeerVerifier.allows(connection) else { return false }
+        guard let requirement = PeerVerifier.clientRequirement() else { return false }
+        // macOS enforces this requirement against every incoming XPC message.
+        connection.setCodeSigningRequirement(requirement)
         connection.exportedInterface = NSXPCInterface(with: VPNNavigatorHelperAPI.self)
         connection.exportedObject = service
         connection.resume()

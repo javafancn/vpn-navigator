@@ -10,6 +10,9 @@ DNS="$APP/Contents/Resources/macos-dns-updown.sh"
 [[ -d "$APP/Contents/Frameworks" ]] || { echo "Missing Frameworks directory"; exit 1; }
 [[ -f "$APP/Contents/Resources/openvpn-dependencies.json" ]] || { echo "No dependency manifest"; exit 1; }
 [[ -s "$APP/Contents/Resources/Sources/OpenVPN-source.tar.gz" ]] || { echo "GPL source missing"; exit 1; }
+tar -tzf "$APP/Contents/Resources/Sources/OpenVPN-source.tar.gz" >/dev/null || {
+  echo "Bundled source archive is invalid"; exit 1
+}
 [[ -s "$APP/Contents/Resources/LICENSES/THIRD_PARTY_NOTICES.txt" ]] || { echo "License notices missing"; exit 1; }
 
 

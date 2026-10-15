@@ -36,6 +36,13 @@ if [[ -n "${DEVELOPER_ID_APPLICATION:-}" ]]; then
   [[ -f "$OPENVPN_SOURCE_ARCHIVE" && -f "$THIRD_PARTY_NOTICES" ]] || {
     echo "Source or third-party license notices missing"; exit 1
   }
+  tar -tzf "$OPENVPN_SOURCE_ARCHIVE" >/dev/null || {
+    echo "OpenVPN source must be a valid .tar.gz archive"; exit 1
+  }
+  ENGINE_VERSION="$("$APP/Contents/Resources/openvpn" --version | head -n 1)"
+  [[ "$ENGINE_VERSION" == OpenVPN\ 2.7.* ]] || {
+    echo "Release requires a reviewed OpenVPN 2.7.x engine for macOS DNS support"; exit 1
+  }
   ACTUAL_SOURCE_SHA256="$(shasum -a 256 "$OPENVPN_SOURCE_ARCHIVE" | awk '{print $1}')"
   [[ "$ACTUAL_SOURCE_SHA256" == "$OPENVPN_SOURCE_SHA256" ]] || {
     echo "OpenVPN source archive hash mismatch"; exit 1

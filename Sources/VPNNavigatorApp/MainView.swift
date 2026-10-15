@@ -80,14 +80,7 @@ struct MainView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: "globe.americas.fill")
-                    .font(.system(size: 23, weight: .medium))
-                    .foregroundStyle(.blue)
-                    .frame(width: 37, height: 37)
-                    .background(.white.opacity(0.48),
-                                in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(.white.opacity(0.45)))
+                BrandMark(size: 37)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("VPN Navigator").font(.system(size: 12, weight: .bold))
                         .lineLimit(1)
@@ -185,14 +178,11 @@ struct WorkspaceHeading: View {
     let symbol: String
     var body: some View {
         HStack(spacing: 11) {
-            Image(systemName: symbol)
-                .font(.system(size: 24, weight: .medium))
-                .foregroundStyle(.blue)
-                .frame(width: 40, height: 40)
-                .background(Color.blue.opacity(0.1),
-                            in: RoundedRectangle(cornerRadius: 13))
-                .overlay(RoundedRectangle(cornerRadius: 13)
-                    .strokeBorder(Color.white.opacity(0.45)))
+            if symbol == "globe.americas.fill" {
+                BrandMark(size: 40)
+            } else {
+                GlassIcon(symbol: symbol, size: 40)
+            }
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.system(size: 21, weight: .bold, design: .rounded))
                 Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary)

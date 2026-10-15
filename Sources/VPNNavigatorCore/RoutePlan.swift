@@ -59,7 +59,10 @@ public enum RoutePlanner {
         let endpoint = RouteTarget(host, .viaGateway(physicalGateway))
         // Retain the system's connected/local routes; do not create conflicting routes.
         let localSet = Set(localPrefixes)
-        let direct = china.routes.filter { !localSet.contains($0) && $0 != host }
+        let direct = china.routes.filter { candidate in
+            !localSet.contains(where: { candidate.overlaps($0) }) &&
+            !candidate.overlaps(host)
+        }
             .map { RouteTarget($0, .viaGateway(physicalGateway)) }
         let defaults: [RouteTarget] = [
             RouteTarget(try IPv4CIDR("0.0.0.0/1"), .interface(vpnInterface)),

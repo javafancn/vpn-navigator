@@ -744,87 +744,106 @@ struct SystemSettingsPane: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 15) {
+            VStack(alignment: .leading, spacing: 12) {
                 WorkspaceHeading(title: "设置与维护",
-                    subtitle: "管理安全设置、更新和应用信息",
-                    symbol: "gearshape.fill")
+                    subtitle: "", symbol: "gearshape")
 
-                settingRow("特权辅助服务",
-                           subtitle: "管理允许 OpenVPN 运行的签名辅助服务",
-                           symbol: "lock.shield.fill",
-                           status: model.helperStatus,
-                           statusColor: GlassPalette.blue) {
-                    Button("启用服务…") { model.requestHelper() }
-                        .buttonStyle(.borderedProminent)
-                    Button("停用…") { Task { await model.disableServices() } }
-                }
-                settingRow("应用更新",
-                           subtitle: "通过已验证的安装程序进行版本更新",
-                           symbol: "arrow.triangle.2.circlepath",
-                           status: "手动检查",
-                           statusColor: .secondary) {
-                    Button("检查更新") { Task { await model.checkForUpdates() } }
-                        .buttonStyle(.borderedProminent)
-                    Button("下载安装包…") {
-                        Task { await model.downloadVerifiedUpdate() }
+                settingsRow("特权助手",
+                    subtitle: "管理系统使用此配置所需的特权助手",
+                    symbol: "shield.lefthalf.filled") {
+                    Menu {
+                        Button("启用服务…") { model.requestHelper() }
+                        Button("停用服务…") {
+                            Task { await model.disableServices() }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: model.helperStatus == "已启用" ?
+                                  "checkmark.circle.fill" : "shield")
+                            Text(model.helperStatus)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9))
+                        }
+                        .foregroundStyle(model.helperStatus == "已启用" ?
+                                         Color.green : Color.secondary)
                     }
-                    .disabled(model.availableInstaller == nil || model.busy)
-                    Button("发布说明…") { model.viewReleasePage() }
-                        .disabled(model.availableReleasePage == nil)
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
                 }
-                settingRow("安全网络恢复",
-                           subtitle: "仅在确认旧 OpenVPN 进程退出后恢复残留路由",
-                           symbol: "cross.case.fill",
-                           status: "人工确认",
-                           statusColor: .orange) {
-                    Button("尝试安全恢复…") { Task { await model.retryNetworkRecovery() } }
-                        .disabled(model.connected || model.connecting)
-                }
-                settingRow("关于 VPN Navigator",
-                           subtitle: "原生 macOS 网络配置与诊断客户端",
-                           symbol: "info.circle.fill",
-                           status: "Alpha · macOS 13+",
-                           statusColor: GlassPalette.blue) {
-                    Label("PF Kill Switch 与 IPv6 分流尚未实现",
-                          systemImage: "exclamationmark.shield")
-                        .font(.system(size: 10))
+                settingsRow("应用更新",
+                    subtitle: "当前版本：1.0.0 (Build 100) · 检查经过验证的更新",
+                    symbol: "arrow.triangle.2.circlepath") {
+                    Menu {
+                        Button("检查更新") {
+                            Task { await model.checkForUpdates() }
+                        }
+                        Button("下载已验证的更新包…") {
+                            Task { await model.downloadVerifiedUpdate() }
+                        }
+                        .disabled(model.availableInstaller == nil || model.busy)
+                        Button("查看发布说明…") { model.viewReleasePage() }
+                            .disabled(model.availableReleasePage == nil)
+                    } label: {
+                        HStack(spacing: 7) {
+                            Text("检查更新")
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9))
+                        }
                         .foregroundStyle(.secondary)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                }
+                settingsRow("安全恢复",
+                    subtitle: "遇到网络问题时，可尝试恢复残留的网络设置",
+                    symbol: "cross.case.fill") {
+                    Button("开始恢复") {
+                        Task { await model.retryNetworkRecovery() }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                    .disabled(model.connected || model.connecting)
+                }
+                settingsRow("关于",
+                    subtitle: "VPN Navigator · 原生 macOS 网络配置工具",
+                    symbol: "info.circle.fill") {
+                    Menu {
+                        Text("Alpha · macOS 13+")
+                        Text("PF Kill Switch 与 IPv6 分流尚未实现")
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
                 }
             }
-            .padding(20)
-            .frame(maxWidth: 1050, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.top, 34)
+            .padding(.bottom, 20)
+            .frame(maxWidth: 1060, alignment: .leading)
         }
     }
 
-    private func settingRow<Actions: View>(
+    private func settingsRow<Actions: View>(
         _ title: String, subtitle: String, symbol: String,
-        status: String, statusColor: Color,
         @ViewBuilder actions: () -> Actions
     ) -> some View {
         HStack(alignment: .center, spacing: 13) {
-            GlassIcon(symbol: symbol, size: 44)
+            GlassIcon(symbol: symbol, size: 46)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
                 Text(subtitle)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(2)
             }
-            Spacer(minLength: 15)
-            VStack(alignment: .trailing, spacing: 8) {
-                Text(status)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(statusColor)
-                    .lineLimit(1)
-                HStack(spacing: 7) {
-                    actions()
-                }
-                .controlSize(.small)
-            }
+            Spacer(minLength: 12)
+            actions()
         }
-        .padding(.horizontal, 17)
-        .padding(.vertical, 13)
+        .padding(.horizontal, 16)
+        .frame(minHeight: 75)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(cornerRadius: 15)
     }

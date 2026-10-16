@@ -7,24 +7,6 @@ import VPNNavigatorCore
 enum WorkspaceTab: String, CaseIterable, Identifiable {
     case overview, profiles, routing, diagnostics, settings
     var id: String { rawValue }
-    // Window and sidebar proportions follow the supplied design collage.
-    // Content is never expanded into empty full-height cards.
-    var referenceSize: CGSize {
-        switch self {
-        case .overview: return CGSize(width: 990, height: 587)
-        case .profiles: return CGSize(width: 990, height: 665)
-        case .routing: return CGSize(width: 930, height: 500)
-        case .diagnostics: return CGSize(width: 930, height: 520)
-        case .settings: return CGSize(width: 870, height: 455)
-        }
-    }
-    var sidebarWidth: CGFloat {
-        switch self {
-        case .overview, .profiles: return 228
-        case .routing, .diagnostics: return 205
-        case .settings: return 193
-        }
-    }
     var title: String {
         switch self {
         case .overview: return "连接总览"
@@ -65,7 +47,7 @@ struct MainView: View {
         ZStack {
             GlassAtmosphere()
             HStack(spacing: 0) {
-                sidebar.frame(width: tab.sidebarWidth)
+                sidebar.frame(width: 238)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
                 VStack(spacing: 0) {
                     Group {
@@ -99,8 +81,7 @@ struct MainView: View {
                 }
             }
         }
-        .frame(minWidth: 810, minHeight: 400)
-        .background(ReferenceWindowSizer(size: tab.referenceSize))
+        .frame(minWidth: 990, minHeight: 630)
         .preferredColorScheme(nil)
         .fileImporter(isPresented: $importing,
                       allowedContentTypes: [.init(filenameExtension: "ovpn")!],
@@ -126,17 +107,17 @@ struct MainView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                BrandMark(size: tab == .settings ? 42 : 54)
+                BrandMark(size: 52)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("VPN Navigator").font(.system(size: tab == .settings ? 13 : 15, weight: .bold))
+                    Text("VPN Navigator").font(.system(size: 15, weight: .bold))
                         .lineLimit(1)
                     Text("网络连接控制台").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
             .padding(.leading, 19)
             .padding(.trailing, 8)
-            .padding(.top, tab == .overview || tab == .profiles ? 37 : 24)
-            .padding(.bottom, tab == .overview || tab == .profiles ? 21 : 13)
+            .padding(.top, 38)
+            .padding(.bottom, 22)
 
             if tab != .overview {
                 Button {

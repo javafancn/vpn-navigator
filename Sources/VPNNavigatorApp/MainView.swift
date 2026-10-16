@@ -47,7 +47,7 @@ struct MainView: View {
         ZStack {
             GlassAtmosphere()
             HStack(spacing: 0) {
-                sidebar.frame(width: 250)
+                sidebar.frame(width: 270)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
                 VStack(spacing: 0) {
                     Group {
@@ -63,8 +63,8 @@ struct MainView: View {
                     .referenceWorkspaceSurface()
                     .padding(.leading, 8)
                     .padding(.trailing, 8)
-                    .padding(.top, 8)
-                    .padding(.bottom, 8)
+                    .padding(.top, 26)
+                    .padding(.bottom, 16)
                     .overlay(alignment: .topTrailing) {
                         Button { importing = true } label: {
                             Image(systemName: "plus")
@@ -81,8 +81,8 @@ struct MainView: View {
                 }
             }
         }
-        .frame(minWidth: 990, minHeight: 630)
-        .preferredColorScheme(nil)
+        .frame(minWidth: 1100, minHeight: 700)
+        .preferredColorScheme(.light)
         .fileImporter(isPresented: $importing,
                       allowedContentTypes: [.init(filenameExtension: "ovpn")!],
                       allowsMultipleSelection: true) { result in
@@ -109,9 +109,9 @@ struct MainView: View {
             HStack(spacing: 10) {
                 BrandMark(size: 52)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("VPN Navigator").font(.system(size: 15, weight: .bold))
+                    Text("VPN Navigator").font(.system(size: 18, weight: .bold))
                         .lineLimit(1)
-                    Text("网络连接控制台").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("网络连接控制台").font(.system(size: 16)).foregroundStyle(.secondary)
                 }
             }
             .padding(.leading, 19)
@@ -128,18 +128,18 @@ struct MainView: View {
                             .font(.system(size: 18, weight: .medium))
                             .frame(width: 24)
                         Text("个人")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 18, weight: .medium))
                         Spacer(minLength: 0)
                     }
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 13)
-                    .frame(height: 38)
+                    .frame(height: 48)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help("返回连接总览")
                 .padding(.horizontal, 15)
-                .padding(.bottom, 9)
+                .padding(.bottom, 7)
             }
 
             ForEach(tab == .overview ?
@@ -152,12 +152,12 @@ struct MainView: View {
                             .foregroundStyle(tab == item ? Color.white : GlassPalette.blue)
                             .frame(width: 24)
                         Text(item.title)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(tab == item ? Color.white : Color.primary)
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(tab == item ? Color.white : GlassPalette.ink)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 13)
-                    .frame(height: 38)
+                    .frame(height: 48)
                     .background {
                         if tab == item {
                             RoundedRectangle(cornerRadius: 9)
@@ -165,7 +165,7 @@ struct MainView: View {
                                     Color(red: 0.12, green: 0.53, blue: 1),
                                     Color(red: 0.03, green: 0.39, blue: 0.91)
                                 ], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                .shadow(color: .blue.opacity(0.28), radius: 9, y: 3)
+                                .shadow(color: .blue.opacity(0.28), radius: 4, y: 2)
                         }
                     }
                     .contentShape(Rectangle())
@@ -173,40 +173,13 @@ struct MainView: View {
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(tab == item ? .isSelected : [])
                 .padding(.horizontal, 15)
-                .padding(.bottom, 9)
+                .padding(.bottom, 7)
             }
             Spacer(minLength: 10)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 7) {
-                    Circle()
-                        .fill(model.connected ? Color.green : Color.secondary.opacity(0.7))
-                        .frame(width: 7, height: 7)
-                    Text("VPN Navigator")
-                        .font(.system(size: 12, weight: .semibold))
-                }
-                Text(model.connected ? "已连接 · " + (model.activeProfile?.name ?? "VPN") :
-                     model.connecting ? "正在建立连接" : "未连接 · 选择配置后开始")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Text("macOS 13+ · " +
-                    (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Alpha"))
-                    .font(.system(size: 11)).foregroundStyle(.tertiary)
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(GlassSurface.panel.opacity(0.31))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Color.white.opacity(0.65), lineWidth: 1)
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 14)
+
         }
         .background {
-            GlassSurface.sidebar.opacity(0.42)
+            GlassSurface.sidebar.opacity(0.13)
         }
         .overlay(alignment: .trailing) {
             Rectangle().fill(Color.white.opacity(0.36)).frame(width: 1)
@@ -228,8 +201,8 @@ struct WorkspaceHeading: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: ReferenceType.pageTitle, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
+                    .font(.system(size: ReferenceType.pageTitle, weight: .bold))
+                    .foregroundStyle(GlassPalette.ink)
                 if !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.system(size: ReferenceType.field))
@@ -274,319 +247,224 @@ struct VPNPanel<Content: View>: View {
 private struct ConnectionOverview: View {
     @EnvironmentObject private var model: AppModel
     @State private var confirmSwitch = false
+    @State private var showingCredentials = false
 
     private var hasError: Bool { model.connectionStatus.hasPrefix("failed:") }
     private var statusTitle: String {
-        if model.connected { return "已连接" }
-        if model.connecting { return "正在连接" }
-        if hasError { return "连接需要检查" }
-        return "准备连接"
+        model.connected ? "已连接" : model.connecting ? "正在连接" : hasError ? "连接需检查" : "未连接"
     }
-    private var statusDescription: String {
-        if model.connected { return "VPN 已建立连接，流量统计来自真实会话" }
-        if model.connecting { return "正在与 VPN 服务建立连接…" }
-        if hasError { return "无法建立连接，请检查辅助服务和配置" }
-        return "点击电源按钮开始建立连接"
-    }
-    private func formattedBytes(_ value: UInt64?) -> String {
-        guard let value else { return "—" }
-        return ByteCountFormatter.string(
-            fromByteCount: Int64(clamping: value), countStyle: .file)
+    private func bytes(_ value: UInt64?) -> String {
+        guard let value else { return "— MB" }
+        return ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .file)
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                WorkspaceHeading(title: "连接总览",
-                    subtitle: "清晰掌控当前 VPN 状态与网络策略",
-                    symbol: "globe.americas.fill")
-                    .padding(.bottom, 4)
-
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(spacing: 7) {
-                        Spacer(minLength: 9)
-                        Button {
-                            guard model.selected != nil || model.connected else {
-                                model.message = "请先导入并选择一个 .ovpn 配置文件。"
-                                return
-                            }
-                            Task {
-                                if model.connected { await model.disconnect() }
-                                else { await model.connectSelected() }
-                            }
-                        } label: {
-                            ZStack {
-                                Circle()
-                                    .stroke(GlassPalette.cyan.opacity(0.68), lineWidth: 17)
-                                    .frame(width: 183, height: 183)
-                                    .blur(radius: 17)
-                                Circle()
-                                    .fill(GlassPalette.cyan.opacity(0.14))
-                                    .frame(width: 195, height: 195)
-                                Circle()
-                                    .strokeBorder(Color.white.opacity(0.40), lineWidth: 2)
-                                    .frame(width: 189, height: 189)
-                                Circle()
-                                    .strokeBorder(GlassPalette.cyan.opacity(0.85), lineWidth: 5)
-                                    .frame(width: 179, height: 179)
-                                    .shadow(color: GlassPalette.cyan.opacity(0.7), radius: 11)
-                                Circle()
-                                    .strokeBorder(Color.white.opacity(0.96), lineWidth: 5)
-                                    .frame(width: 170, height: 170)
-                                Circle()
-                                    .fill(RadialGradient(
-                                        colors: model.connected ?
-                                            [Color(red: 0.03, green: 0.61, blue: 0.40),
-                                             Color(red: 0.20, green: 0.83, blue: 0.65)] :
-                                            [Color(red: 0.00, green: 0.40, blue: 0.98),
-                                             Color(red: 0.02, green: 0.59, blue: 1.00),
-                                             Color(red: 0.11, green: 0.77, blue: 1.00)],
-                                        center: .center, startRadius: 0, endRadius: 83))
-                                    .frame(width: 156, height: 156)
-                                    .shadow(color: GlassPalette.blue.opacity(0.37),
-                                            radius: 15, y: 5)
-                                Image(systemName: "power")
-                                    .font(.system(size: 49, weight: .regular))
-                                    .foregroundStyle(.white)
-                                    .shadow(color: .white.opacity(0.65), radius: 4)
-                            }
-                            .frame(width: 205, height: 205)
-                            .background {
-                                Circle()
-                                    .fill(GlassPalette.cyan.opacity(0.09))
-                                    .frame(width: 231, height: 231)
-                                    .blur(radius: 26)
-                            }
-                            .contentShape(Circle())
+        VStack(alignment: .leading, spacing: 14) {
+            WorkspaceHeading(title: "连接总览", subtitle: "清晰掌控当前 VPN 状态与网络策略", symbol: "globe.americas.fill")
+                .padding(.bottom, 4)
+            HStack(spacing: 12) {
+                VStack(spacing: 6) {
+                    Spacer(minLength: 0)
+                    Button {
+                        guard model.selected != nil || model.connected else {
+                            model.message = "请先导入并选择一个 .ovpn 配置文件。"
+                            return
                         }
-                        .buttonStyle(.plain)
-                        .disabled(model.busy || model.connecting)
-                        .help(model.connected ? "断开 VPN 连接" : "连接当前配置")
-                        .accessibilityLabel(model.connected ? "断开 VPN" : "连接 VPN")
-
-                        Text(statusTitle)
-                            .font(.system(size: 21, weight: .bold, design: .rounded))
-                            .foregroundStyle(model.connected ? Color.green :
-                                             hasError ? Color.orange : Color.primary)
-                        if model.connected {
-                            Label("安全连接已建立", systemImage: "checkmark.circle.fill")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.green)
-                        } else {
-                            Text(statusDescription)
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
+                        Task {
+                            if model.connected { await model.disconnect() }
+                            else { await model.connectSelected() }
                         }
-                        if model.connected && model.activeProfileID != model.selectedID &&
-                           model.selectedID != nil {
-                            Button("切换到所选配置") { confirmSwitch = true }
-                                .controlSize(.small)
-                        }
-                        Spacer(minLength: 8)
+                    } label: { ReferencePowerOrb() }
+                    .buttonStyle(.plain)
+                    .disabled(model.busy || model.connecting)
+                    .accessibilityLabel(model.connected ? "断开 VPN" : "连接 VPN")
+                    Text(statusTitle)
+                        .font(.system(size: 30, weight: .semibold))
+                        .foregroundStyle(model.connected ? Color.green : hasError ? Color.orange : GlassPalette.blue)
+                    Text(model.connected ? "安全连接已建立" : model.connecting ? "正在建立安全连接…" : "点击上方按钮开始连接")
+                        .font(.system(size: 16))
+                        .foregroundStyle(model.connected ? Color.green : GlassPalette.ink.opacity(0.6))
+                    if model.connected && model.activeProfileID != model.selectedID && model.selectedID != nil {
+                        Button("切换到所选配置") { confirmSwitch = true }
+                            .buttonStyle(ReferenceSecondaryButton())
                     }
-                    .frame(maxWidth: .infinity)
-                     .frame(height: 340)
-                    .glassCard(cornerRadius: 17, active: true)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 330)
+                .glassCard(cornerRadius: 19, active: true)
 
-                    VStack(spacing: 12) {
-                        VPNPanel("快速连接", symbol: "slider.horizontal.3", minContentHeight: 190) {
-                            HStack(spacing: 9) {
-                                Text("配置文件")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .frame(width: 63, alignment: .leading)
-                                Menu {
-                                    ForEach(model.profiles) { profile in
-                                        Button {
-                                            model.selectedID = profile.id
-                                        } label: {
-                                            if model.selectedID == profile.id {
-                                                Label(profile.name, systemImage: "checkmark")
-                                            } else {
-                                                Text(profile.name)
-                                            }
-                                        }
-                                    }
-                                } label: {
-                                    connectionField(model.selected?.name ?? "请选择配置")
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(model.profiles.isEmpty || model.busy)
+                VStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "slider.horizontal.3")
+                            Text("快速连接").fontWeight(.semibold)
+                            Spacer()
+                            Button { showingCredentials = true } label: {
+                                Image(systemName: "key.horizontal")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(GlassPalette.ink.opacity(0.45))
                             }
-                            HStack(spacing: 9) {
-                                Text("路由模式")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .frame(width: 63, alignment: .leading)
-                                Menu {
-                                    ForEach(RoutingMode.allCases) { mode in
-                                        Button {
-                                            Task { await model.setMode(mode) }
-                                        } label: {
-                                            if model.selected?.mode == mode {
-                                                Label(mode.rawValue, systemImage: "checkmark")
-                                            } else {
-                                                Text(mode.rawValue)
-                                            }
-                                        }
-                                    }
-                                } label: {
-                                    connectionField(model.selected?.mode.rawValue ?? "Original")
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(model.selected == nil || model.busy ||
-                                          model.connected || model.connecting)
-                            }
-                            HStack(spacing: 8) {
-                                Text("配置文件").foregroundStyle(.secondary)
-                                Spacer(minLength: 2)
-                                Text(model.selected?.sourceFilename ?? "未选择")
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                            }
-                            .font(.system(size: 12))
-
-                            DisclosureGroup("身份验证（按需）") {
-                                VStack(spacing: 6) {
+                            .buttonStyle(.plain)
+                            .help("身份验证")
+                            .popover(isPresented: $showingCredentials) {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text("身份验证").font(.headline)
+                                    TextField("用户名", text: $model.username).textFieldStyle(.plain).referenceInput()
+                                    SecureField("密码", text: $model.password).textFieldStyle(.plain).referenceInput()
                                     Toggle("保存在钥匙串", isOn: $model.rememberCredentials)
-                                    TextField("用户名", text: $model.username)
-                                        .textFieldStyle(.plain)
-                                        .referenceInput()
-                                    SecureField("密码", text: $model.password)
-                                        .textFieldStyle(.plain)
-                                        .referenceInput()
-                                }
-                            }
-                            .font(.system(size: 12))
-                        }
-                        VPNPanel("当前连接", symbol: "globe.americas.fill", minContentHeight: 55) {
-                            HStack(spacing: 8) {
-                                BrandMark(size: 30)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(model.activeProfile?.name ??
-                                         model.selected?.name ?? "尚未选择配置")
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .lineLimit(1)
-                                    Text(model.connected ? "VPN 会话运行中" : "等待连接")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer(minLength: 0)
-                                if model.connected, let traffic = model.traffic {
-                                    VStack(alignment: .trailing, spacing: 4) {
-                                        Label(formattedBytes(traffic.receivedBytes),
-                                              systemImage: "arrow.down")
-                                        Label(formattedBytes(traffic.sentBytes),
-                                              systemImage: "arrow.up")
-                                    }
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(GlassPalette.blue)
-                                }
+                                }.padding(20).frame(width: 290)
                             }
                         }
-                        Spacer(minLength: 0)
+                        .font(.system(size: 18))
+                        quickRow("配置文件") {
+                            Menu {
+                                ForEach(model.profiles) { profile in
+                                    Button(profile.name) { model.selectedID = profile.id }
+                                }
+                            } label: {
+                                selectionField(model.selected?.name ?? "请选择配置", stepper: true)
+                            }
+                            .menuStyle(.borderlessButton)
+                            .menuIndicator(.hidden)
+                            .disabled(model.profiles.isEmpty || model.busy)
+                        }
+                        quickRow("路由模式") {
+                            Menu {
+                                ForEach(RoutingMode.allCases) { mode in
+                                    Button(mode.rawValue) { Task { await model.setMode(mode) } }
+                                }
+                            } label: {
+                                selectionField(model.selected?.mode.rawValue ?? "Original", stepper: false)
+                            }
+                            .menuStyle(.borderlessButton)
+                            .menuIndicator(.hidden)
+                            .disabled(model.selected == nil || model.busy || model.connected || model.connecting)
+                        }
+                        quickRow("配置文件") {
+                            Text(model.selected?.sourceFilename ?? "未选择配置")
+                                .lineLimit(1).truncationMode(.middle)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .referenceInput()
+                        }
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 340, alignment: .top)
-                }
+                    .padding(18)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .glassCard(cornerRadius: 18)
 
-                HStack(spacing: 12) {
-                    miniStatistic("累计接收", symbol: "arrow.down.circle.fill",
-                        value: formattedBytes(model.traffic?.receivedBytes),
-                        samples: model.receiveTrend.samples)
-                        .frame(width: 202)
-                    miniStatistic("累计发送", symbol: "arrow.up.circle.fill",
-                        value: formattedBytes(model.traffic?.sentBytes),
-                        samples: model.sendTrend.samples)
-                        .frame(width: 202)
-                    HStack(alignment: .top, spacing: 9) {
-                        Image(systemName: "checkmark.shield.fill")
-                            .font(.system(size: 19, weight: .semibold))
-                            .foregroundStyle(.green)
-                            .frame(width: 39, height: 39)
-                            .background(Color.green.opacity(0.12),
-                                        in: RoundedRectangle(cornerRadius: 10))
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("连接保护")
-                                .font(.system(size: 13, weight: .semibold))
-                            Label("受管连接异常时安全断开",
-                                  systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                                .font(.system(size: 11))
-                            Text("PF Kill Switch 尚未启用，不能保证零泄漏。")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 10) {
+                        Image(systemName: "globe")
+                            .font(.system(size: 29, weight: .regular))
+                            .foregroundStyle(GlassPalette.blue)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(model.activeProfile?.name ?? model.selected?.name ?? "尚未选择配置")
+                                .font(.system(size: 15, weight: .medium)).lineLimit(1)
+                            Text(model.activeProfile?.sourceFilename ?? model.selected?.sourceFilename ?? "等待导入 .ovpn 文件")
+                                .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer(minLength: 0)
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Label(bytes(model.traffic?.receivedBytes), systemImage: "arrow.down")
+                            Label(bytes(model.traffic?.sentBytes), systemImage: "arrow.up")
+                        }.font(.system(size: 12)).foregroundStyle(GlassPalette.blue)
                     }
-                    .padding(13)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: 143, alignment: .top)
-                    .glassCard(cornerRadius: 15)
+                    .padding(.horizontal, 16)
+                    .frame(height: 80)
+                    .frame(maxWidth: .infinity)
+                    .glassCard(cornerRadius: 16)
                 }
+                .frame(maxWidth: .infinity)
+                .frame(height: 330)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, GlassLayout.pageTop)
-            .padding(.bottom, 16)
-            .frame(maxWidth: 1100, alignment: .leading)
+            HStack(spacing: 12) {
+                statistic("累计接收", symbol: "arrow.down.circle", value: bytes(model.traffic?.receivedBytes), samples: model.receiveTrend.samples)
+                    .frame(width: 195)
+                statistic("累计发送", symbol: "arrow.up.circle", value: bytes(model.traffic?.sentBytes), samples: model.sendTrend.samples)
+                    .frame(width: 195)
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "checkmark.shield.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(.green)
+                        .frame(width: 54, height: 54)
+                        .background(Color.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 15))
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("连接保护").font(.system(size: 18, weight: .semibold))
+                        Label("受管连接异常时安全断开", systemImage: "checkmark.circle.fill")
+                            .font(.system(size: 12)).foregroundStyle(.green)
+                        Text("PF Kill Switch 尚未启用，不能保证零泄漏。")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(height: 146, alignment: .topLeading)
+                .glassCard(cornerRadius: 17)
+            }
+            Spacer(minLength: 0)
         }
-        .scrollIndicators(.hidden)
+        .padding(.horizontal, 20)
+        .padding(.top, GlassLayout.pageTop)
+        .padding(.bottom, 16)
         .confirmationDialog("切换 VPN 配置？", isPresented: $confirmSwitch) {
             Button("断开当前连接并切换") { Task { await model.switchToSelected() } }
             Button("取消", role: .cancel) { }
-        } message: {
-            Text("应用将验证旧会话退出，然后连接新配置。")
         }
     }
 
-    private func connectionField(_ value: String) -> some View {
-        HStack(spacing: 6) {
-            Text(value)
-                .font(.system(size: 13))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
+    private func quickRow<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 10) {
+            Text(title).font(.system(size: 16)).foregroundStyle(.secondary)
+                .frame(width: 78, alignment: .leading)
+            content()
+        }
+    }
+    private func selectionField(_ title: String, stepper: Bool) -> some View {
+        HStack {
+            Text(title).lineLimit(1).foregroundStyle(GlassPalette.ink)
             Spacer(minLength: 0)
-            Image(systemName: "chevron.up.chevron.down")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 16, height: 16)
-                .background(GlassPalette.blue, in: RoundedRectangle(cornerRadius: 5))
-        }
-        .padding(.horizontal, 8)
-        .frame(height: ReferenceMetrics.controlHeight)
-        .background(Color.white.opacity(0.88),
-                    in: RoundedRectangle(cornerRadius: ReferenceMetrics.corner))
-        .overlay {
-            RoundedRectangle(cornerRadius: 7)
-                .strokeBorder(Color(red: 0.74, green: 0.84, blue: 0.97).opacity(0.72), lineWidth: 1)
-        }
-        .contentShape(Rectangle())
+            Image(systemName: stepper ? "chevron.up.chevron.down" : "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(stepper ? .white : GlassPalette.ink.opacity(0.5))
+                .frame(width: 22, height: 26)
+                .background(stepper ? GlassPalette.blue : .clear, in: RoundedRectangle(cornerRadius: 6))
+        }.referenceInput().contentShape(Rectangle())
     }
-
-    private func miniStatistic(_ title: String, symbol: String,
-                               value: String, samples: [Double] = []) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 8) {
-                Image(systemName: symbol)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(GlassPalette.blue)
-                    .frame(width: 28, height: 28)
-                    .background(GlassPalette.blue.opacity(0.09), in: Circle())
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
+    private func statistic(_ title: String, symbol: String, value: String, samples: [Double]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 9) {
+                Image(systemName: symbol).font(.system(size: 24)).foregroundStyle(GlassPalette.blue)
+                Text(title).font(.system(size: 14)).foregroundStyle(.secondary)
             }
-            Text(value)
-                .font(.system(size: 23, weight: .semibold, design: .rounded))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            TrafficSparkline(samples: samples)
-                .frame(height: 27)
+            Text(value).font(.system(size: 28, weight: .medium)).lineLimit(1).minimumScaleFactor(0.75)
+            TrafficSparkline(samples: samples).frame(height: 33)
         }
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 119)
-        .padding(12)
-        .glassCard(cornerRadius: 15)
+        .frame(height: 146)
+        .glassCard(cornerRadius: 17)
+    }
+}
+
+private struct ReferencePowerOrb: View {
+    var body: some View {
+        ZStack {
+            Circle().stroke(GlassPalette.cyan.opacity(0.48), lineWidth: 18)
+                .frame(width: 185, height: 185).blur(radius: 13)
+            Circle().strokeBorder(GlassPalette.cyan.opacity(0.42), lineWidth: 2)
+                .frame(width: 208, height: 208)
+            Circle().strokeBorder(Color.white.opacity(0.85), lineWidth: 3)
+                .frame(width: 198, height: 198)
+            Circle().strokeBorder(GlassPalette.cyan, lineWidth: 5)
+                .frame(width: 188, height: 188)
+            Circle().fill(RadialGradient(colors: [Color(red: 0, green: 0.24, blue: 1), GlassPalette.blue, Color(red: 0, green: 0.90, blue: 1)], center: .center, startRadius: 0, endRadius: 95))
+                .frame(width: 177, height: 177)
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.95), lineWidth: 3))
+                .shadow(color: GlassPalette.cyan.opacity(0.65), radius: 10)
+            Image(systemName: "power").font(.system(size: 59, weight: .regular))
+                .foregroundStyle(.white).shadow(color: .white.opacity(0.55), radius: 3)
+        }.frame(width: 220, height: 220)
     }
 }
 
@@ -616,9 +494,9 @@ private struct ProfileLibrary: View {
                 HStack(spacing: 9) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                    .font(.system(size: 13))
+                    .font(.system(size: 16))
                 TextField("搜索配置文件…", text: $query)
-                    .font(.system(size: 13))
+                    .font(.system(size: 16))
                     .textFieldStyle(.plain)
                 if !query.isEmpty {
                     Button {
@@ -631,13 +509,11 @@ private struct ProfileLibrary: View {
                     .accessibilityLabel("清除搜索")
                 }
             }
-                .padding(.horizontal, 12)
-                .frame(height: 36)
-                .referenceInput(height: 36)
+                .referenceInput(height: 38)
                 Button(action: onImport) {
                     Label("导入配置", systemImage: "plus")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(height: 24)
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(height: 26)
                 }
                 .buttonStyle(ReferencePrimaryButton())
                 .tint(GlassPalette.blue)
@@ -647,7 +523,7 @@ private struct ProfileLibrary: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("全部配置 (\(filtered.count))")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(.secondary)
                         Spacer()
                         Image(systemName: "chevron.down")
@@ -662,17 +538,17 @@ private struct ProfileLibrary: View {
                             ForEach(filtered) { profile in
                                 Button { model.selectedID = profile.id } label: {
                                     HStack(spacing: 9) {
-                                        GlassIcon(symbol: "globe.americas.fill",
+                                        GlassIcon(symbol: "globe",
                                                   color: profile.isFavorite ?
                                                     GlassPalette.blue : GlassPalette.cyan,
-                                                  size: 34)
+                                                  size: 40)
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(profile.name)
-                                                .font(.system(size: 13, weight: .semibold))
+                                                .font(.system(size: 16, weight: .semibold))
                                                 .foregroundStyle(.primary)
                                                 .lineLimit(1)
                                             Text(profile.sourceFilename)
-                                                .font(.system(size: 11))
+                                                .font(.system(size: 13))
                                                 .foregroundStyle(.secondary)
                                                 .lineLimit(1)
                                                 .truncationMode(.middle)
@@ -681,7 +557,7 @@ private struct ProfileLibrary: View {
                                         if profile.isFavorite {
                                             Image(systemName: "star.fill")
                                                 .foregroundStyle(.orange)
-                                                .font(.system(size: 12))
+                                                .font(.system(size: 14))
                                         } else {
                                             Circle()
                                                 .fill(Color.secondary.opacity(0.30))
@@ -689,7 +565,7 @@ private struct ProfileLibrary: View {
                                         }
                                     }
                                     .padding(.horizontal, 7)
-                                    .padding(.vertical, 7)
+                                    .padding(.vertical, 10)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .background(
                                         model.selectedID == profile.id ?
@@ -712,12 +588,12 @@ private struct ProfileLibrary: View {
                     }
                     if filtered.isEmpty {
                         Label("没有匹配的配置", systemImage: "magnifyingglass")
-                            .font(.system(size: 12))
+                            .font(.system(size: 14))
                             .foregroundStyle(.secondary)
                     }
                 }
                 .padding(10)
-                .frame(width: 255)
+                .frame(width: 235)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .glassCard(cornerRadius: 15)
 
@@ -729,7 +605,7 @@ private struct ProfileLibrary: View {
                             GlassIcon(symbol: "square.stack.3d.up", size: 45)
                             Text("尚未选择配置文件").font(.headline)
                             Text("点击右上角「导入配置」以添加 .ovpn 文件")
-                                .font(.system(size: 12))
+                                .font(.system(size: 14))
                                 .foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -766,112 +642,82 @@ private struct RoutingWorkspace: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: GlassLayout.sectionSpacing) {
-                WorkspaceHeading(title: "路由与规则",
-                    subtitle: "管理 VPN 路由模式与中国 IPv4 规则",
-                    symbol: "point.3.connected.trianglepath.dotted")
-
-                // One continuous two-column glass surface is essential:
-                // the reference does not use two independent floating cards.
-                HStack(alignment: .top, spacing: 0) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("路由模式")
-                            .font(.system(size: 14, weight: .bold))
-                        ForEach(RoutingMode.allCases) { mode in
-                            routeOption(mode)
-                        }
-                        Text(model.selected.map { "所选配置：\($0.name)" } ??
-                             "请先选择配置后再修改路由")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 2)
-                    }
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-
-                    Rectangle()
-                        .fill(Color.white.opacity(0.58))
-                        .frame(width: 1)
-                        .padding(.vertical, 16)
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("中国 IPv4 规则")
-                            .font(.system(size: 14, weight: .bold))
-                        HStack(alignment: .center, spacing: 13) {
-                            GlassIcon(symbol: "globe.asia.australia.fill", size: 52)
-                            VStack(alignment: .leading, spacing: 8) {
-                                ruleDetail("规则版本", "未提供")
-                                ruleDetail("规则来源", "chnroutes2")
-                                ruleDetail("规则数量",
-                                    model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
-                                ruleDetail("历史快照",
-                                    model.ruleSnapshots.first.map {
-                                        $0.savedAt.formatted(
-                                            .dateTime.year().month().day().hour().minute())
-                                    } ?? "尚无快照")
-                            }
-                        }
-                        HStack(spacing: 10) {
-                            Button("更新规则") { Task { await model.refreshRules() } }
-                                .buttonStyle(ReferencePrimaryButton())
-                                .tint(GlassPalette.blue)
-                                .disabled(model.busy)
-                            Menu {
-                                ForEach(model.ruleSnapshots) { saved in
-                                    Button(saved.savedAt.formatted(
-                                        .dateTime.year().month().day().hour().minute())) {
-                                        snapshotToRestore = saved
-                                    }
-                                }
-                            } label: {
-                                Text("历史版本")
-                            }
-                            .buttonStyle(ReferenceSecondaryButton())
-                            .disabled(model.ruleSnapshots.isEmpty || model.busy)
-                            .help("选择历史快照以进行确认恢复")
-                        }
-                    }
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+        VStack(alignment: .leading, spacing: 16) {
+            WorkspaceHeading(title: "路由与规则", subtitle: "管理 VPN 路由模式与中国 IPv4 规则", symbol: "point.3.connected.trianglepath.dotted")
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("路由模式").font(.system(size: 20, weight: .semibold))
+                    ForEach(RoutingMode.allCases) { mode in routeOption(mode) }
+                    Spacer(minLength: 12)
+                    Text(model.selected.map { "所选配置：\($0.name)" } ?? "选择配置后即可修改路由模式")
+                        .font(.system(size: 13)).foregroundStyle(.secondary)
                 }
-                .frame(minHeight: 252, alignment: .topLeading)
-                .glassCard(cornerRadius: 16)
-
-                HStack {
-                    Spacer(minLength: 0)
-                    HStack(spacing: 11) {
-                        GlassIcon(symbol: "shield.lefthalf.filled", size: 39)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("IPv6 规则（预览）")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text(model.ipv6Preview.map {
-                                "\($0.routes.count) 个 APNIC 注册前缀 · 仅供查看"
-                            } ?? "未下载 · 仅供查看，不修改系统 IPv6 路由")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .glassCard(cornerRadius: 18)
+                VStack(spacing: 14) {
+                    VStack(alignment: .leading, spacing: 22) {
+                        Text("中国 IPv4 规则").font(.system(size: 20, weight: .semibold))
+                        HStack(alignment: .top, spacing: 16) {
+                            GlassIcon(symbol: "globe.asia.australia", size: 67)
+                            VStack(alignment: .leading, spacing: 16) {
+                                ruleDetail("规则版本", model.ruleSnapshots.first.map { $0.savedAt.formatted(.dateTime.year().month().day()) } ?? "未下载")
+                                ruleDetail("规则来源", "chnroutes2")
+                                ruleDetail("规则数量", model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
+                                ruleDetail("最后更新", model.ruleSnapshots.first.map { $0.savedAt.formatted(.dateTime.month().day().hour().minute()) } ?? "尚无快照")
+                            }
                         }
                         Spacer(minLength: 0)
-                        Button("刷新") { Task { await model.updateIPv6Preview() } }
+                        HStack(spacing: 12) {
+                            Button { Task { await model.refreshRules() } } label: {
+                                Text(model.busy ? "更新中…" : "更新规则").frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(ReferencePrimaryButton()).disabled(model.busy)
+                            Menu {
+                                ForEach(model.ruleSnapshots) { saved in
+                                    Button(saved.savedAt.formatted(.dateTime.year().month().day().hour().minute())) { snapshotToRestore = saved }
+                                }
+                            } label: { Text("历史版本").frame(maxWidth: .infinity) }
+                            .menuStyle(.borderlessButton).menuIndicator(.hidden)
                             .buttonStyle(ReferenceSecondaryButton())
-                            .disabled(model.busy)
+                            .disabled(model.ruleSnapshots.isEmpty || model.busy)
+                        }
                     }
-                    .padding(12)
-                    .frame(maxWidth: 430, alignment: .leading)
-                    .glassCard(cornerRadius: 14)
+                    .padding(20)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .glassCard(cornerRadius: 18)
+                    HStack(alignment: .center, spacing: 12) {
+                        GlassIcon(symbol: "shield.lefthalf.filled", size: 44)
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("IPv6 规则（预览）").font(.system(size: 16, weight: .semibold))
+                                Spacer(minLength: 0)
+                                Text("预览").font(.system(size: 11)).foregroundStyle(.secondary)
+                                    .padding(.horizontal, 8).padding(.vertical, 3)
+                                    .background(Color.gray.opacity(0.09), in: Capsule())
+                            }
+                            Text(model.ipv6Preview.map { "\($0.routes.count) 个 APNIC 前缀 · 仅供查看" } ?? "仅用于查看，不修改系统 IPv6 路由。")
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                        }
+                        Button { Task { await model.updateIPv6Preview() } } label: {
+                            Image(systemName: "arrow.clockwise").foregroundStyle(GlassPalette.blue)
+                        }.buttonStyle(.plain).disabled(model.busy).help("刷新 IPv6 预览")
+                    }
+                    .padding(16)
+                    .frame(height: 112)
+                    .frame(maxWidth: .infinity)
+                    .glassCard(cornerRadius: 18)
                 }
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, GlassLayout.pageInset)
-            .padding(.top, GlassLayout.pageTop)
-            .padding(.bottom, 14)
-            .frame(maxWidth: 1100, alignment: .topLeading)
+            .frame(maxHeight: .infinity)
         }
-        .scrollIndicators(.hidden)
-        .confirmationDialog("恢复旧版 IPv4 规则？",
-                            isPresented: Binding(
-                                get: { snapshotToRestore != nil },
-                                set: { if !$0 { snapshotToRestore = nil } }
-                            )) {
+        .padding(.horizontal, GlassLayout.pageInset)
+        .padding(.top, GlassLayout.pageTop)
+        .padding(.bottom, 20)
+        .confirmationDialog("恢复旧版 IPv4 规则？", isPresented: Binding(
+            get: { snapshotToRestore != nil }, set: { if !$0 { snapshotToRestore = nil } }
+        )) {
             if let snapshot = snapshotToRestore {
                 Button("确认恢复历史快照") {
                     Task { await model.restoreRuleSnapshot(snapshot.id) }
@@ -879,9 +725,7 @@ private struct RoutingWorkspace: View {
                 }
             }
             Button("取消", role: .cancel) { snapshotToRestore = nil }
-        } message: {
-            Text("恢复会替换当前规则。已有受管连接的网络安全限制仍然适用。")
-        }
+        } message: { Text("恢复会替换当前规则，已有受管连接的安全限制仍然适用。") }
     }
 
     private func routeOption(_ mode: RoutingMode) -> some View {
@@ -892,29 +736,29 @@ private struct RoutingWorkspace: View {
             HStack(spacing: 11) {
                 Image(systemName: selected == mode ?
                       "largecircle.fill.circle" : "circle")
-                    .font(.system(size: 19))
+                    .font(.system(size: 26))
                     .foregroundStyle(selected == mode ?
                                      GlassPalette.blue : Color.gray)
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 8) {
                     Text(title(for: mode))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(.primary)
                     Text(subtitle(for: mode))
-                        .font(.system(size: 11))
+                        .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 11)
-            .frame(maxWidth: .infinity, minHeight: 51, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 94, alignment: .leading)
             .background(selected == mode ?
-                        GlassPalette.blue.opacity(0.13) : Color.white.opacity(0.10),
+                        GlassPalette.blue.opacity(0.10) : Color.white.opacity(0.10),
                         in: RoundedRectangle(cornerRadius: 12))
             .overlay {
                 RoundedRectangle(cornerRadius: 12)
                     .strokeBorder(selected == mode ?
-                                  GlassPalette.blue.opacity(0.29) :
+                                  GlassPalette.blue.opacity(0.12) :
                                   Color.white.opacity(0.14), lineWidth: 1)
             }
             .contentShape(Rectangle())
@@ -932,7 +776,7 @@ private struct RoutingWorkspace: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
-        .font(.system(size: 12))
+        .font(.system(size: 14))
     }
 }
 
@@ -966,11 +810,12 @@ struct SystemSettingsPane: View {
                             statePill(model.helperStatus,
                                       success: helperReady)
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.system(size: 16, weight: .semibold))
                                 .foregroundStyle(.secondary)
                         }
                     }
                     .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
                     .fixedSize()
                 }
 
@@ -992,17 +837,18 @@ struct SystemSettingsPane: View {
                             statePill(model.availableInstaller == nil ?
                                       "检查更新" : "可下载更新")
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.system(size: 16, weight: .semibold))
                                 .foregroundStyle(.secondary)
                         }
                     }
                     .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
                     .fixedSize()
                 }
 
                 settingsRow("安全恢复",
                     subtitle: "遇到网络问题时，可尝试恢复残留的网络设置",
-                    symbol: "cross.case.fill") {
+                    symbol: "globe") {
                     Button("开始恢复") {
                         Task { await model.retryNetworkRecovery() }
                     }
@@ -1020,11 +866,12 @@ struct SystemSettingsPane: View {
                         Text("IPv6 分流尚未实现")
                     } label: {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 16, weight: .semibold))
                             .frame(width: 24, height: 30)
                             .foregroundStyle(.secondary)
                     }
                     .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
                     .fixedSize()
                 }
             }
@@ -1040,10 +887,10 @@ struct SystemSettingsPane: View {
         HStack(spacing: 5) {
             if success {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 13))
+                    .font(.system(size: 16))
             }
             Text(text)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
         }
         .foregroundStyle(success ? Color.green : Color.secondary)
         .padding(.horizontal, 11)
@@ -1061,9 +908,9 @@ struct SystemSettingsPane: View {
             GlassIcon(symbol: symbol, size: 46)
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                 Text(subtitle)
-                    .font(.system(size: 12))
+                    .font(.system(size: 14))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
@@ -1071,7 +918,7 @@ struct SystemSettingsPane: View {
             actions()
         }
         .padding(.horizontal, 20)
-        .frame(minHeight: 112)
+        .frame(minHeight: 92)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(cornerRadius: 15)
     }
@@ -1101,7 +948,7 @@ struct ProfileDetail: View {
 
     var body: some View {
         GeometryReader { proxy in
-            if proxy.size.height >= 475 {
+            if proxy.size.height >= 510 {
                 inspectorContent
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
@@ -1168,12 +1015,12 @@ struct ProfileDetail: View {
     private var inspectorContent: some View {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 13) {
-                    GlassIcon(symbol: "network.badge.shield.half.filled", size: 54)
+                    BrandMark(size: 54)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(profile.name)
-                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .font(.system(size: 28, weight: .bold))
                         Text(profile.sourceFilename)
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 14)).foregroundStyle(.secondary)
                     }
                     Spacer()
                     Button {
@@ -1200,6 +1047,7 @@ struct ProfileDetail: View {
                             .foregroundStyle(.secondary)
                     }
                     .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
                     .fixedSize()
                 }
                 HStack(spacing: 4) {
@@ -1208,12 +1056,12 @@ struct ProfileDetail: View {
                             withAnimation(.easeInOut(duration: 0.15)) { tab = section }
                         } label: {
                             Text(section.rawValue)
-                                .font(.system(size: 12, weight: tab == section ?
+                                .font(.system(size: 14, weight: tab == section ?
                                               .semibold : .regular))
                                 .foregroundStyle(tab == section ?
                                                  Color.white : Color.primary)
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 30)
+                                .frame(height: 34)
                                 .background {
                                     if tab == section {
                                         RoundedRectangle(cornerRadius: 8)
@@ -1236,9 +1084,8 @@ struct ProfileDetail: View {
                 }
                 Spacer(minLength: 0)
                 HStack {
-                    Text("导入：")
+                    Text("OpenVPN")
                         .foregroundStyle(.secondary)
-                    Text(profile.importedAt, format: .dateTime.year().month().day())
                     Spacer()
                     Button("保存更改") {
                         Task {
@@ -1247,20 +1094,21 @@ struct ProfileDetail: View {
                         }
                     }
                     .buttonStyle(ReferencePrimaryButton())
-                    Button("导出预览…") { Task { await model.exportPreview() } }
+                    Button("导出配置…") { Task { await model.exportPreview() } }
+                        .buttonStyle(ReferenceSecondaryButton())
                         .disabled(profile.mode == .chinaDirect && model.rules == nil)
                 }
-                .font(.system(size: 12))
+                .font(.system(size: 14))
                 .padding(.top, 3)
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
-            .frame(minHeight: 390, alignment: .topLeading)
+            .frame(minHeight: 480, maxHeight: .infinity, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var metadata: some View {
-        VStack(alignment: .leading, spacing: 13) {
+        VStack(alignment: .leading, spacing: 10) {
             editorRow("名称") {
                 TextField("配置名称", text: $draftName)
                     .textFieldStyle(.plain)
@@ -1276,24 +1124,25 @@ struct ProfileDetail: View {
                 } label: {
                     HStack {
                         Text(draftGroup.isEmpty ? "选择类别" : draftGroup)
-                            .font(.system(size: 13))
+                            .font(.system(size: 16))
                             .foregroundStyle(.primary)
                         Spacer()
                         Image(systemName: "chevron.down")
                             .foregroundStyle(.secondary)
-                            .font(.system(size: 11))
+                            .font(.system(size: 13))
                     }
-                    .padding(.horizontal, 10)
                     .referenceInput()
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
             editorRow("配置文件") {
-                Label(profile.sourceFilename, systemImage: "doc.text")
-                    .font(.system(size: 13))
+                Label(profile.sourceFilename, systemImage: "doc.text.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(GlassPalette.blue)
                     .lineLimit(1)
-                Spacer()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .referenceInput()
                 Button("编辑文件…") {
                     Task {
                         if let text = await model.editSource(for: profile) {
@@ -1306,11 +1155,12 @@ struct ProfileDetail: View {
                 .disabled(model.connected || model.connecting)
             }
             editorRow("备注") {
-                TextField("添加备注信息", text: $draftNotes)
+                TextField("添加备注信息…", text: $draftNotes, axis: .vertical)
+                    .lineLimit(2...2)
                     .textFieldStyle(.plain)
-                    .referenceInput()
+                    .referenceInput(height: 58)
             }
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 LabeledContent("创建时间") {
                     Text(profile.importedAt, format: .dateTime.year().month().day().hour().minute())
                 }
@@ -1324,22 +1174,22 @@ struct ProfileDetail: View {
                 LabeledContent("文件大小", value: "未读取")
                 LabeledContent("配置类型", value: "OpenVPN")
             }
-            .font(.system(size: 12))
+            .font(.system(size: 14))
             .foregroundStyle(.secondary)
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.white.opacity(0.16),
                         in: RoundedRectangle(cornerRadius: 12))
         }
-        .padding(10)
+        .padding(.top, 3)
     }
 
     private var advanced: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label("安全编辑", systemImage: "curlybraces")
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 18, weight: .semibold))
             Text("保留原始 .ovpn 文件及版本快照，不会执行导入文件中的脚本。")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.system(size: 14)).foregroundStyle(.secondary)
             Button("编辑 .ovpn 文件…") {
                 Task {
                     if let text = await model.editSource(for: profile) {
@@ -1352,7 +1202,7 @@ struct ProfileDetail: View {
             LabeledContent("源文件", value: profile.sourceFilename)
             LabeledContent("保存位置", value: "本机私有配置仓库")
             Text("只有断开连接后才能更改或恢复配置。")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.system(size: 14)).foregroundStyle(.secondary)
         }
         .padding(17)
         .glassCard(cornerRadius: 14)
@@ -1361,7 +1211,7 @@ struct ProfileDetail: View {
     private var routeMode: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("所选配置的默认路由策略")
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 16, weight: .medium))
             Picker("模式", selection: Binding(
                 get: { profile.mode },
                 set: { value in Task { await model.setMode(value) } }
@@ -1373,7 +1223,7 @@ struct ProfileDetail: View {
             .pickerStyle(.radioGroup)
             .disabled(model.busy || model.connected || model.connecting)
             Text("中国 IPv4 直连需要已经下载的网段规则；IPv6 分流与 Kill Switch 尚未实现。")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.system(size: 14)).foregroundStyle(.secondary)
         }
         .padding(17)
         .glassCard(cornerRadius: 14)
@@ -1383,7 +1233,7 @@ struct ProfileDetail: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("已保存的配置版本")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                 Spacer()
                 Button("刷新历史") {
                     Task { history = await model.revisions(for: profile) }
@@ -1408,12 +1258,12 @@ struct ProfileDetail: View {
                         }
                         .disabled(model.connected || model.connecting)
                     }
-                    .font(.system(size: 12))
+                    .font(.system(size: 14))
                     Divider().opacity(0.3)
                 }
             }
             Text("版本保存在本机，不会上传至云端。")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .font(.system(size: 13)).foregroundStyle(.secondary)
         }
         .padding(16)
         .glassCard(cornerRadius: 14)
@@ -1424,10 +1274,11 @@ struct ProfileDetail: View {
     ) -> some View {
         HStack(spacing: 12) {
             Text(title)
-                .font(.system(size: 13))
+                .font(.system(size: 16))
                 .foregroundStyle(.secondary)
-                .frame(width: 64, alignment: .leading)
+                .frame(width: 66, alignment: .leading)
             content()
         }
     }
 }
+

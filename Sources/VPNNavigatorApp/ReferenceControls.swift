@@ -2,16 +2,16 @@ import SwiftUI
 
 /// One type ramp and one control geometry for all five native pages.
 enum ReferenceType {
-    static let pageTitle: CGFloat = 27
-    static let panelTitle: CGFloat = 14
-    static let section: CGFloat = 13
-    static let field: CGFloat = 13
-    static let caption: CGFloat = 11
+    static let pageTitle: CGFloat = 32
+    static let panelTitle: CGFloat = 18
+    static let section: CGFloat = 16
+    static let field: CGFloat = 16
+    static let caption: CGFloat = 13
 }
 enum ReferenceMetrics {
-    static let controlHeight: CGFloat = 32
-    static let rowHeight: CGFloat = 35
-    static let corner: CGFloat = 9
+    static let controlHeight: CGFloat = 36
+    static let rowHeight: CGFloat = 42
+    static let corner: CGFloat = 8
 }
 
 /// Common macOS 13+ form components derived from the six-panel UI reference.
@@ -30,13 +30,13 @@ struct ReferenceInputChrome: ViewModifier {
                 RoundedRectangle(cornerRadius: ReferenceMetrics.corner, style: .continuous)
                     .fill(appearance == .dark ?
                           Color.white.opacity(0.13) :
-                          Color(red: 0.99, green: 0.995, blue: 1).opacity(0.89))
+                          Color(red: 0.99, green: 0.995, blue: 1).opacity(0.58))
             }
             .overlay {
                 RoundedRectangle(cornerRadius: ReferenceMetrics.corner, style: .continuous)
                     .strokeBorder(appearance == .dark ?
                                   Color.white.opacity(0.29) :
-                                  Color(red: 0.73, green: 0.82, blue: 0.95).opacity(0.69),
+                                  Color(red: 0.73, green: 0.82, blue: 0.95).opacity(0.35),
                                   lineWidth: 1)
             }
     }
@@ -64,7 +64,7 @@ struct ReferenceDetailRow: View {
                 .truncationMode(.middle)
             Spacer(minLength: 0)
         }
-        .font(.system(size: 11))
+        .font(.system(size: 13))
         .frame(minHeight: 19)
     }
 }
@@ -73,10 +73,10 @@ struct ReferenceDetailRow: View {
 struct ReferenceSegmentChrome: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .padding(4)
+            .padding(3)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(red: 0.96, green: 0.98, blue: 1).opacity(0.84)))
+                    .fill(Color(red: 0.96, green: 0.98, blue: 1).opacity(0.35)))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(Color.white.opacity(0.96), lineWidth: 1)
@@ -100,7 +100,7 @@ struct ReferenceFormRow<Content: View>: View {
     var body: some View {
         HStack(spacing: 10) {
             Text(title)
-                .font(.system(size: 11))
+                .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .frame(width: 65, alignment: .leading)
             content
@@ -116,10 +116,10 @@ struct ReferenceSecondaryButton: ButtonStyle {
             .font(.system(size: ReferenceType.caption + 1, weight: .semibold))
             .foregroundStyle(GlassPalette.ink)
             .padding(.horizontal, 12)
-            .frame(minHeight: 30)
+            .frame(minHeight: 34)
             .background {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.white.opacity(configuration.isPressed ? 0.68 : 0.91))
+                    .fill(Color.white.opacity(configuration.isPressed ? 0.68 : 0.55))
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
@@ -139,7 +139,7 @@ struct ReferencePrimaryButton: ButtonStyle {
             .font(.system(size: ReferenceType.field, weight: .semibold))
             .foregroundStyle(Color.white)
             .padding(.horizontal, 13)
-            .frame(minHeight: 31)
+            .frame(minHeight: 36)
             .background {
                 RoundedRectangle(cornerRadius: ReferenceMetrics.corner)
                     .fill(LinearGradient(
@@ -156,3 +156,4 @@ struct ReferencePrimaryButton: ButtonStyle {
                     radius: 4, y: 2)
     }
 }
+

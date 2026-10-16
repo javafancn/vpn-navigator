@@ -4,9 +4,9 @@ import AppKit
 /// Reference palette covers controls only. Desktop scenery is NEVER painted
 /// by VPN Navigator; only the user's macOS wallpaper shows through.
 enum GlassPalette {
-    static let blue = Color(red: 0.05, green: 0.45, blue: 0.98)
+    static let blue = Color(red: 0.0, green: 0.478, blue: 1.0)
     static let cyan = Color(red: 0.10, green: 0.73, blue: 1.0)
-    static let ink = Color(red: 0.08, green: 0.14, blue: 0.27)
+    static let ink = Color(red: 0.055, green: 0.075, blue: 0.18)
     static let violet = Color(red: 0.67, green: 0.60, blue: 0.94)
 }
 
@@ -14,9 +14,9 @@ enum GlassPalette {
 /// of VPN session and route state so a fidelity pass cannot alter networking.
 enum GlassLayout {
     static let pageInset: CGFloat = 20
-    static let pageTop: CGFloat = 23
+    static let pageTop: CGFloat = 30
     static let cardGap: CGFloat = 12
-    static let cornerRadius: CGFloat = 16
+    static let cornerRadius: CGFloat = 18
     static let sectionSpacing: CGFloat = 13
 }
 
@@ -34,7 +34,7 @@ private enum GlassMaterialTuning {
         case "popover": return .popover
         case "sidebar": return .sidebar
         case "hud": return .hudWindow
-        default: return .popover
+        default: return .sidebar
         }
     }
     static var cardMaterial: NSVisualEffectView.Material {
@@ -42,21 +42,21 @@ private enum GlassMaterialTuning {
         case "popover": return .popover
         case "sidebar": return .sidebar
         case "hud": return .hudWindow
-        default: return .popover
+        default: return .sidebar
         }
     }
     static var windowAlpha: CGFloat {
         switch preset {
         case "strong": return 1.0
         case "popover", "sidebar", "hud": return 0.84
-        default: return 0.95
+        default: return 0.82
         }
     }
     static var cardAlpha: CGFloat {
         switch preset {
         case "strong": return 1.0
         case "popover", "sidebar", "hud": return 0.84
-        default: return 0.94
+        default: return 0.25
         }
     }
 }
@@ -66,7 +66,7 @@ private enum GlassMaterialTuning {
 /// blue overlay: the supplied design is a white-lilac frost, not clear glass.
 enum GlassSurface {
     static let mist = Color(red: 0.91, green: 0.95, blue: 1.00)
-    static let sidebar = Color(red: 0.78, green: 0.86, blue: 0.99)
+    static let sidebar = Color(red: 0.76, green: 0.84, blue: 0.96)
     static let panel = Color(red: 0.97, green: 0.985, blue: 1.00)
 
     /// For screenshot calibration against the reference, without modifying
@@ -79,14 +79,14 @@ enum GlassSurface {
         switch preset {
         case "lighter": return 0.46
         case "denser": return 0.79
-        default: return 0.66
+        default: return 0.25
         }
     }
     static var cardOpacity: Double {
         switch preset {
         case "lighter": return 0.62
         case "denser": return 0.91
-        default: return 0.81
+        default: return 0.32
         }
     }
 }
@@ -116,7 +116,7 @@ struct GlassAtmosphere: View {
                     colors: [
                         GlassPalette.blue.opacity(appearance == .dark ? 0.025 : 0.055),
                         Color.clear,
-                        GlassPalette.violet.opacity(appearance == .dark ? 0.025 : 0.075)
+                        GlassPalette.violet.opacity(appearance == .dark ? 0.025 : 0.025)
                     ], startPoint: .topLeading, endPoint: .bottomTrailing)
                 RadialGradient(
                     colors: [GlassPalette.cyan.opacity(appearance == .dark ? 0.018 : 0.045),
@@ -131,6 +131,7 @@ struct GlassAtmosphere: View {
 }
 
 final class NativeWindowGlass: NSVisualEffectView {
+    private var snapshotScheduled = false
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         configureWindow()
@@ -146,6 +147,25 @@ final class NativeWindowGlass: NSVisualEffectView {
         window.contentAspectRatio = NSSize(width: 11, height: 7)
         // Let users drag the chrome, not form controls or cards.
         window.isMovableByWindowBackground = true
+        if !snapshotScheduled,
+           let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--vpnnav-snapshot-dir=") }) {
+            snapshotScheduled = true
+            let folder = String(argument.dropFirst("--vpnnav-snapshot-dir=".count))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak window] in
+                guard let window else { return }
+                let page = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--vpnnav-ui-tab=") })?.split(separator: "=").last.map(String.init) ?? "overview"
+                let destination = URL(fileURLWithPath: folder, isDirectory: true)
+                try? FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+                let path = destination.appendingPathComponent("VPNNavigator-" + page + ".png")
+                let capture = Process()
+                capture.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+                capture.arguments = ["-x", "-o", "-l", String(window.windowNumber), path.path]
+                try? capture.run()
+                capture.waitUntilExit()
+                let bounds = "frame=\(window.frame), content=\(window.contentLayoutRect), windowID=\(window.windowNumber), captureExit=\(capture.terminationStatus)"
+                try? bounds.write(to: destination.appendingPathComponent(page + "-bounds.txt"), atomically: true, encoding: .utf8)
+            }
+        }
     }
 }
 
@@ -197,7 +217,7 @@ struct ReferenceWorkspaceSurface: ViewModifier {
             .background {
                 shape.fill(appearance == .dark ?
                     Color.white.opacity(0.055) :
-                    Color(red: 0.88, green: 0.93, blue: 1).opacity(0.32))
+                    Color(red: 0.90, green: 0.95, blue: 1).opacity(0.12))
             }
             .overlay {
                 shape.strokeBorder(
@@ -237,17 +257,15 @@ private struct GlassCardModifier: ViewModifier {
                 if opaqueFallback {
                     shape.fill(Color(nsColor: .windowBackgroundColor))
                 } else {
-                    NativeCardBlur()
-                        .clipShape(shape)
                     shape.fill(appearance == .dark
                                ? Color.black.opacity(0.22)
                                : GlassSurface.panel.opacity(GlassSurface.cardOpacity))
                     // A subtle upper-left highlight separates layered panes
                     // without painting an opaque card over the desktop.
                     shape.fill(LinearGradient(colors: [
-                        Color.white.opacity(appearance == .dark ? 0.07 : 0.26),
+                        Color.white.opacity(appearance == .dark ? 0.07 : 0.24),
                         Color.white.opacity(appearance == .dark ? 0.01 : 0.08),
-                        GlassPalette.violet.opacity(appearance == .dark ? 0.025 : 0.075)
+                        GlassPalette.violet.opacity(appearance == .dark ? 0.025 : 0.025)
                     ], startPoint: .topLeading, endPoint: .bottomTrailing))
                     if active {
                         shape.fill(RadialGradient(colors: [
@@ -265,13 +283,12 @@ private struct GlassCardModifier: ViewModifier {
                     ], startPoint: .topLeading, endPoint: .bottomTrailing),
                     lineWidth: 1)
             }
-            .shadow(color: GlassPalette.ink.opacity(active ? 0.13 : 0.06),
-                    radius: active ? 17 : 12, y: active ? 7 : 4)
+            .shadow(color: GlassPalette.ink.opacity(0.025), radius: 5, y: 2)
     }
 }
 
 extension View {
-    func glassCard(cornerRadius: CGFloat = 16,
+    func glassCard(cornerRadius: CGFloat = 18,
                    active: Bool = false) -> some View {
         modifier(GlassCardModifier(cornerRadius: cornerRadius, active: active))
     }
@@ -326,7 +343,7 @@ struct TrafficSparkline: View {
             .accessibilityLabel("真实 OpenVPN 流量趋势")
         } else {
             Text("连接后显示趋势")
-                .font(.system(size: 9))
+                .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity,
                        alignment: .leading)
@@ -360,3 +377,4 @@ struct BrandMark: View {
         .accessibilityLabel("VPN Navigator")
     }
 }
+

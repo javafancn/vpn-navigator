@@ -34,240 +34,146 @@ struct NetworkDiagnosticsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: GlassLayout.sectionSpacing) {
-                HStack(alignment: .center, spacing: 10) {
-                    WorkspaceHeading(title: "网络诊断", subtitle: "",
-                        symbol: "waveform.path.ecg")
-                    Spacer(minLength: 2)
-                    HStack(spacing: 3) {
-                        ForEach(DiagnosticTab.allCases) { tab in
-                            Button {
-                                selectedTab = tab
-                            } label: {
-                                Text(tab.rawValue)
-                                    .font(.system(size: 12, weight: selectedTab == tab ?
-                                                   .semibold : .medium))
-                                    .foregroundStyle(selectedTab == tab ?
-                                                     GlassPalette.blue : GlassPalette.ink.opacity(0.65))
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 30)
-                                    .background {
-                                        if selectedTab == tab {
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .fill(Color.white.opacity(0.93))
-                                                .shadow(color: GlassPalette.blue.opacity(0.10),
-                                                        radius: 6, y: 2)
-                                        }
-                                    }
-                            }
-                            .buttonStyle(.plain)
-                        }
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 18) {
+                Text("网络诊断").font(.system(size: ReferenceType.pageTitle, weight: .bold))
+                Spacer(minLength: 0)
+                HStack(spacing: 2) {
+                    ForEach(DiagnosticTab.allCases) { tab in
+                        Button { selectedTab = tab } label: {
+                            Text(tab.rawValue)
+                                .font(.system(size: 14, weight: selectedTab == tab ? .semibold : .regular))
+                                .foregroundStyle(selectedTab == tab ? GlassPalette.blue : GlassPalette.ink.opacity(0.58))
+                                .frame(maxWidth: .infinity).frame(height: 34)
+                                .background(selectedTab == tab ? Color.white.opacity(0.70) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                        }.buttonStyle(.plain)
                     }
-                    .padding(3)
-                    .frame(width: 345)
-                    .background(GlassSurface.sidebar.opacity(0.36),
-                                in: RoundedRectangle(cornerRadius: 11))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 11)
-                            .strokeBorder(Color.white.opacity(0.70), lineWidth: 1)
-                    }
-                    .padding(.trailing, 26)
                 }
-
-                HStack(alignment: .top, spacing: 12) {
-                    VPNPanel(selectedTab == .dns ? "DNS 解析" :
-                             selectedTab == .routing ? "IPv4 路由检查" :
-                             selectedTab == .latency ? "延迟测试" : "IPv4 连接测试",
-                             symbol: "checkmark.circle") {
-                        HStack(spacing: 8) {
-                            TextField("目标 IPv4 地址", text: $address)
-                                .textFieldStyle(.plain)
-                                .referenceInput(height: ReferenceMetrics.controlHeight)
-                            Button(checking ? "检查中…" : "检查") { runDiagnostics() }
-                                .buttonStyle(ReferenceSecondaryButton())
-                                .controlSize(.small)
-                                .disabled(checking || IPv4CIDR.parseAddress(address) == nil)
-                        }
-                        .padding(.bottom, 2)
-
-                        if selectedTab == .latency {
-                            Label("尚未支持真实延迟测量，不能显示模拟的毫秒值。",
-                                  systemImage: "info.circle")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
-                                .padding(.vertical, 10)
-                        } else {
-                            VStack(alignment: .leading, spacing: 0) {
-                                if selectedTab == .connection {
-                                    diagnosticRow("本机网络", subtitle: "默认 IPv4 出口接口",
-                                        value: health?.ipv4DefaultInterface ?? "尚未检查",
-                                        checked: health?.ipv4DefaultInterface != nil)
-                                    Divider().opacity(0.24)
-                                }
-                                if selectedTab == .connection || selectedTab == .routing {
-                                    diagnosticRow("网关连接", subtitle: "目标 IP 的实际路由网关",
-                                        value: targetGateway.isEmpty ? "未查询" : targetGateway,
-                                        checked: !targetGateway.isEmpty)
-                                    Divider().opacity(0.24)
-                                    diagnosticRow("目标路由", subtitle: "系统路由表查询",
-                                        value: targetInterface.isEmpty ? "未查询" : targetInterface,
-                                        checked: !targetInterface.isEmpty)
-                                    Divider().opacity(0.24)
-                                }
-                                if selectedTab == .connection || selectedTab == .dns {
-                                    diagnosticRow("DNS 解析器", subtitle: "系统 scutil --dns",
-                                        value: health.map { "\($0.resolverCount) 个解析器" } ??
-                                               "尚未检查",
-                                        checked: (health?.resolverCount ?? 0) > 0)
-                                }
-                            }
-                            .padding(.horizontal, 10)
-                            .background(Color.white.opacity(0.29),
-                                        in: RoundedRectangle(cornerRadius: 12))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 12)
-                                    .strokeBorder(Color.white.opacity(0.41), lineWidth: 1)
-                            }
-                        }
-
-                        HStack(alignment: .center, spacing: 10) {
-                            Image(systemName: actualPath.isEmpty ?
-                                  "info.circle.fill" : "checkmark.circle.fill")
-                                .font(.system(size: 28))
-                                .foregroundStyle(actualPath.isEmpty ?
-                                                 Color.orange : Color.green)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(actualPath.isEmpty ?
-                                     "等待连接检查" : "本机路由已读取")
-                                    .font(.system(size: 14, weight: .semibold))
-                                Text(actualPath.isEmpty ?
-                                     "检查本机连接与路由状态" :
-                                     "本机路由查询成功；不代表 VPN 已连接或不存在泄漏")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.green.opacity(actualPath.isEmpty ? 0.045 : 0.11),
-                                    in: RoundedRectangle(cornerRadius: 12))
+                .referenceSegments().frame(width: 420)
+                .padding(.trailing, 25)
+            }.frame(height: 56)
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 16) {
+                    panelTitle(selectedTab == .dns ? "DNS 解析" : selectedTab == .routing ? "IPv4 路由检查" : selectedTab == .latency ? "延迟测试" : "IPv4 连接测试")
+                    HStack(spacing: 8) {
+                        TextField("目标 IPv4 地址", text: $address)
+                            .textFieldStyle(.plain).referenceInput()
+                        Button(checking ? "检查中…" : "检查") { runDiagnostics() }
+                            .buttonStyle(ReferencePrimaryButton())
+                            .disabled(checking || IPv4CIDR.parseAddress(address) == nil)
                     }
-                    .frame(maxWidth: .infinity)
-
-                    VStack(spacing: 11) {
-                        VPNPanel("当前路由路径",
-                                 symbol: "point.3.connected.trianglepath.dotted") {
-                            routeStep("本机出口接口",
-                                value: health?.ipv4DefaultInterface ?? "未检测", index: 0)
-                            routeStep("目标网关",
-                                value: targetGateway.isEmpty ? "未检测" : targetGateway,
-                                index: 1)
+                    if selectedTab == .latency {
+                        Text("真实延迟测量尚未接入。")
+                            .font(.system(size: 15)).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 180, alignment: .topLeading)
+                    } else {
+                        VStack(spacing: 0) {
+                            if selectedTab == .connection {
+                                diagnosticRow("本机网络", subtitle: "默认 IPv4 出口接口", value: health?.ipv4DefaultInterface ?? "尚未检查", checked: health?.ipv4DefaultInterface != nil)
+                            }
+                            if selectedTab == .connection || selectedTab == .routing {
+                                diagnosticRow("网络连接", subtitle: "目标 IP 的路由网关", value: targetGateway.isEmpty ? "未查询" : targetGateway, checked: !targetGateway.isEmpty)
+                                diagnosticRow("目标路由", subtitle: "系统路由表查询", value: targetInterface.isEmpty ? "未查询" : targetInterface, checked: !targetInterface.isEmpty)
+                            }
+                            if selectedTab == .connection || selectedTab == .dns {
+                                diagnosticRow("DNS 解析器", subtitle: "系统 DNS 配置", value: health.map { "\($0.resolverCount) 个解析器" } ?? "尚未检查", checked: (health?.resolverCount ?? 0) > 0)
+                            }
+                        }
+                        .padding(.horizontal, 9)
+                        .background(Color.white.opacity(0.25), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    Spacer(minLength: 0)
+                    HStack(alignment: .center, spacing: 12) {
+                        Image(systemName: actualPath.isEmpty ? "info.circle.fill" : "checkmark.circle.fill")
+                            .font(.system(size: 35)).foregroundStyle(actualPath.isEmpty ? Color.orange : Color.green)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(actualPath.isEmpty ? "等待连接检查" : "本机路由已读取")
+                                .font(.system(size: 17, weight: .semibold))
+                            Text(actualPath.isEmpty ? "检查本机连接与路由状态" : "仅表示路由查询成功，不代表 VPN 已连接。")
+                                .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(actualPath.isEmpty ? GlassPalette.ink : Color.green)
+                    .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                }
+                .padding(18)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .glassCard(cornerRadius: 18)
+                VStack(spacing: 14) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        panelTitle("当前路由路径")
+                        VStack(alignment: .leading, spacing: 0) {
+                            routeStep("本机出口", value: health?.ipv4DefaultInterface ?? "未检测", index: 0)
+                            routeStep("目标网关", value: targetGateway.isEmpty ? "未检测" : targetGateway, index: 1)
                             routeStep("目的地址", value: address, index: 2)
-                            if let decision = IPDiagnostics.decide(
-                                ip: address,
-                                mode: model.selected?.mode ?? .original,
-                                rules: model.rules) {
-                                Divider().opacity(0.28)
-                                Label("预期路径：\(decision.expected.rawValue)",
-                                      systemImage: "info.circle")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(GlassPalette.blue)
-                                Text(decision.reason)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
                         }
-
-                        HStack(spacing: 11) {
-                            Image(systemName: "exclamationmark.circle.fill")
-                                .font(.system(size: 24))
-                                .foregroundStyle(.orange)
-                                .frame(width: 34)
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("IPv6 连接（预览）")
-                                    .font(.system(size: 13, weight: .semibold))
-                                Text(ipv6Description)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(health?.ipv6Safety == .noDefaultRoute ?
-                                                     Color.green : Color.orange)
-                                Text("仅核查本机路由，未实现 IPv6 分流。")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer(minLength: 0)
+                        Spacer(minLength: 0)
+                        if let decision = IPDiagnostics.decide(ip: address, mode: model.selected?.mode ?? .original, rules: model.rules) {
+                            Divider().opacity(0.25)
+                            Label("预期路径：\(decision.expected.rawValue)", systemImage: "info.circle")
+                                .font(.system(size: 14, weight: .medium)).foregroundStyle(GlassPalette.blue)
+                            Text(decision.reason).font(.system(size: 12)).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        .padding(14)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .glassCard(cornerRadius: 15)
                     }
-                    .frame(maxWidth: .infinity)
-                }
-                if !healthError.isEmpty {
-                    Label(healthError, systemImage: "exclamationmark.triangle")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.orange)
-                }
+                    .padding(18)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .glassCard(cornerRadius: 18)
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "exclamationmark.circle.fill").font(.system(size: 28)).foregroundStyle(.orange)
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("IPv6 连接（预览）").font(.system(size: 16, weight: .semibold))
+                            Text(ipv6Description).font(.system(size: 12)).foregroundStyle(.secondary)
+                            Text("仅检查本机路由，未实现 IPv6 分流。")
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: 112).glassCard(cornerRadius: 18)
+                }.frame(maxWidth: .infinity)
+            }.frame(maxHeight: .infinity)
+            if !healthError.isEmpty {
+                Label(healthError, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(.orange)
             }
-            .padding(.horizontal, GlassLayout.pageInset)
-            .padding(.top, GlassLayout.pageTop)
-            .padding(.bottom, 20)
-            .frame(maxWidth: 1100, alignment: .topLeading)
         }
-        .scrollIndicators(.hidden)
-        .onAppear {
-            if health == nil { runDiagnostics() }
+        .padding(.horizontal, GlassLayout.pageInset)
+        .padding(.top, GlassLayout.pageTop)
+        .padding(.bottom, 20)
+        .onAppear { if health == nil { runDiagnostics() } }
+    }
+
+    private func panelTitle(_ title: String) -> some View {
+        HStack(spacing: 9) {
+            GlassIcon(symbol: "square.inset.filled", size: 28)
+            Text(title).font(.system(size: 18, weight: .semibold))
         }
     }
 
-    private func diagnosticRow(_ title: String, subtitle: String,
-                               value: String, checked: Bool) -> some View {
-        HStack(spacing: 10) {
+    private func diagnosticRow(_ title: String, subtitle: String, value: String, checked: Bool) -> some View {
+        HStack(spacing: 8) {
             Image(systemName: checked ? "checkmark.circle.fill" : "circle.dotted")
-                .font(.system(size: 16))
-                .foregroundStyle(checked ? Color.green : Color.secondary)
-                .frame(width: 26)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 12, weight: .semibold))
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 4)
-            Text(value)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(checked ? Color.green : Color.secondary)
-                .lineLimit(2)
-                .multilineTextAlignment(.trailing)
-        }
-        .padding(.vertical, 6)
+                .font(.system(size: 20)).foregroundStyle(checked ? Color.green : .secondary)
+                .frame(width: 24)
+            Text(title).font(.system(size: 14)).foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+            Text(value).font(.system(size: 13)).foregroundStyle(GlassPalette.ink)
+                .lineLimit(1).minimumScaleFactor(0.8)
+        }.frame(height: 54).help(subtitle)
     }
 
     private func routeStep(_ title: String, value: String, index: Int) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(spacing: 3) {
-                Circle()
-                    .fill(GlassPalette.blue)
-                    .frame(width: 9, height: 9)
-                if index != 2 {
-                    Rectangle()
-                        .fill(GlassPalette.blue.opacity(0.35))
-                        .frame(width: 1, height: 22)
-                }
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
-                Text(value)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+        HStack(alignment: .top, spacing: 12) {
+            VStack(spacing: 0) {
+                Circle().fill(GlassPalette.blue).frame(width: 11, height: 11)
+                Rectangle().fill(index == 2 ? Color.clear : GlassPalette.blue.opacity(0.45)).frame(width: 2, height: 45)
+            }.padding(.top, 5)
+            Text(value).font(.system(size: 16)).foregroundStyle(GlassPalette.ink.opacity(0.80)).lineLimit(1)
             Spacer(minLength: 0)
-        }
+            Text(title).font(.system(size: 12)).foregroundStyle(.secondary)
+        }.frame(height: 56).accessibilityElement(children: .combine)
     }
 
     private func runDiagnostics() {
@@ -324,3 +230,4 @@ private enum DiagnosticCommands {
         }
     }
 }
+

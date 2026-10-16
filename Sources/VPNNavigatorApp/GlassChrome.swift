@@ -83,7 +83,7 @@ private struct GlassCardModifier: ViewModifier {
                           ? Color(nsColor: .windowBackgroundColor)
                           : (appearance == .dark
                              ? Color.black.opacity(0.28)
-                             : Color.white.opacity(0.32)))
+                             : Color.white.opacity(0.46)))
             }
             .overlay {
                 shape.strokeBorder(

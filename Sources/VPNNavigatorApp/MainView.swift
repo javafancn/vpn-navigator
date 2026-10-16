@@ -12,10 +12,10 @@ enum WorkspaceTab: String, CaseIterable, Identifiable {
     var referenceSize: CGSize {
         switch self {
         case .overview: return CGSize(width: 990, height: 587)
-        case .profiles: return CGSize(width: 990, height: 595)
-        case .routing: return CGSize(width: 930, height: 450)
-        case .diagnostics: return CGSize(width: 930, height: 470)
-        case .settings: return CGSize(width: 860, height: 430)
+        case .profiles: return CGSize(width: 990, height: 665)
+        case .routing: return CGSize(width: 930, height: 500)
+        case .diagnostics: return CGSize(width: 930, height: 520)
+        case .settings: return CGSize(width: 870, height: 455)
         }
     }
     var sidebarWidth: CGFloat {
@@ -126,9 +126,9 @@ struct MainView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                BrandMark(size: 54)
+                BrandMark(size: tab == .settings ? 42 : 54)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("VPN Navigator").font(.system(size: 15, weight: .bold))
+                    Text("VPN Navigator").font(.system(size: tab == .settings ? 13 : 15, weight: .bold))
                         .lineLimit(1)
                     Text("网络连接控制台").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
@@ -851,7 +851,7 @@ private struct RoutingWorkspace: View {
                     .padding(16)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                .frame(minHeight: 265, alignment: .topLeading)
+                .frame(minHeight: 252, alignment: .topLeading)
                 .glassCard(cornerRadius: 16)
 
                 HStack {
@@ -922,7 +922,7 @@ private struct RoutingWorkspace: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 11)
-            .frame(maxWidth: .infinity, minHeight: 59, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 51, alignment: .leading)
             .background(selected == mode ?
                         GlassPalette.blue.opacity(0.13) : Color.white.opacity(0.10),
                         in: RoundedRectangle(cornerRadius: 12))
@@ -1048,6 +1048,7 @@ struct SystemSettingsPane: View {
             .padding(.bottom, 20)
             .frame(maxWidth: 1060, alignment: .topLeading)
         }
+        .scrollIndicators(.hidden)
     }
 
     private func statePill(_ text: String, success: Bool = false) -> some View {

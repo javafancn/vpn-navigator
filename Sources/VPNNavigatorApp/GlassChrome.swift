@@ -65,6 +65,11 @@ private struct GlassCardModifier: ViewModifier {
     var active: Bool
 
     func body(content: Content) -> some View {
+        // CI runners may force Reduce Transparency in their accessibility
+        // configuration. An explicit UI-only snapshot flag lets screenshots
+        // exercise normal glass without changing the user's system setting.
+        let opaqueFallback = reduceTransparency &&
+            !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot")
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
             .background {
@@ -74,7 +79,7 @@ private struct GlassCardModifier: ViewModifier {
                 // Translucent color gives a genuine frosted-glass surface
                 // while allowing the OS-provided wallpaper to show through.
                 shape
-                    .fill(reduceTransparency
+                    .fill(opaqueFallback
                           ? Color(nsColor: .windowBackgroundColor)
                           : (appearance == .dark
                              ? Color.black.opacity(0.28)

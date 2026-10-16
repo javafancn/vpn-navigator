@@ -46,18 +46,18 @@ struct DesktopVisualEffect: NSViewRepresentable {
         view.state = .active
         // A fully opaque under-window material hides colorful wallpapers.
         // Compose only a fraction of the native blur over a CLEAR NSWindow.
-        view.alphaValue = 0.38
+        view.alphaValue = 0.22
         return view
     }
     func updateNSView(_ view: NativeWindowGlass, context: Context) {
         view.configureWindow()
-        view.alphaValue = 0.38
+        view.alphaValue = 0.22
     }
 }
 
-/// The reference is a sheet of lightly frosted glass placed over the actual
-/// desktop. The tint is deliberately subtle; the former 0.79 white overlay
-/// obscured the wallpaper and turned the whole UI into opaque panels.
+/// Layered native glass: keep the wallpaper visible in the clear NSWindow
+/// while giving text and controls their own *local* blur and readable tint.
+/// No wallpaper image, opaque app background, or fake macOS glass API.
 private struct GlassCardModifier: ViewModifier {
     @Environment(\.colorScheme) private var appearance
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -65,32 +65,31 @@ private struct GlassCardModifier: ViewModifier {
     var active: Bool
 
     func body(content: Content) -> some View {
-        let corners = RoundedRectangle(cornerRadius: cornerRadius,
-                                       style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
             .background {
-                corners
-                    .fill(reduceTransparency ?
-                          Color(nsColor: .windowBackgroundColor).opacity(0.96) :
-                          (appearance == .dark ?
-                           Color.black.opacity(0.24) :
-                           Color.white.opacity(0.17)))
+                shape
+                    .fill(reduceTransparency
+                          ? Color(nsColor: .windowBackgroundColor)
+                          : (appearance == .dark
+                             ? Color.black.opacity(0.26)
+                             : Color.white.opacity(0.33)))
                     .background {
                         if !reduceTransparency {
-                            corners.fill(.ultraThinMaterial).opacity(0.38)
+                            shape.fill(.regularMaterial).opacity(0.70)
                         }
                     }
             }
             .overlay {
-                corners.strokeBorder(
+                shape.strokeBorder(
                     LinearGradient(colors: [
-                        Color.white.opacity(appearance == .dark ? 0.28 : 0.78),
-                        Color.white.opacity(0.22)
+                        Color.white.opacity(appearance == .dark ? 0.40 : 0.92),
+                        Color.white.opacity(0.25)
                     ], startPoint: .topLeading, endPoint: .bottomTrailing),
                     lineWidth: 1)
             }
-            .shadow(color: .black.opacity(active ? 0.12 : 0.055),
-                    radius: active ? 14 : 9, y: 4)
+            .shadow(color: GlassPalette.ink.opacity(active ? 0.15 : 0.08),
+                    radius: active ? 16 : 10, y: active ? 6 : 3)
     }
 }
 
@@ -110,10 +109,16 @@ struct GlassIcon: View {
             .font(.system(size: size * 0.48, weight: .medium))
             .foregroundStyle(color)
             .frame(width: size, height: size)
-            .background(color.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: size * 0.27))
+            .background {
+                RoundedRectangle(cornerRadius: size * 0.27)
+                    .fill(.regularMaterial)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: size * 0.27)
+                            .fill(color.opacity(0.10))
+                    }
+            }
             .overlay(RoundedRectangle(cornerRadius: size * 0.27)
-                .strokeBorder(Color.white.opacity(0.72), lineWidth: 1))
+                .strokeBorder(Color.white.opacity(0.85), lineWidth: 1))
     }
 }
 

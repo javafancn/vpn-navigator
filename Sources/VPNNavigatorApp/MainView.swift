@@ -462,9 +462,16 @@ private struct ConnectionOverview: View {
     private func miniStatistic(_ title: String, symbol: String,
                                value: String, samples: [Double] = []) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            Label(title, systemImage: symbol)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Image(systemName: symbol)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(GlassPalette.blue)
+                    .frame(width: 28, height: 28)
+                    .background(GlassPalette.blue.opacity(0.12), in: Circle())
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
             Text(value)
                 .font(.system(size: 20, weight: .semibold, design: .rounded))
                 .lineLimit(1)
@@ -993,7 +1000,7 @@ struct ProfileDetail: View {
                 .padding(.top, 6)
             }
             .padding(19)
-            .frame(minHeight: 430, alignment: .topLeading)
+            .frame(minHeight: 405, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollIndicators(.hidden)

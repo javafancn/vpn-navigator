@@ -36,16 +36,46 @@ private enum GlassMaterialTuning {
     }
     static var windowAlpha: CGFloat {
         switch preset {
-        case "strong": return 0.92
+        case "strong": return 1.0
         case "popover", "sidebar", "hud": return 0.84
-        default: return 0.80
+        default: return 0.95
         }
     }
     static var cardAlpha: CGFloat {
         switch preset {
-        case "strong": return 0.90
+        case "strong": return 1.0
         case "popover", "sidebar", "hud": return 0.84
-        default: return 0.76
+        default: return 0.94
+        }
+    }
+}
+
+
+/// Light glass colors are intentionally near-neutral instead of a saturated
+/// blue overlay: the supplied design is a white-lilac frost, not clear glass.
+enum GlassSurface {
+    static let mist = Color(red: 0.91, green: 0.94, blue: 0.99)
+    static let sidebar = Color(red: 0.91, green: 0.93, blue: 0.99)
+    static let panel = Color(red: 0.97, green: 0.98, blue: 1.00)
+
+    /// For screenshot calibration against the reference, without modifying
+    /// the Mac's wallpaper or embedding a background image.
+    static let preset: String = ProcessInfo.processInfo.arguments
+        .first(where: { $0.hasPrefix("--vpnnav-mist=") })?
+        .split(separator: "=", maxSplits: 1).last.map(String.init) ?? "reference"
+
+    static var windowOpacity: Double {
+        switch preset {
+        case "lighter": return 0.30
+        case "denser": return 0.58
+        default: return 0.46
+        }
+    }
+    static var cardOpacity: Double {
+        switch preset {
+        case "lighter": return 0.39
+        case "denser": return 0.62
+        default: return 0.52
         }
     }
 }
@@ -54,10 +84,26 @@ private enum GlassMaterialTuning {
 /// The wallpaper belongs to the OS and changes as the user changes desktops.
 /// Avoid gradients, mountain artwork and any opaque full-window fill.
 struct GlassAtmosphere: View {
+    @Environment(\.colorScheme) private var appearance
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     var body: some View {
-        DesktopVisualEffect()
-            .ignoresSafeArea()
-            .accessibilityHidden(true)
+        ZStack {
+            DesktopVisualEffect()
+            // Native blur softens wallpaper detail; this independent veil
+            // reduces wallpaper contrast. Blur alpha alone cannot do both.
+            if reduceTransparency &&
+                !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot") {
+                Color(nsColor: .windowBackgroundColor)
+            } else {
+                GlassSurface.mist.opacity(
+                    appearance == .dark ? GlassSurface.windowOpacity * 0.55 :
+                                          GlassSurface.windowOpacity)
+            }
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
     }
 }
 
@@ -140,7 +186,7 @@ private struct GlassCardModifier: ViewModifier {
                         .clipShape(shape)
                     shape.fill(appearance == .dark
                                ? Color.black.opacity(0.22)
-                               : Color.white.opacity(0.25))
+                               : GlassSurface.panel.opacity(GlassSurface.cardOpacity))
                 }
             }
             .overlay {
@@ -151,7 +197,7 @@ private struct GlassCardModifier: ViewModifier {
                     ], startPoint: .topLeading, endPoint: .bottomTrailing),
                     lineWidth: 1)
             }
-            .shadow(color: GlassPalette.ink.opacity(active ? 0.15 : 0.08),
+            .shadow(color: GlassPalette.ink.opacity(active ? 0.14 : 0.075),
                     radius: active ? 16 : 10, y: active ? 6 : 3)
     }
 }

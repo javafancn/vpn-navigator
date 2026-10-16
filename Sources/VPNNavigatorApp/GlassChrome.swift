@@ -184,6 +184,36 @@ private struct NativeCardBlur: NSViewRepresentable {
     }
 }
 
+/// Broad rounded workspace behind the actual cards. The reference uses a
+/// translucent content canvas in addition to the individual frosted tiles;
+/// without this layer the header looks detached from the whole page.
+struct ReferenceWorkspaceSurface: ViewModifier {
+    @Environment(\.colorScheme) private var appearance
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        content
+            .background {
+                shape.fill(appearance == .dark ?
+                    Color.white.opacity(0.055) :
+                    Color.white.opacity(0.17))
+            }
+            .overlay {
+                shape.strokeBorder(
+                    LinearGradient(colors: [
+                        Color.white.opacity(0.84),
+                        Color.white.opacity(0.14),
+                        Color.white.opacity(0.32)
+                    ], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: 1)
+            }
+    }
+}
+extension View {
+    func referenceWorkspaceSurface() -> some View {
+        modifier(ReferenceWorkspaceSurface())
+    }
+}
+
 /// Layered native glass: keep the wallpaper visible in the clear NSWindow
 /// while giving text and controls their own *local* blur and readable tint.
 /// No wallpaper image, opaque app background, or fake macOS glass API.

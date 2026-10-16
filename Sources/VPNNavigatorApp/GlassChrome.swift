@@ -64,12 +64,12 @@ private struct NativeCardBlur: NSViewRepresentable {
         view.material = .underWindowBackground
         view.blendingMode = .behindWindow
         view.state = .active
-        view.alphaValue = 0.34
+        view.alphaValue = 0.50
         return view
     }
 
     func updateNSView(_ view: NSVisualEffectView, context: Context) {
-        view.alphaValue = 0.34
+        view.alphaValue = 0.50
     }
 }
 

@@ -2,7 +2,9 @@ import SwiftUI
 import AppKit
 import VPNNavigatorCore
 
-/// A native frosted menubar window, not simulated network or speed data.
+/// Compact macOS popover, matching the reference's native glass appearance.
+/// Only displays measured traffic; the reference's demo IP and speeds are
+/// intentionally not treated as live network data.
 struct GlassMenuBarView: View {
     @EnvironmentObject private var model: AppModel
 
@@ -12,96 +14,137 @@ struct GlassMenuBarView: View {
             fromByteCount: Int64(clamping: count), countStyle: .file)
     }
 
+    private var connectionToggle: Binding<Bool> {
+        Binding(get: { model.connected }, set: { enabled in
+            Task {
+                if enabled { await model.connectSelected() }
+                else { await model.disconnect() }
+            }
+        })
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 13) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                BrandMark(size: 39)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("VPN Navigator").font(.system(size: 13, weight: .bold))
-                    Text("快速连接与会话状态")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Circle().fill(model.connected ? Color.green : Color.gray)
-                    .frame(width: 9, height: 9)
-            }
-            .padding(.bottom, 3)
-
-            HStack(spacing: 9) {
-                Image(systemName: model.connected ? "checkmark.shield.fill" : "network")
-                    .foregroundStyle(model.connected ? Color.green : Color.blue)
+                BrandMark(size: 38)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(model.connected ? "VPN 已连接" :
-                         model.connecting ? "正在连接" : "VPN 未连接")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(model.activeProfile?.name ?? model.selected?.name ?? "尚未选择配置")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    Text("VPN Navigator")
+                        .font(.system(size: 13, weight: .bold))
+                    Text("快速连接与会话状态")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
                 }
-                Spacer()
-            }
-            .padding(11)
-            .glassCard(cornerRadius: 12)
-
-            HStack(spacing: 10) {
-                statistic("累计接收", bytes(model.traffic?.receivedBytes),
-                          symbol: "arrow.down.circle")
-                statistic("累计发送", bytes(model.traffic?.sentBytes),
-                          symbol: "arrow.up.circle")
+                Spacer(minLength: 0)
+                Toggle("VPN 连接", isOn: connectionToggle)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .tint(GlassPalette.blue)
+                    .disabled(model.busy || model.connecting ||
+                              (!model.connected && model.selected == nil))
             }
 
-            Button {
-                Task {
-                    if model.connected || model.connecting {
-                        await model.disconnect()
-                    } else {
-                        await model.connectSelected()
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 7) {
+                    Image(systemName: model.connected ?
+                          "checkmark.circle.fill" : "circle.dotted")
+                        .foregroundStyle(model.connected ? Color.green : Color.secondary)
+                    Text(model.connected ? "已连接" :
+                         model.connecting ? "正在连接" : "未连接")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(model.connected ? Color.green : Color.primary)
+                    if model.connected {
+                        Text("· 会话运行中")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.green)
                     }
+                    Spacer()
                 }
-            } label: {
-                Label(model.connected || model.connecting ?
-                      "断开 VPN" : "连接所选配置",
-                      systemImage: model.connected || model.connecting ? "stop.circle" : "power")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(model.busy || (!model.connected && !model.connecting && model.selected == nil))
-            Divider()
-            Button {
-                NSApp.activate(ignoringOtherApps: true)
-                if let window = NSApp.windows.first(where: { $0.title.contains("VPN Navigator") &&
-                                                              !$0.isKind(of: NSPanel.self) }) {
-                    window.makeKeyAndOrderFront(nil)
+                HStack(spacing: 9) {
+                    GlassIcon(symbol: "globe.americas.fill", size: 34)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(model.activeProfile?.name ??
+                             model.selected?.name ?? "尚未选择配置")
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                        Text(model.activeProfile?.sourceFilename ??
+                             model.selected?.sourceFilename ?? "导入 .ovpn 后即可连接")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
                 }
-            } label: {
-                Label("打开主窗口", systemImage: "macwindow")
+                Divider().opacity(0.35)
+                HStack(spacing: 9) {
+                    statistic("累计接收", bytes(model.traffic?.receivedBytes),
+                              symbol: "arrow.down")
+                    Spacer()
+                    statistic("累计发送", bytes(model.traffic?.sentBytes),
+                              symbol: "arrow.up")
+                }
             }
-            .buttonStyle(.plain)
-            Button {
-                Task { await model.refreshRules() }
-            } label: {
-                Label("更新中国 IPv4 规则", systemImage: "arrow.clockwise")
+            .padding(12)
+            .glassCard(cornerRadius: 14, active: true)
+
+            VStack(spacing: 0) {
+                Button {
+                    NSApp.activate(ignoringOtherApps: true)
+                    if let window = NSApp.windows.first(where: {
+                        $0.title.contains("VPN Navigator") &&
+                        !$0.isKind(of: NSPanel.self)
+                    }) {
+                        window.makeKeyAndOrderFront(nil)
+                    }
+                } label: {
+                    menuRow("打开主窗口", symbol: "macwindow")
+                }
+                .buttonStyle(.plain)
+                Divider().opacity(0.38)
+                Button {
+                    Task { await model.refreshRules() }
+                } label: {
+                    menuRow("更新中国 IPv4 规则", symbol: "arrow.clockwise")
+                }
+                .buttonStyle(.plain)
+                .disabled(model.busy)
             }
-            .buttonStyle(.plain)
-            .disabled(model.busy)
-            Text("Alpha · Kill Switch 尚未启用")
-                .font(.system(size: 10)).foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            Text("Alpha · PF Kill Switch 尚未启用")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 5)
         }
-        .padding(15)
-        .frame(width: 286)
+        .padding(14)
+        .frame(width: 292)
         .background(.regularMaterial)
     }
 
     private func statistic(_ title: String, _ value: String,
                            symbol: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Label(title, systemImage: symbol)
-                .font(.system(size: 10)).foregroundStyle(.secondary)
-            Text(value).font(.system(size: 14, weight: .semibold))
-                .lineLimit(1).minimumScaleFactor(0.7)
+        HStack(spacing: 5) {
+            Image(systemName: symbol)
+                .foregroundStyle(GlassPalette.blue)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(11)
-        .glassCard(cornerRadius: 10)
+    }
+
+    private func menuRow(_ title: String, symbol: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 13))
+                .frame(width: 19)
+            Text(title)
+                .font(.system(size: 12))
+            Spacer()
+        }
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
     }
 }

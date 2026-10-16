@@ -46,17 +46,17 @@ struct NetworkDiagnosticsView: View {
                                 selectedTab = tab
                             } label: {
                                 Text(tab.rawValue)
-                                    .font(.system(size: 11, weight: selectedTab == tab ?
+                                    .font(.system(size: 12, weight: selectedTab == tab ?
                                                    .semibold : .medium))
                                     .foregroundStyle(selectedTab == tab ?
-                                                     Color.white : GlassPalette.ink.opacity(0.68))
+                                                     GlassPalette.blue : GlassPalette.ink.opacity(0.65))
                                     .frame(maxWidth: .infinity)
                                     .frame(height: 30)
                                     .background {
                                         if selectedTab == tab {
                                             RoundedRectangle(cornerRadius: 8)
-                                                .fill(GlassPalette.blue.gradient)
-                                                .shadow(color: GlassPalette.blue.opacity(0.20),
+                                                .fill(Color.white.opacity(0.93))
+                                                .shadow(color: GlassPalette.blue.opacity(0.10),
                                                         radius: 6, y: 2)
                                         }
                                     }
@@ -83,9 +83,9 @@ struct NetworkDiagnosticsView: View {
                         HStack(spacing: 8) {
                             TextField("目标 IPv4 地址", text: $address)
                                 .textFieldStyle(.plain)
-                                .referenceInput(height: 28)
+                                .referenceInput(height: ReferenceMetrics.controlHeight)
                             Button(checking ? "检查中…" : "检查") { runDiagnostics() }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(ReferenceSecondaryButton())
                                 .controlSize(.small)
                                 .disabled(checking || IPv4CIDR.parseAddress(address) == nil)
                         }
@@ -94,7 +94,7 @@ struct NetworkDiagnosticsView: View {
                         if selectedTab == .latency {
                             Label("尚未支持真实延迟测量，不能显示模拟的毫秒值。",
                                   systemImage: "info.circle")
-                                .font(.system(size: 11))
+                                .font(.system(size: 12))
                                 .foregroundStyle(.secondary)
                                 .padding(.vertical, 10)
                         } else {
@@ -140,11 +140,11 @@ struct NetworkDiagnosticsView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(actualPath.isEmpty ?
                                      "等待连接检查" : "本机路由已读取")
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(.system(size: 14, weight: .semibold))
                                 Text(actualPath.isEmpty ?
                                      "检查本机连接与路由状态" :
                                      "本机路由查询成功；不代表 VPN 已连接或不存在泄漏")
-                                    .font(.system(size: 10))
+                                    .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -173,10 +173,10 @@ struct NetworkDiagnosticsView: View {
                                 Divider().opacity(0.28)
                                 Label("预期路径：\(decision.expected.rawValue)",
                                       systemImage: "info.circle")
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(GlassPalette.blue)
                                 Text(decision.reason)
-                                    .font(.system(size: 10))
+                                    .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -189,13 +189,13 @@ struct NetworkDiagnosticsView: View {
                                 .frame(width: 34)
                             VStack(alignment: .leading, spacing: 5) {
                                 Text("IPv6 连接（预览）")
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(.system(size: 13, weight: .semibold))
                                 Text(ipv6Description)
-                                    .font(.system(size: 10))
+                                    .font(.system(size: 11))
                                     .foregroundStyle(health?.ipv6Safety == .noDefaultRoute ?
                                                      Color.green : Color.orange)
                                 Text("仅核查本机路由，未实现 IPv6 分流。")
-                                    .font(.system(size: 10))
+                                    .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
                             }
                             Spacer(minLength: 0)
@@ -208,7 +208,7 @@ struct NetworkDiagnosticsView: View {
                 }
                 if !healthError.isEmpty {
                     Label(healthError, systemImage: "exclamationmark.triangle")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.orange)
                 }
             }
@@ -231,14 +231,14 @@ struct NetworkDiagnosticsView: View {
                 .foregroundStyle(checked ? Color.green : Color.secondary)
                 .frame(width: 26)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 11, weight: .semibold))
+                Text(title).font(.system(size: 12, weight: .semibold))
                 Text(subtitle)
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
             Text(value)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(checked ? Color.green : Color.secondary)
                 .lineLimit(2)
                 .multilineTextAlignment(.trailing)
@@ -260,9 +260,9 @@ struct NetworkDiagnosticsView: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                 Text(value)
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }

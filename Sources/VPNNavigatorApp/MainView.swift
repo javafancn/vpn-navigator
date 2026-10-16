@@ -47,7 +47,7 @@ struct MainView: View {
         ZStack {
             GlassAtmosphere()
             HStack(spacing: 0) {
-                sidebar.frame(width: 254)
+                sidebar.frame(width: 238)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
                 VStack(spacing: 0) {
                     Group {
@@ -111,8 +111,8 @@ struct MainView: View {
             }
             .padding(.leading, 19)
             .padding(.trailing, 8)
-            .padding(.top, 53)
-            .padding(.bottom, 30)
+            .padding(.top, 42)
+            .padding(.bottom, 23)
 
             if tab != .overview {
                 Button {
@@ -128,7 +128,7 @@ struct MainView: View {
                     }
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 13)
-                    .frame(height: 43)
+                    .frame(height: 41)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -152,7 +152,7 @@ struct MainView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 13)
-                    .frame(height: 43)
+                    .frame(height: 41)
                     .background {
                         if tab == item {
                             RoundedRectangle(cornerRadius: 9)
@@ -223,7 +223,7 @@ struct WorkspaceHeading: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 27, weight: .bold, design: .rounded))
+                    .font(.system(size: 25, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
                 if !subtitle.isEmpty {
                     Text(subtitle)
@@ -292,7 +292,7 @@ private struct ConnectionOverview: View {
                 WorkspaceHeading(title: "连接总览",
                     subtitle: "清晰掌控当前 VPN 状态与网络策略",
                     symbol: "globe.americas.fill")
-                    .padding(.bottom, 33)
+                    .padding(.bottom, 17)
 
                 HStack(alignment: .top, spacing: 12) {
                     VStack(spacing: 7) {
@@ -372,7 +372,7 @@ private struct ConnectionOverview: View {
                         Spacer(minLength: 8)
                     }
                     .frame(maxWidth: .infinity)
-                     .frame(height: 316)
+                     .frame(height: 304)
                     .glassCard(cornerRadius: 17, active: true)
 
                     VStack(spacing: 12) {
@@ -504,12 +504,12 @@ private struct ConnectionOverview: View {
                     }
                     .padding(13)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: 156, alignment: .top)
+                    .frame(height: 130, alignment: .top)
                     .glassCard(cornerRadius: 15)
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 29)
+            .padding(.top, GlassLayout.pageTop)
             .padding(.bottom, 16)
             .frame(maxWidth: 1100, alignment: .leading)
         }
@@ -567,7 +567,7 @@ private struct ConnectionOverview: View {
                 .frame(height: 27)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 130)
+        .frame(height: 104)
         .padding(13)
         .glassCard(cornerRadius: 15)
     }
@@ -694,7 +694,7 @@ private struct ProfileLibrary: View {
                     }
                 }
                 .padding(11)
-                .frame(width: 245)
+                .frame(width: 215)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .glassCard(cornerRadius: 15)
 
@@ -718,7 +718,7 @@ private struct ProfileLibrary: View {
             .frame(maxHeight: .infinity)
         }
         .padding(.horizontal, 20)
-        .padding(.top, 31)
+        .padding(.top, GlassLayout.pageTop)
         .padding(.bottom, 18)
     }
 }
@@ -763,7 +763,7 @@ private struct RoutingWorkspace: View {
                             .foregroundStyle(.secondary)
                             .padding(.top, 3)
                     }
-                    .padding(17)
+                    .padding(15)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
 
                     Rectangle()
@@ -808,7 +808,7 @@ private struct RoutingWorkspace: View {
                         }
                         .controlSize(.regular)
                     }
-                    .padding(17)
+                    .padding(15)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .glassCard(cornerRadius: 17)
@@ -838,7 +838,7 @@ private struct RoutingWorkspace: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 31)
+            .padding(.top, GlassLayout.pageTop)
             .padding(.bottom, 18)
             .frame(maxWidth: 1100, alignment: .leading)
         }
@@ -882,7 +882,7 @@ private struct RoutingWorkspace: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 11)
-            .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 59, alignment: .leading)
             .background(selected == mode ?
                         GlassPalette.blue.opacity(0.11) : Color.white.opacity(0.08),
                         in: RoundedRectangle(cornerRadius: 12))
@@ -998,7 +998,7 @@ struct SystemSettingsPane: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 34)
+            .padding(.top, GlassLayout.pageTop)
             .padding(.bottom, 20)
             .frame(maxWidth: 1060, alignment: .leading)
         }
@@ -1039,7 +1039,7 @@ struct SystemSettingsPane: View {
             actions()
         }
         .padding(.horizontal, 16)
-        .frame(minHeight: 84)
+        .frame(minHeight: 73)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(cornerRadius: 15)
     }

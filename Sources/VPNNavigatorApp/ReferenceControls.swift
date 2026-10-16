@@ -127,3 +127,32 @@ struct ReferenceSecondaryButton: ButtonStyle {
             }
     }
 }
+
+ 
+/// The gradient CTA used in the supplied blue/white reference for import,
+/// update, save, and other primary workspace actions.
+struct ReferencePrimaryButton: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: ReferenceType.field, weight: .semibold))
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 13)
+            .frame(minHeight: 31)
+            .background {
+                RoundedRectangle(cornerRadius: ReferenceMetrics.corner)
+                    .fill(LinearGradient(
+                        colors: [Color(red: 0.13, green: 0.58, blue: 1),
+                                 Color(red: 0.01, green: 0.40, blue: 0.93)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .opacity(isEnabled ? (configuration.isPressed ? 0.78 : 1) : 0.46)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: ReferenceMetrics.corner)
+                    .strokeBorder(Color.white.opacity(0.50), lineWidth: 1)
+            }
+            .shadow(color: GlassPalette.blue.opacity(isEnabled ? 0.15 : 0),
+                    radius: 4, y: 2)
+    }
+}

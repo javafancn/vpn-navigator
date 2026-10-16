@@ -151,13 +151,15 @@ struct MainView: View {
                     Circle()
                         .fill(model.connected ? Color.green : Color.secondary.opacity(0.7))
                         .frame(width: 7, height: 7)
-                    Text(model.connected ? "已连接" : model.connecting ? "连接中" : "未连接")
+                    Text("VPN Navigator")
                         .font(.system(size: 11, weight: .semibold))
                 }
-                Text(model.activeProfile?.name ?? "选择配置后开始")
+                Text(model.connected ? "已连接 · " + (model.activeProfile?.name ?? "VPN") :
+                     model.connecting ? "正在建立连接" : "未连接 · 选择配置后开始")
                     .font(.system(size: 10)).foregroundStyle(.secondary)
                     .lineLimit(1)
-                Text("macOS 13+ · Alpha")
+                Text("macOS 13+ · " +
+                    (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Alpha"))
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
             .padding(12)

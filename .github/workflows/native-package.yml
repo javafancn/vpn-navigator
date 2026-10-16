@@ -80,7 +80,7 @@ jobs:
           for PAGE in overview profiles routing diagnostics settings; do
             killall VPNNavigatorApp 2>/dev/null || true
             sleep 1
-            open -n "$APP" --args "--vpnnav-ui-tab=$PAGE" || true
+            open -n "$APP" --args "--vpnnav-ui-tab=$PAGE" "--vpnnav-ui-glass-snapshot" || true
             sleep 5
             screencapture -x "$RUNNER_TEMP/VPNNavigator-$PAGE.png" || true
             if [[ ! -s "$RUNNER_TEMP/VPNNavigator-$PAGE.png" ]]; then

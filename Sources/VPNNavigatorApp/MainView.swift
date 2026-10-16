@@ -783,96 +783,98 @@ private struct RoutingWorkspace: View {
                     subtitle: "管理 VPN 路由模式与中国 IPv4 规则",
                     symbol: "point.3.connected.trianglepath.dotted")
 
-                // The design has THREE distinct surfaces: a policy selector,
-                // an IPv4 inspector and a separate IPv6 preview below it.
-                // Do not stretch those surfaces to the entire app window.
-                HStack(alignment: .top, spacing: GlassLayout.cardGap) {
-                    VStack(alignment: .leading, spacing: 12) {
+                // One continuous two-column glass surface is essential:
+                // the reference does not use two independent floating cards.
+                HStack(alignment: .top, spacing: 0) {
+                    VStack(alignment: .leading, spacing: 10) {
                         Text("路由模式")
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.system(size: 14, weight: .bold))
                         ForEach(RoutingMode.allCases) { mode in
                             routeOption(mode)
                         }
-                        Spacer(minLength: 8)
                         Text(model.selected.map { "所选配置：\($0.name)" } ??
-                             "请选择配置后再修改路由")
+                             "请先选择配置后再修改路由")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
+                            .padding(.top, 2)
                     }
                     .padding(16)
-                    .frame(maxWidth: .infinity, minHeight: 291, alignment: .topLeading)
-                    .glassCard(cornerRadius: 16)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
 
-                    VStack(spacing: GlassLayout.cardGap) {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("中国 IPv4 规则")
-                                .font(.system(size: 13, weight: .bold))
-                            HStack(alignment: .center, spacing: 12) {
-                                GlassIcon(symbol: "globe.asia.australia.fill", size: 52)
-                                VStack(alignment: .leading, spacing: 8) {
-                                    ruleDetail("规则版本", "未提供")
-                                    ruleDetail("规则来源", "chnroutes2")
-                                    ruleDetail("规则数量",
-                                        model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
-                                    ruleDetail("历史快照",
-                                        model.ruleSnapshots.first.map {
-                                            $0.savedAt.formatted(
-                                                .dateTime.year().month().day().hour().minute())
-                                        } ?? "尚无快照")
-                                }
-                            }
-                            HStack(spacing: 9) {
-                                Button("更新规则") { Task { await model.refreshRules() } }
-                                    .buttonStyle(.borderedProminent)
-                                    .tint(GlassPalette.blue)
-                                    .disabled(model.busy)
-                                Menu {
-                                    ForEach(model.ruleSnapshots) { saved in
-                                        Button(saved.savedAt.formatted(
-                                            .dateTime.year().month().day().hour().minute())) {
-                                            snapshotToRestore = saved
-                                        }
-                                    }
-                                } label: {
-                                    Text("历史版本")
-                                }
-                                .buttonStyle(ReferenceSecondaryButton())
-                                .disabled(model.ruleSnapshots.isEmpty || model.busy)
-                                .help("选择历史快照以进行确认恢复")
+                    Rectangle()
+                        .fill(Color.white.opacity(0.58))
+                        .frame(width: 1)
+                        .padding(.vertical, 16)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("中国 IPv4 规则")
+                            .font(.system(size: 14, weight: .bold))
+                        HStack(alignment: .center, spacing: 13) {
+                            GlassIcon(symbol: "globe.asia.australia.fill", size: 52)
+                            VStack(alignment: .leading, spacing: 8) {
+                                ruleDetail("规则版本", "未提供")
+                                ruleDetail("规则来源", "chnroutes2")
+                                ruleDetail("规则数量",
+                                    model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
+                                ruleDetail("历史快照",
+                                    model.ruleSnapshots.first.map {
+                                        $0.savedAt.formatted(
+                                            .dateTime.year().month().day().hour().minute())
+                                    } ?? "尚无快照")
                             }
                         }
-                        .padding(16)
-                        .frame(maxWidth: .infinity, minHeight: 210,
-                               alignment: .topLeading)
-                        .glassCard(cornerRadius: 16)
-
-                        HStack(spacing: 11) {
-                            GlassIcon(symbol: "shield.lefthalf.filled", size: 38)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("IPv6 规则（预览）")
-                                    .font(.system(size: 12, weight: .semibold))
-                                Text(model.ipv6Preview.map {
-                                    "\($0.routes.count) 个 APNIC 注册前缀 · 仅供查看"
-                                } ?? "未下载 · 不修改系统 IPv6 路由")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            Spacer(minLength: 0)
-                            Button("刷新") { Task { await model.updateIPv6Preview() } }
-                                .buttonStyle(ReferenceSecondaryButton())
+                        HStack(spacing: 10) {
+                            Button("更新规则") { Task { await model.refreshRules() } }
+                                .buttonStyle(.borderedProminent)
+                                .tint(GlassPalette.blue)
                                 .disabled(model.busy)
+                            Menu {
+                                ForEach(model.ruleSnapshots) { saved in
+                                    Button(saved.savedAt.formatted(
+                                        .dateTime.year().month().day().hour().minute())) {
+                                        snapshotToRestore = saved
+                                    }
+                                }
+                            } label: {
+                                Text("历史版本")
+                            }
+                            .buttonStyle(ReferenceSecondaryButton())
+                            .disabled(model.ruleSnapshots.isEmpty || model.busy)
+                            .help("选择历史快照以进行确认恢复")
                         }
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .glassCard(cornerRadius: 14)
                     }
-                    .frame(maxWidth: .infinity)
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .frame(minHeight: 265, alignment: .topLeading)
+                .glassCard(cornerRadius: 16)
+
+                HStack {
+                    Spacer(minLength: 0)
+                    HStack(spacing: 11) {
+                        GlassIcon(symbol: "shield.lefthalf.filled", size: 39)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("IPv6 规则（预览）")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(model.ipv6Preview.map {
+                                "\($0.routes.count) 个 APNIC 注册前缀 · 仅供查看"
+                            } ?? "未下载 · 仅供查看，不修改系统 IPv6 路由")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        Button("刷新") { Task { await model.updateIPv6Preview() } }
+                            .buttonStyle(ReferenceSecondaryButton())
+                            .disabled(model.busy)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: 430, alignment: .leading)
+                    .glassCard(cornerRadius: 14)
                 }
             }
             .padding(.horizontal, GlassLayout.pageInset)
             .padding(.top, GlassLayout.pageTop)
-            .padding(.bottom, 20)
+            .padding(.bottom, 14)
             .frame(maxWidth: 1100, alignment: .topLeading)
         }
         .confirmationDialog("恢复旧版 IPv4 规则？",

@@ -61,15 +61,15 @@ struct MainView: View {
                         case .settings: SystemSettingsPane()
                         }
                     }
-                    .id(tab)
-                    .transition(.opacity)
-                    .animation(GlassMotion.page(reduceMotion), value: tab)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .referenceWorkspaceSurface()
                     .padding(.leading, 8)
                     .padding(.trailing, 8)
                     .padding(.top, tab == .overview ? 26 : 0)
                     .padding(.bottom, 16)
+                    .id(tab)
+                    .transition(.opacity)
+                    .animation(GlassMotion.page(reduceMotion), value: tab)
                     .overlay(alignment: .topTrailing) {
                         Button { importing = true } label: {
                             Image(systemName: "plus")

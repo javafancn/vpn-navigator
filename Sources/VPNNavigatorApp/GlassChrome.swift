@@ -35,11 +35,11 @@ struct GlassAtmosphere: View {
 
     var body: some View {
         ZStack {
+            DesktopVisualEffect()
             if reduceTransparency &&
                 !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot") {
                 Color(nsColor: .windowBackgroundColor)
             } else {
-                DesktopVisualEffect()
                 Color.white.opacity(GlassSurface.windowOpacity)
             }
         }

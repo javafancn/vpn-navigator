@@ -46,11 +46,6 @@ struct MainView: View {
     var body: some View {
         ZStack {
             GlassAtmosphere()
-            // Neutral-blue frosted tint; the scenery is still 100% macOS wallpaper.
-            Color(red: 0.78, green: 0.86, blue: 1.0)
-                .opacity(0.075)
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
             HStack(spacing: 0) {
                 sidebar.frame(width: 254)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
@@ -167,11 +162,20 @@ struct MainView: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .glassCard(cornerRadius: 12)
+            .background {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(GlassSurface.panel.opacity(0.35))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.white.opacity(0.65), lineWidth: 1)
+            }
             .padding(.horizontal, 12)
             .padding(.bottom, 14)
         }
-        .background(Color(red: 0.85, green: 0.90, blue: 1.0).opacity(0.20))
+        .background {
+            GlassSurface.sidebar.opacity(0.20)
+        }
         .overlay(alignment: .trailing) {
             Rectangle().fill(Color.white.opacity(0.36)).frame(width: 1)
         }
@@ -441,7 +445,7 @@ private struct ConnectionOverview: View {
                     }
                     .padding(13)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: 112, alignment: .top)
+                    .frame(height: 156, alignment: .top)
                     .glassCard(cornerRadius: 15)
                 }
             }
@@ -467,7 +471,7 @@ private struct ConnectionOverview: View {
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(GlassPalette.blue)
                     .frame(width: 28, height: 28)
-                    .background(GlassPalette.blue.opacity(0.12), in: Circle())
+                    .background(GlassPalette.blue.opacity(0.09), in: Circle())
                 Text(title)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)

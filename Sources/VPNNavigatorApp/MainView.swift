@@ -429,89 +429,136 @@ private struct ConnectionOverview: View {
 private struct ProfileLibrary: View {
     @EnvironmentObject private var model: AppModel
     @State private var query = ""
+
     private var filtered: [VPNProfile] {
         model.profiles.filter {
             query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) ||
-            $0.sourceFilename.localizedCaseInsensitiveContains(query) ||
-            $0.group.localizedCaseInsensitiveContains(query)
+                $0.sourceFilename.localizedCaseInsensitiveContains(query) ||
+                $0.group.localizedCaseInsensitiveContains(query)
         }.sorted {
             if $0.isFavorite != $1.isFavorite { return $0.isFavorite }
             return $0.name.localizedStandardCompare($1.name) == .orderedAscending
         }
     }
+
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("配置文件").font(.system(size: 23, weight: .bold, design: .rounded))
-                    Text("\(model.profiles.count) 份配置 · OpenVPN 配置库")
-                        .font(.callout).foregroundStyle(.secondary)
-                }
-                Spacer()
-            }.padding(.horizontal, 22).padding(.top, 22).padding(.bottom, 14)
-            HStack(spacing: 12) {
-                VStack(spacing: 12) {
-                    HStack {
-                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                        TextField("搜索名称、分组、文件", text: $query)
-                            .textFieldStyle(.plain)
+        VStack(alignment: .leading, spacing: 13) {
+            WorkspaceHeading(title: "配置文件",
+                subtitle: "管理和编辑 VPN 配置文件",
+                symbol: "square.stack.3d.up.fill")
+
+            HStack(spacing: 9) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
+                TextField("搜索配置文件…", text: $query)
+                    .font(.system(size: 12))
+                    .textFieldStyle(.plain)
+                if !query.isEmpty {
+                    Button {
+                        query = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
                     }
-                    .padding(10)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("清除搜索")
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 35)
+            .glassCard(cornerRadius: 10)
+
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("全部配置 (\(filtered.count))")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.bottom, 3)
+
                     ScrollView {
-                        LazyVStack(spacing: 7) {
+                        LazyVStack(spacing: 5) {
                             ForEach(filtered) { profile in
                                 Button { model.selectedID = profile.id } label: {
-                                    HStack(spacing: 11) {
-                                        Image(systemName: "network")
-                                            .foregroundStyle(GlassPalette.blue)
-                                            .frame(width: 35, height: 35)
-                                            .background(.blue.opacity(0.09),
-                                                        in: RoundedRectangle(cornerRadius: 10))
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text(profile.name).font(.callout.weight(.semibold))
+                                    HStack(spacing: 9) {
+                                        GlassIcon(symbol: "globe.americas.fill",
+                                                  color: profile.isFavorite ?
+                                                    GlassPalette.blue : GlassPalette.cyan,
+                                                  size: 34)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(profile.name)
+                                                .font(.system(size: 12, weight: .semibold))
+                                                .foregroundStyle(.primary)
                                                 .lineLimit(1)
-                                            Text(profile.group + " · " + profile.sourceFilename)
-                                                .font(.caption2).foregroundStyle(.secondary)
+                                            Text(profile.sourceFilename)
+                                                .font(.system(size: 10))
+                                                .foregroundStyle(.secondary)
                                                 .lineLimit(1)
+                                                .truncationMode(.middle)
                                         }
-                                        Spacer(minLength: 0)
+                                        Spacer(minLength: 3)
                                         if profile.isFavorite {
-                                            Image(systemName: "star.fill").foregroundStyle(.orange)
+                                            Image(systemName: "star.fill")
+                                                .foregroundStyle(.orange)
+                                                .font(.system(size: 11))
                                         }
                                     }
-                                    .padding(9)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 7)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(model.selectedID == profile.id ?
-                                        GlassPalette.blue.opacity(0.17) : Color.white.opacity(0.12),
-                                        in: RoundedRectangle(cornerRadius: 12))
+                                    .background(
+                                        model.selectedID == profile.id ?
+                                          GlassPalette.blue.opacity(0.17) :
+                                          Color.clear,
+                                        in: RoundedRectangle(cornerRadius: 11))
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityAddTraits(
+                                    model.selectedID == profile.id ? .isSelected : [])
                             }
                         }
                     }
-                }
-                .padding(12)
-                .frame(width: 245)
-                .glassCard(cornerRadius: 17)
-                if let profile = model.selected {
-                    ProfileDetail(profile: profile).id(profile.id)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .glassCard(cornerRadius: 18)
-                } else {
-                    VStack(spacing: 12) {
-                        Image(systemName: "square.stack.3d.up.slash")
-                            .font(.system(size: 44)).foregroundStyle(.secondary)
-                        Text("尚未选择配置文件").font(.title3.weight(.semibold))
-                        Text("点击窗口右上角「导入 .ovpn」开始。")
+                    if filtered.isEmpty {
+                        Label("没有匹配的配置", systemImage: "magnifyingglass")
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
-                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
+                .padding(11)
+                .frame(width: 245)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .glassCard(cornerRadius: 15)
+
+                Group {
+                    if let profile = model.selected {
+                        ProfileDetail(profile: profile).id(profile.id)
+                    } else {
+                        VStack(spacing: 10) {
+                            GlassIcon(symbol: "square.stack.3d.up", size: 45)
+                            Text("尚未选择配置文件").font(.headline)
+                            Text("点击右上角「导入配置」以添加 .ovpn 文件")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .glassCard(cornerRadius: 16)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 19)
+            .frame(maxHeight: .infinity)
         }
+        .padding(.horizontal, 20)
+        .padding(.top, 20)
+        .padding(.bottom, 18)
     }
 }
 

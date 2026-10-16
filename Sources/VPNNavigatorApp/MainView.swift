@@ -725,6 +725,7 @@ private struct ProfileLibrary: View {
 
 private struct RoutingWorkspace: View {
     @EnvironmentObject private var model: AppModel
+    @State private var snapshotToRestore: RuleSnapshot?
 
     private func title(for mode: RoutingMode) -> String {
         switch mode {
@@ -776,36 +777,33 @@ private struct RoutingWorkspace: View {
                         HStack(alignment: .center, spacing: 13) {
                             GlassIcon(symbol: "globe.asia.australia.fill", size: 54)
                             VStack(alignment: .leading, spacing: 8) {
-                                ruleDetail("规则版本",
-                                    model.ruleSnapshots.first.map {
-                                        $0.savedAt.formatted(.dateTime.year().month().day())
-                                    } ?? "尚无快照")
+                                ruleDetail("规则版本", "未提供")
                                 ruleDetail("规则来源", "chnroutes2")
                                 ruleDetail("规则数量",
                                     model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
-                                ruleDetail("最后更新",
+                                ruleDetail("历史快照",
                                     model.ruleSnapshots.first.map {
                                         $0.savedAt.formatted(.dateTime.year().month().day().hour().minute())
-                                    } ?? "尚未更新")
+                                    } ?? "尚无快照")
                             }
                         }
                         HStack(spacing: 9) {
                             Button("更新规则") { Task { await model.refreshRules() } }
                                 .buttonStyle(.borderedProminent)
                                 .disabled(model.busy)
-                            if let previous = model.ruleSnapshots.dropFirst().first {
-                                Button("历史版本") {
-                                    Task { await model.restoreRuleSnapshot(previous.id) }
+                            Menu {
+                                ForEach(model.ruleSnapshots) { saved in
+                                    Button(saved.savedAt.formatted(
+                                        .dateTime.year().month().day().hour().minute())) {
+                                        snapshotToRestore = saved
+                                    }
                                 }
-                                .buttonStyle(.bordered)
-                                .disabled(model.busy)
-                                .help("恢复上一个已验证的规则快照")
-                            } else {
-                                Button("历史版本") { }
-                                    .buttonStyle(.bordered)
-                                    .disabled(true)
-                                    .help("尚无可恢复的历史快照")
+                            } label: {
+                                Text("历史版本")
                             }
+                            .buttonStyle(.bordered)
+                            .disabled(model.ruleSnapshots.isEmpty || model.busy)
+                            .help("选择历史快照以进行确认恢复")
                         }
                         .controlSize(.regular)
                     }
@@ -842,6 +840,21 @@ private struct RoutingWorkspace: View {
             .padding(.top, 31)
             .padding(.bottom, 18)
             .frame(maxWidth: 1100, alignment: .leading)
+        }
+        .confirmationDialog("恢复旧版 IPv4 规则？",
+                            isPresented: Binding(
+                                get: { snapshotToRestore != nil },
+                                set: { if !$0 { snapshotToRestore = nil } }
+                            )) {
+            if let snapshot = snapshotToRestore {
+                Button("确认恢复历史快照") {
+                    Task { await model.restoreRuleSnapshot(snapshot.id) }
+                    snapshotToRestore = nil
+                }
+            }
+            Button("取消", role: .cancel) { snapshotToRestore = nil }
+        } message: {
+            Text("恢复会替换当前规则。已有受管连接的网络安全限制仍然适用。")
         }
     }
 

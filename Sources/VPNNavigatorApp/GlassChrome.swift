@@ -68,17 +68,17 @@ private struct GlassCardModifier: ViewModifier {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
             .background {
+                // The window's behind-window NSVisualEffectView has already
+                // blurred the wallpaper. An additional SwiftUI material here
+                // resolves to a solid gray on macOS 15 and masks the desktop.
+                // Translucent color gives a genuine frosted-glass surface
+                // while allowing the OS-provided wallpaper to show through.
                 shape
                     .fill(reduceTransparency
                           ? Color(nsColor: .windowBackgroundColor)
                           : (appearance == .dark
-                             ? Color.black.opacity(0.20)
-                             : Color.white.opacity(0.18)))
-                    .background {
-                        if !reduceTransparency {
-                            shape.fill(.ultraThinMaterial).opacity(0.48)
-                        }
-                    }
+                             ? Color.black.opacity(0.28)
+                             : Color.white.opacity(0.32)))
             }
             .overlay {
                 shape.strokeBorder(

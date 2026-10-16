@@ -1160,15 +1160,19 @@ struct ProfileDetail: View {
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .referenceInput()
-                Button("编辑文件…") {
+                Button {
                     Task {
                         if let text = await model.editSource(for: profile) {
                             editorText = text
                             showingEditor = true
                         }
                     }
+                } label: {
+                    Text("编辑文件…").fixedSize()
                 }
                 .buttonStyle(ReferenceSecondaryButton())
+                .fixedSize()
+                .layoutPriority(1)
                 .disabled(model.connected || model.connecting)
             }
             editorRow("备注") {

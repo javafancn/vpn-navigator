@@ -50,24 +50,28 @@ struct GlassAtmosphere: View {
 }
 
 final class NativeWindowGlass: NSVisualEffectView {
+    private weak var configuredWindow: NSWindow?
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         configureWindow()
     }
     func configureWindow() {
         guard let window else { return }
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.styleMask.insert(.fullSizeContentView)
-        // Keep the same 11:7 proportion on every tab and during resizing.
-        if window.title.contains("VPN Navigator"), !(window is NSPanel) {
-            window.contentAspectRatio = NSSize(width: 11, height: 7)
+        if configuredWindow !== window {
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.styleMask.insert(.fullSizeContentView)
+            window.isMovableByWindowBackground = true
+            configuredWindow = window
         }
-        // Let users drag the chrome, not form controls or cards.
-        window.isMovableByWindowBackground = true
-
+        // Do not reset window chrome/geometry on every model or typing update.
+        let aspect = NSSize(width: 11, height: 7)
+        if window.title.contains("VPN Navigator"), !(window is NSPanel),
+           window.contentAspectRatio != aspect {
+            window.contentAspectRatio = aspect
+        }
     }
 }
 

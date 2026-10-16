@@ -5,7 +5,7 @@ import SwiftUI
 /// aspect ratios for dashboard/inspector vs compact utility workspaces.
 /// Apply recommended sizes only when the workspace tab changes. Users may
 /// still resize a window manually without this view fighting their gesture.
-private final class ReferenceWindowSizingView: NSView {
+final class ReferenceWindowSizingView: NSView {
     var requestedSize: CGSize = .zero {
         didSet { resizeIfNeeded() }
     }

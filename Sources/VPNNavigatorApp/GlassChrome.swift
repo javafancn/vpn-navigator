@@ -10,6 +10,17 @@ enum GlassPalette {
     static let violet = Color(red: 0.67, green: 0.60, blue: 0.94)
 }
 
+/// Shared visual measurements for all five workspaces. Keep these independent
+/// of VPN session and route state so a fidelity pass cannot alter networking.
+enum GlassLayout {
+    static let pageInset: CGFloat = 20
+    static let pageTop: CGFloat = 23
+    static let cardGap: CGFloat = 12
+    static let cornerRadius: CGFloat = 16
+    static let sectionSpacing: CGFloat = 13
+}
+
+
 // Screenshot-only material calibration. Each preset renders the *real* desktop
 // using native AppKit; no wallpaper or screenshot is bundled with the app.
 // Standard users get the tuned default, not a demonstration background.
@@ -54,8 +65,8 @@ private enum GlassMaterialTuning {
 /// Light glass colors are intentionally near-neutral instead of a saturated
 /// blue overlay: the supplied design is a white-lilac frost, not clear glass.
 enum GlassSurface {
-    static let mist = Color(red: 0.91, green: 0.94, blue: 0.99)
-    static let sidebar = Color(red: 0.91, green: 0.93, blue: 0.99)
+    static let mist = Color(red: 0.93, green: 0.96, blue: 1.00)
+    static let sidebar = Color(red: 0.90, green: 0.94, blue: 1.00)
     static let panel = Color(red: 0.97, green: 0.98, blue: 1.00)
 
     /// For screenshot calibration against the reference, without modifying
@@ -66,16 +77,16 @@ enum GlassSurface {
 
     static var windowOpacity: Double {
         switch preset {
-        case "lighter": return 0.34
-        case "denser": return 0.55
-        default: return 0.45
+        case "lighter": return 0.32
+        case "denser": return 0.54
+        default: return 0.40
         }
     }
     static var cardOpacity: Double {
         switch preset {
-        case "lighter": return 0.39
-        case "denser": return 0.60
-        default: return 0.48
+        case "lighter": return 0.40
+        case "denser": return 0.64
+        default: return 0.54
         }
     }
 }
@@ -187,18 +198,25 @@ private struct GlassCardModifier: ViewModifier {
                     shape.fill(appearance == .dark
                                ? Color.black.opacity(0.22)
                                : GlassSurface.panel.opacity(GlassSurface.cardOpacity))
+                    // A subtle upper-left highlight separates layered panes
+                    // without painting an opaque card over the desktop.
+                    shape.fill(LinearGradient(colors: [
+                        Color.white.opacity(appearance == .dark ? 0.07 : 0.17),
+                        Color.white.opacity(0.02),
+                        GlassPalette.blue.opacity(appearance == .dark ? 0.03 : 0.025)
+                    ], startPoint: .topLeading, endPoint: .bottomTrailing))
                 }
             }
             .overlay {
                 shape.strokeBorder(
                     LinearGradient(colors: [
-                        Color.white.opacity(appearance == .dark ? 0.34 : 0.86),
-                        Color.white.opacity(0.30)
+                        Color.white.opacity(appearance == .dark ? 0.38 : 0.93),
+                        Color.white.opacity(0.37)
                     ], startPoint: .topLeading, endPoint: .bottomTrailing),
                     lineWidth: 1)
             }
-            .shadow(color: GlassPalette.ink.opacity(active ? 0.14 : 0.075),
-                    radius: active ? 16 : 10, y: active ? 6 : 3)
+            .shadow(color: GlassPalette.ink.opacity(active ? 0.13 : 0.06),
+                    radius: active ? 17 : 12, y: active ? 7 : 4)
     }
 }
 
@@ -220,7 +238,10 @@ struct GlassIcon: View {
             .frame(width: size, height: size)
             .background {
                 RoundedRectangle(cornerRadius: size * 0.27)
-                    .fill(Color.white.opacity(0.42))
+                    .fill(LinearGradient(colors: [Color.white.opacity(0.83),
+                                                  Color.white.opacity(0.32)],
+                                         startPoint: .topLeading,
+                                         endPoint: .bottomTrailing))
                     .overlay {
                         RoundedRectangle(cornerRadius: size * 0.27)
                             .fill(color.opacity(0.08))

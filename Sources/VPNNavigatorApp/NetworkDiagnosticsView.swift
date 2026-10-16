@@ -39,9 +39,8 @@ struct NetworkDiagnosticsView: View {
     var body: some View {
         GeometryReader { geometry in
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 18) {
-                Text("网络诊断").font(.system(size: ReferenceType.pageTitle, weight: .bold))
-                Spacer(minLength: 0)
+            WorkspaceHeading(title: "网络诊断", subtitle: "查看本机网络、DNS 与实际路由状态", symbol: "waveform.path.ecg")
+            HStack(spacing: 14) {
                 HStack(spacing: 2) {
                     ForEach(DiagnosticTab.allCases) { tab in
                         Button { selectedTab = tab } label: {
@@ -61,8 +60,12 @@ struct NetworkDiagnosticsView: View {
                 }
                 .referenceSegments().frame(width: 420)
                 .animation(GlassMotion.selection(reduceMotion), value: selectedTab)
-                .padding(.trailing, 25)
-            }.frame(height: 56)
+                Spacer(minLength: 0)
+                Button { runDiagnostics() } label: {
+                    Label(checking ? "检查中…" : "重新检查", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(ReferenceSecondaryButton()).disabled(checking)
+            }
             HStack(alignment: .top, spacing: 14) {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
@@ -119,7 +122,7 @@ struct NetworkDiagnosticsView: View {
                     .background(Color.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
                 }
                 .padding(18)
-                .frame(width: max(280, (geometry.size.width - 54) * 0.61))
+                .frame(width: max(280, (geometry.size.width - 62) * 0.59))
                 .frame(maxHeight: .infinity, alignment: .topLeading)
                 .glassCard(cornerRadius: 18)
                 VStack(spacing: 14) {
@@ -149,14 +152,14 @@ struct NetworkDiagnosticsView: View {
                     .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                     .frame(height: 100).glassCard(cornerRadius: 18)
                 }.frame(maxWidth: .infinity)
-            }.frame(height: 350)
+            }.frame(height: 420)
             Spacer(minLength: 0)
             if !healthError.isEmpty {
                 Label(healthError, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(.orange)
             }
         }
         .padding(.horizontal, GlassLayout.pageInset)
-        .padding(.top, 12)
+        .padding(.top, GlassLayout.pageTop)
         .padding(.bottom, 20)
         .onAppear { if health == nil { runDiagnostics() } }
         }
@@ -174,23 +177,31 @@ struct NetworkDiagnosticsView: View {
             Image(systemName: checked ? "checkmark.circle.fill" : "circle.dotted")
                 .font(.system(size: 20)).foregroundStyle(checked ? Color.green : .secondary)
                 .frame(width: 24)
-            Text(title).font(.system(size: 16)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.system(size: 15, weight: .medium)).foregroundStyle(GlassPalette.ink)
+                Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary)
+            }
             Spacer(minLength: 0)
             Text(value).font(.system(size: 13)).foregroundStyle(GlassPalette.ink)
                 .lineLimit(1).minimumScaleFactor(0.8)
-        }.frame(height: 42).help(subtitle)
+        }.frame(height: 62)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(GlassPalette.ink.opacity(0.05)).frame(height: 0.5)
+                    .padding(.leading, 32)
+            }
+            .accessibilityElement(children: .combine)
     }
 
     private func routeStep(_ title: String, value: String, index: Int) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(spacing: 0) {
                 Circle().fill(GlassPalette.blue).frame(width: 11, height: 11)
-                Rectangle().fill(index == 2 ? Color.clear : GlassPalette.blue.opacity(0.45)).frame(width: 2, height: 33)
+                Rectangle().fill(index == 2 ? Color.clear : GlassPalette.blue.opacity(0.45)).frame(width: 1.5, height: 53)
             }.padding(.top, 5)
             Text(value).font(.system(size: 16)).foregroundStyle(GlassPalette.ink.opacity(0.80)).lineLimit(1)
             Spacer(minLength: 0)
             Text(title).font(.system(size: 12)).foregroundStyle(.secondary)
-        }.frame(height: 44).accessibilityElement(children: .combine)
+        }.frame(height: 64).accessibilityElement(children: .combine)
     }
 
     private func runDiagnostics() {

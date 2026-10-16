@@ -2,7 +2,7 @@ import SwiftUI
 
 /// One type ramp and one control geometry for all five native pages.
 enum ReferenceType {
-    static let pageTitle: CGFloat = 32
+    static let pageTitle: CGFloat = 28
     static let panelTitle: CGFloat = 18
     static let section: CGFloat = 16
     static let field: CGFloat = 16

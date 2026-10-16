@@ -12,8 +12,8 @@ enum GlassPalette {
 /// Shared visual measurements for all five workspaces. Keep these independent
 /// of VPN session and route state so a fidelity pass cannot alter networking.
 enum GlassLayout {
-    static let pageInset: CGFloat = 20
-    static let pageTop: CGFloat = 30
+    static let pageInset: CGFloat = 24
+    static let pageTop: CGFloat = 24
     static let cardGap: CGFloat = 12
     static let cornerRadius: CGFloat = 18
     static let sectionSpacing: CGFloat = 13

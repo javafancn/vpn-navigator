@@ -49,7 +49,7 @@ struct MainView: View {
         ZStack {
             GlassAtmosphere()
             HStack(spacing: 0) {
-                sidebar.frame(width: 270)
+                sidebar.frame(width: 228)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
                 VStack(spacing: 0) {
                     Group {
@@ -65,24 +65,12 @@ struct MainView: View {
                     .referenceWorkspaceSurface()
                     .padding(.leading, 8)
                     .padding(.trailing, 8)
-                    .padding(.top, tab == .overview ? 26 : 0)
+                    .padding(.top, 26)
                     .padding(.bottom, 16)
                     .id(tab)
                     .transition(.opacity)
                     .animation(GlassMotion.page(reduceMotion), value: tab)
-                    .overlay(alignment: .topTrailing) {
-                        Button { importing = true } label: {
-                            Image(systemName: "plus")
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundStyle(GlassPalette.ink)
-                                .frame(width: 34, height: 34)
-                                .glassCard(cornerRadius: 10)
-                        }
-                        .buttonStyle(ReferenceQuietButton(cornerRadius: 10))
-                        .help("导入 VPN 配置")
-                        .padding(.top, 16)
-                        .padding(.trailing, 18)
-                    }
+
                 }
             }
         }
@@ -113,57 +101,38 @@ struct MainView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                BrandMark(size: 52)
+                BrandMark(size: 42)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("VPN Navigator").font(.system(size: 18, weight: .bold))
+                    Text("VPN Navigator").font(.system(size: 16, weight: .semibold))
                         .lineLimit(1)
-                    Text("网络连接控制台").font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text("网络连接控制台").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
-            .padding(.leading, 19)
+            .padding(.leading, 18)
             .padding(.trailing, 8)
-            .padding(.top, 38)
-            .padding(.bottom, 22)
+            .padding(.top, 42)
+            .padding(.bottom, 30)
 
-            if tab != .overview {
-                Button {
-                    tab = .overview
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "person.crop.circle")
-                            .font(.system(size: 18, weight: .medium))
-                            .frame(width: 24)
-                        Text("个人")
-                            .font(.system(size: 18, weight: .medium))
-                        Spacer(minLength: 0)
-                    }
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 13)
-                    .frame(height: 48)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(ReferenceQuietButton())
-                .help("返回连接总览")
-                .padding(.horizontal, 15)
-                .padding(.bottom, 7)
-            }
+            Text("工作区")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 28)
+                .padding(.bottom, 10)
 
-            ForEach(tab == .overview ?
-                    WorkspaceTab.allCases :
-                    WorkspaceTab.allCases.filter { $0 != .overview }) { item in
+            ForEach(WorkspaceTab.allCases) { item in
                 Button { tab = item } label: {
                     HStack(spacing: 12) {
                         Image(systemName: item.symbol)
-                            .font(.system(size: 19, weight: .medium))
+                            .font(.system(size: 16, weight: .medium))
                             .foregroundStyle(tab == item ? Color.white : GlassPalette.blue)
                             .frame(width: 24)
                         Text(item.title)
-                            .font(.system(size: 19, weight: .medium))
+                            .font(.system(size: 16, weight: .medium))
                             .foregroundStyle(tab == item ? Color.white : GlassPalette.ink)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 13)
-                    .frame(height: 48)
+                    .frame(height: 44)
                     .background {
                         if tab == item {
                             RoundedRectangle(cornerRadius: 9)
@@ -180,9 +149,29 @@ struct MainView: View {
                 .buttonStyle(ReferenceQuietButton())
                 .accessibilityAddTraits(tab == item ? .isSelected : [])
                 .padding(.horizontal, 15)
-                .padding(.bottom, 7)
+                .padding(.bottom, 5)
             }
-            Spacer(minLength: 10)
+            Spacer(minLength: 20)
+            VStack(alignment: .leading, spacing: 15) {
+                Button { importing = true } label: {
+                    Label("导入配置", systemImage: "plus")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(ReferenceSecondaryButton())
+                .keyboardShortcut("o", modifiers: .command)
+                Rectangle().fill(GlassPalette.ink.opacity(0.07)).frame(height: 0.75)
+                HStack(spacing: 8) {
+                    Circle().fill(model.connected ? Color.green : Color.secondary.opacity(0.45))
+                        .frame(width: 6, height: 6)
+                    Text(model.connected ? "VPN 已连接" : model.connecting ? "正在连接…" : "VPN 未连接")
+                        .font(.system(size: 12, weight: .medium))
+                    Spacer(minLength: 0)
+                    Text("\(model.profiles.count) 个配置")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 22)
+            .padding(.bottom, 24)
 
         }
         .background {
@@ -204,16 +193,13 @@ struct WorkspaceHeading: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            if symbol == "globe.americas.fill" {
-                BrandMark(size: 64)
-            }
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: ReferenceType.pageTitle, weight: .bold))
                     .foregroundStyle(GlassPalette.ink)
                 if !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.system(size: ReferenceType.field))
+                        .font(.system(size: 14))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -269,8 +255,7 @@ private struct ConnectionOverview: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             WorkspaceHeading(title: "连接总览", subtitle: "清晰掌控当前 VPN 状态与网络策略", symbol: "globe.americas.fill")
-                .padding(.leading, 8)
-                .padding(.bottom, 10)
+                .padding(.bottom, 4)
             HStack(spacing: 12) {
                 VStack(spacing: 6) {
                     Spacer(minLength: 0)
@@ -288,7 +273,7 @@ private struct ConnectionOverview: View {
                     .disabled(model.busy || model.connecting)
                     .accessibilityLabel(model.connected ? "断开 VPN" : "连接 VPN")
                     Text(statusTitle)
-                        .font(.system(size: 32, weight: .semibold))
+                        .font(.system(size: 28, weight: .semibold))
                         .foregroundStyle(model.connected ? Color.green : hasError ? Color.orange : GlassPalette.blue)
                     Text(model.connected ? "安全连接已建立" : model.connecting ? "正在建立安全连接…" : "点击上方按钮开始连接")
                         .font(.system(size: 16))
@@ -300,7 +285,7 @@ private struct ConnectionOverview: View {
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 330)
+                .frame(height: 310)
                 .glassCard(cornerRadius: 19, active: true)
 
                 VStack(spacing: 12) {
@@ -350,7 +335,7 @@ private struct ConnectionOverview: View {
                             .buttonStyle(.plain)
                             .disabled(model.selected == nil || model.busy || model.connected || model.connecting)
                         }
-                        quickRow("配置文件") {
+                        quickRow("源文件") {
                             Text(model.selected?.sourceFilename ?? "未选择配置")
                                 .lineLimit(1).truncationMode(.middle)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -383,13 +368,13 @@ private struct ConnectionOverview: View {
                     .glassCard(cornerRadius: 16)
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 330)
+                .frame(height: 310)
             }
             HStack(spacing: 12) {
                 statistic("累计接收", symbol: "arrow.down.circle", value: bytes(model.traffic?.receivedBytes), samples: model.receiveTrend.samples)
-                    .frame(width: 202)
+                    .frame(width: 188)
                 statistic("累计发送", symbol: "arrow.up.circle", value: bytes(model.traffic?.sentBytes), samples: model.sendTrend.samples)
-                    .frame(width: 202)
+                    .frame(width: 188)
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "checkmark.shield.fill")
                         .font(.system(size: 28))
@@ -397,7 +382,7 @@ private struct ConnectionOverview: View {
                         .frame(width: 54, height: 54)
                         .background(Color.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 15))
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("连接保护").font(.system(size: 20, weight: .semibold))
+                        Text("连接保护").font(.system(size: 18, weight: .semibold))
                         Label("受管连接异常时安全断开", systemImage: "checkmark.circle.fill")
                             .font(.system(size: 12)).foregroundStyle(.green)
                         Text("PF Kill Switch 尚未启用，不能保证零泄漏。")
@@ -413,7 +398,7 @@ private struct ConnectionOverview: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, GlassLayout.pageInset)
         .padding(.top, GlassLayout.pageTop)
         .padding(.bottom, 16)
         .confirmationDialog("切换 VPN 配置？", isPresented: $confirmSwitch) {
@@ -459,21 +444,21 @@ private struct ConnectionOverview: View {
 private struct ReferencePowerOrb: View {
     var body: some View {
         ZStack {
-            Circle().stroke(GlassPalette.cyan.opacity(0.48), lineWidth: 18)
-                .frame(width: 185, height: 185).blur(radius: 13)
-            Circle().strokeBorder(GlassPalette.cyan.opacity(0.42), lineWidth: 2)
-                .frame(width: 208, height: 208)
-            Circle().strokeBorder(Color.white.opacity(0.85), lineWidth: 3)
-                .frame(width: 198, height: 198)
-            Circle().strokeBorder(GlassPalette.cyan, lineWidth: 5)
-                .frame(width: 188, height: 188)
-            Circle().fill(RadialGradient(colors: [Color(red: 0, green: 0.24, blue: 1), GlassPalette.blue, Color(red: 0, green: 0.90, blue: 1)], center: .center, startRadius: 0, endRadius: 95))
-                .frame(width: 177, height: 177)
-                .overlay(Circle().strokeBorder(Color.white.opacity(0.95), lineWidth: 3))
-                .shadow(color: GlassPalette.cyan.opacity(0.65), radius: 10)
-            Image(systemName: "power").font(.system(size: 59, weight: .regular))
-                .foregroundStyle(.white).shadow(color: .white.opacity(0.55), radius: 3)
-        }.frame(width: 220, height: 220)
+            Circle().fill(Color.white.opacity(0.18))
+                .frame(width: 194, height: 194)
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.55), lineWidth: 0.75))
+            Circle().strokeBorder(GlassPalette.blue.opacity(0.18), lineWidth: 1.5)
+                .frame(width: 180, height: 180)
+            Circle().fill(LinearGradient(colors: [
+                Color(red: 0.10, green: 0.65, blue: 1), GlassPalette.blue,
+                Color(red: 0.04, green: 0.37, blue: 0.94)
+            ], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .frame(width: 162, height: 162)
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.85), lineWidth: 1.5))
+                .shadow(color: GlassPalette.blue.opacity(0.20), radius: 14, y: 7)
+            Image(systemName: "power")
+                .font(.system(size: 52, weight: .light)).foregroundStyle(.white)
+        }.frame(width: 204, height: 204)
     }
 }
 
@@ -499,7 +484,7 @@ private struct ProfileLibrary: View {
             WorkspaceHeading(title: "配置文件",
                 subtitle: "管理和编辑 VPN 配置文件",
                 symbol: "square.stack.3d.up.fill")
-                .padding(.bottom, 14)
+                .padding(.bottom, 4)
 
             HStack(spacing: 10) {
                 HStack(spacing: 9) {
@@ -605,7 +590,7 @@ private struct ProfileLibrary: View {
                     }
                 }
                 .padding(10)
-                .frame(width: 235)
+                .frame(width: 230)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .glassCard(cornerRadius: 15)
 
@@ -628,8 +613,8 @@ private struct ProfileLibrary: View {
             }
             .frame(maxHeight: .infinity)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 12)
+        .padding(.horizontal, GlassLayout.pageInset)
+        .padding(.top, GlassLayout.pageTop)
         .padding(.bottom, 18)
     }
 }
@@ -657,14 +642,26 @@ private struct RoutingWorkspace: View {
         GeometryReader { geometry in
         VStack(alignment: .leading, spacing: 14) {
             WorkspaceHeading(title: "路由与规则", subtitle: "管理 VPN 路由模式与中国 IPv4 规则", symbol: "point.3.connected.trianglepath.dotted")
+            HStack(spacing: 8) {
+                Image(systemName: "doc.text").foregroundStyle(GlassPalette.blue)
+                Text("当前配置").foregroundStyle(.secondary)
+                Text(model.selected?.name ?? "尚未选择").fontWeight(.medium)
+                Spacer()
+                Text("切换模式在下次连接时生效").foregroundStyle(.secondary)
+            }
+            .font(.system(size: 12))
+            .padding(.vertical, 4)
             HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 12) {
                     Text("路由模式").font(.system(size: 20, weight: .semibold))
                     ForEach(RoutingMode.allCases) { mode in routeOption(mode) }
-                    Spacer(minLength: 12)
+                    Spacer(minLength: 8)
+                    Text("路由策略按配置保存，连接期间无法更改。")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(20)
-                .frame(width: max(280, (geometry.size.width - 54) * 0.44))
+                .frame(width: max(280, (geometry.size.width - 62) * 0.43))
                 .frame(maxHeight: .infinity, alignment: .topLeading)
                 .glassCard(cornerRadius: 18)
                 VStack(spacing: 14) {
@@ -722,11 +719,11 @@ private struct RoutingWorkspace: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .frame(height: 380)
+            .frame(height: 440)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, GlassLayout.pageInset)
-        .padding(.top, 12)
+        .padding(.top, GlassLayout.pageTop)
         .padding(.bottom, 20)
         .confirmationDialog("恢复旧版 IPv4 规则？", isPresented: Binding(
             get: { snapshotToRestore != nil }, set: { if !$0 { snapshotToRestore = nil } }
@@ -765,7 +762,7 @@ private struct RoutingWorkspace: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 11)
-            .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 94, alignment: .leading)
             .background(selected == mode ?
                         GlassPalette.blue.opacity(0.10) : Color.white.opacity(0.10),
                         in: RoundedRectangle(cornerRadius: 12))
@@ -809,7 +806,11 @@ struct SystemSettingsPane: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 11) {
                 WorkspaceHeading(title: "设置与维护",
-                    subtitle: "", symbol: "gearshape")
+                    subtitle: "管理系统服务、应用更新与网络恢复", symbol: "gearshape")
+                    .padding(.bottom, 10)
+
+                settingsSection("系统与网络")
+                VStack(spacing: 0) {
 
                 settingsRow("特权助手",
                     subtitle: "管理系统使用此配置所需的特权助手",
@@ -832,6 +833,22 @@ struct SystemSettingsPane: View {
                     .fixedSize()
                 }
 
+                settingsRow("安全恢复",
+                    subtitle: "遇到网络问题时，可尝试恢复残留的网络设置",
+                    symbol: "globe") {
+                    Button("开始恢复") {
+                        Task { await model.retryNetworkRecovery() }
+                    }
+                    .buttonStyle(ReferenceSecondaryButton())
+                    .controlSize(.regular)
+                    .disabled(model.connected || model.connecting)
+                }
+
+                }
+                .glassCard(cornerRadius: 16)
+
+                settingsSection("应用")
+                VStack(spacing: 0) {
                 settingsRow("应用更新",
                     subtitle: "当前版本：\(version) (Build \(build))",
                     symbol: "arrow.triangle.2.circlepath") {
@@ -858,17 +875,6 @@ struct SystemSettingsPane: View {
                     .fixedSize()
                 }
 
-                settingsRow("安全恢复",
-                    subtitle: "遇到网络问题时，可尝试恢复残留的网络设置",
-                    symbol: "globe") {
-                    Button("开始恢复") {
-                        Task { await model.retryNetworkRecovery() }
-                    }
-                    .buttonStyle(ReferenceSecondaryButton())
-                    .controlSize(.regular)
-                    .disabled(model.connected || model.connecting)
-                }
-
                 settingsRow("关于",
                     subtitle: "VPN Navigator · 版本 \(version) (Build \(build))",
                     symbol: "info.circle.fill") {
@@ -885,13 +891,25 @@ struct SystemSettingsPane: View {
                     .menuIndicator(.hidden).buttonStyle(.plain)
                     .fixedSize()
                 }
+                }
+                .glassCard(cornerRadius: 16)
+
+                Label("系统操作可能需要管理员授权。", systemImage: "lock.shield")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .padding(.top, 8)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
+            .padding(.horizontal, GlassLayout.pageInset)
+            .padding(.top, GlassLayout.pageTop)
             .padding(.bottom, 20)
             .frame(maxWidth: 1060, alignment: .topLeading)
         }
         .scrollIndicators(.hidden)
+    }
+
+    private func settingsSection(_ title: String) -> some View {
+        Text(title).font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.leading, 4).padding(.top, 4)
     }
 
     private func statePill(_ text: String, success: Bool = false) -> some View {
@@ -928,10 +946,15 @@ struct SystemSettingsPane: View {
             Spacer(minLength: 12)
             actions()
         }
-        .padding(.horizontal, 20)
-        .frame(minHeight: 92)
+        .padding(.horizontal, GlassLayout.pageInset)
+        .frame(minHeight: 88)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(cornerRadius: 15)
+        .overlay(alignment: .bottom) {
+            if title == "特权助手" || title == "应用更新" {
+                Rectangle().fill(GlassPalette.ink.opacity(0.06))
+                    .frame(height: 0.75).padding(.leading, 79).padding(.trailing, 20)
+            }
+        }
     }
 }
 

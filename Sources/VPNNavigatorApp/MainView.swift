@@ -343,6 +343,12 @@ private struct ConnectionOverview: View {
                                     .shadow(color: .white.opacity(0.65), radius: 4)
                             }
                             .frame(width: 205, height: 205)
+                            .background {
+                                Circle()
+                                    .fill(GlassPalette.cyan.opacity(0.09))
+                                    .frame(width: 231, height: 231)
+                                    .blur(radius: 26)
+                            }
                             .contentShape(Circle())
                         }
                         .buttonStyle(.plain)
@@ -676,9 +682,15 @@ private struct ProfileLibrary: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .background(
                                         model.selectedID == profile.id ?
-                                          GlassPalette.blue.opacity(0.12) :
+                                          GlassPalette.blue.opacity(0.14) :
                                           Color.clear,
                                         in: RoundedRectangle(cornerRadius: 11))
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 11)
+                                            .strokeBorder(model.selectedID == profile.id ?
+                                                GlassPalette.blue.opacity(0.18) : .clear,
+                                                lineWidth: 1)
+                                    }
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
@@ -693,8 +705,8 @@ private struct ProfileLibrary: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .padding(11)
-                .frame(width: 215)
+                .padding(10)
+                .frame(width: 226)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .glassCard(cornerRadius: 15)
 
@@ -884,8 +896,14 @@ private struct RoutingWorkspace: View {
             .padding(.horizontal, 11)
             .frame(maxWidth: .infinity, minHeight: 59, alignment: .leading)
             .background(selected == mode ?
-                        GlassPalette.blue.opacity(0.11) : Color.white.opacity(0.08),
+                        GlassPalette.blue.opacity(0.13) : Color.white.opacity(0.10),
                         in: RoundedRectangle(cornerRadius: 12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(selected == mode ?
+                                  GlassPalette.blue.opacity(0.29) :
+                                  Color.white.opacity(0.14), lineWidth: 1)
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1193,7 +1211,7 @@ struct ProfileDetail: View {
                     }
                 }
                 .padding(4)
-                .background(Color.white.opacity(0.27),
+                .background(GlassSurface.panel.opacity(0.41),
                             in: RoundedRectangle(cornerRadius: 10))
                 .overlay {
                     RoundedRectangle(cornerRadius: 10)

@@ -114,7 +114,32 @@ struct MainView: View {
             .padding(.top, 53)
             .padding(.bottom, 30)
 
-            ForEach(WorkspaceTab.allCases) { item in
+            if tab != .overview {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.16)) { tab = .overview }
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "person.crop.circle")
+                            .font(.system(size: 18, weight: .medium))
+                            .frame(width: 24)
+                        Text("个人")
+                            .font(.system(size: 14, weight: .semibold))
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 13)
+                    .frame(height: 43)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("返回连接总览")
+                .padding(.horizontal, 15)
+                .padding(.bottom, 9)
+            }
+
+            ForEach(tab == .overview ?
+                    WorkspaceTab.allCases :
+                    WorkspaceTab.allCases.filter { $0 != .overview }) { item in
                 Button { withAnimation(.easeInOut(duration: 0.16)) { tab = item } } label: {
                     HStack(spacing: 12) {
                         Image(systemName: item.symbol)

@@ -75,17 +75,28 @@ jobs:
           fi
           screencapture -x "$RUNNER_TEMP/VPNNavigator-Desktop-Before.png" || true
           APP='dist/VPN Navigator.app'
-          open "$APP" || true
-          sleep 5
-          screencapture -x "$RUNNER_TEMP/VPNNavigator-UI-Screenshot.png" || true
-          if [[ ! -s "$RUNNER_TEMP/VPNNavigator-UI-Screenshot.png" ]]; then
-            echo 'No interactive WindowServer screenshot available on this runner.'
-          fi
+          # Render ALL FIVE REAL SwiftUI pages against a system wallpaper.
+          # No screenshot or wallpaper becomes part of the app bundle.
+          for PAGE in overview profiles routing diagnostics settings; do
+            killall VPNNavigatorApp 2>/dev/null || true
+            sleep 1
+            open -n "$APP" --args "--vpnnav-ui-tab=$PAGE" || true
+            sleep 5
+            screencapture -x "$RUNNER_TEMP/VPNNavigator-$PAGE.png" || true
+            if [[ ! -s "$RUNNER_TEMP/VPNNavigator-$PAGE.png" ]]; then
+              echo "WindowServer screenshot unavailable for $PAGE"
+            fi
+          done
+          killall VPNNavigatorApp 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         with:
           name: VPNNavigator-visual-smoke
           path: |
-            ${{ runner.temp }}/VPNNavigator-UI-Screenshot.png
+            ${{ runner.temp }}/VPNNavigator-overview.png
+            ${{ runner.temp }}/VPNNavigator-profiles.png
+            ${{ runner.temp }}/VPNNavigator-routing.png
+            ${{ runner.temp }}/VPNNavigator-diagnostics.png
+            ${{ runner.temp }}/VPNNavigator-settings.png
             ${{ runner.temp }}/VPNNavigator-Desktop-Before.png
           if-no-files-found: ignore
           retention-days: 7

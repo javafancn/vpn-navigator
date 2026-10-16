@@ -1166,7 +1166,7 @@ struct ProfileDetail: View {
     }
 
     private var inspectorContent: some View {
-            VStack(alignment: .leading, spacing: 13) {
+            VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 13) {
                     GlassIcon(symbol: "network.badge.shield.half.filled", size: 54)
                     VStack(alignment: .leading, spacing: 2) {
@@ -1251,10 +1251,11 @@ struct ProfileDetail: View {
                         .disabled(profile.mode == .chinaDirect && model.rules == nil)
                 }
                 .font(.system(size: 12))
-                .padding(.top, 6)
+                .padding(.top, 3)
             }
-            .padding(19)
-            .frame(minHeight: 405, alignment: .topLeading)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .frame(minHeight: 390, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 

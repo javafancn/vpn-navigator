@@ -882,6 +882,7 @@ private struct RoutingWorkspace: View {
             .padding(.bottom, 14)
             .frame(maxWidth: 1100, alignment: .topLeading)
         }
+        .scrollIndicators(.hidden)
         .confirmationDialog("恢复旧版 IPv4 规则？",
                             isPresented: Binding(
                                 get: { snapshotToRestore != nil },

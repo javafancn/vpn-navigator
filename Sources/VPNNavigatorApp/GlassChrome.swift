@@ -110,6 +110,18 @@ struct GlassAtmosphere: View {
                 GlassSurface.mist.opacity(
                     appearance == .dark ? GlassSurface.windowOpacity * 0.55 :
                                           GlassSurface.windowOpacity)
+                // Gentle blue-lilac atmospheric light, like the design
+                // reference, over REAL macOS vibrancy. Not a wallpaper.
+                LinearGradient(
+                    colors: [
+                        GlassPalette.blue.opacity(appearance == .dark ? 0.025 : 0.055),
+                        Color.clear,
+                        GlassPalette.violet.opacity(appearance == .dark ? 0.025 : 0.075)
+                    ], startPoint: .topLeading, endPoint: .bottomTrailing)
+                RadialGradient(
+                    colors: [GlassPalette.cyan.opacity(appearance == .dark ? 0.018 : 0.045),
+                             .clear],
+                    center: .topTrailing, startRadius: 22, endRadius: 620)
             }
         }
         .ignoresSafeArea()
@@ -201,17 +213,23 @@ private struct GlassCardModifier: ViewModifier {
                     // A subtle upper-left highlight separates layered panes
                     // without painting an opaque card over the desktop.
                     shape.fill(LinearGradient(colors: [
-                        Color.white.opacity(appearance == .dark ? 0.07 : 0.17),
+                        Color.white.opacity(appearance == .dark ? 0.07 : 0.22),
                         Color.white.opacity(0.02),
-                        GlassPalette.blue.opacity(appearance == .dark ? 0.03 : 0.025)
+                        GlassPalette.violet.opacity(appearance == .dark ? 0.025 : 0.048)
                     ], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    if active {
+                        shape.fill(RadialGradient(colors: [
+                            GlassPalette.cyan.opacity(0.11), .clear
+                        ], center: .topLeading, startRadius: 0, endRadius: 350))
+                    }
                 }
             }
             .overlay {
                 shape.strokeBorder(
                     LinearGradient(colors: [
                         Color.white.opacity(appearance == .dark ? 0.38 : 0.93),
-                        Color.white.opacity(0.37)
+                        GlassPalette.blue.opacity(appearance == .dark ? 0.08 : 0.09),
+                        Color.white.opacity(0.34)
                     ], startPoint: .topLeading, endPoint: .bottomTrailing),
                     lineWidth: 1)
             }
@@ -306,7 +324,7 @@ struct BrandMark: View {
         .frame(width: size, height: size)
         .overlay(RoundedRectangle(cornerRadius: size * 0.27)
             .strokeBorder(Color.white.opacity(0.92), lineWidth: 1))
-        .shadow(color: GlassPalette.blue.opacity(0.12), radius: 6, y: 3)
+        .shadow(color: GlassPalette.blue.opacity(0.16), radius: 9, y: 3)
         .accessibilityLabel("VPN Navigator")
     }
 }

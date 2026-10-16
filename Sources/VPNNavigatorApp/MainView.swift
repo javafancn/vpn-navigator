@@ -955,6 +955,7 @@ struct ProfileDetail: View {
     @State private var draftGroup = ""
     @State private var draftNotes = ""
     @State private var draftFavorite = false
+    @State private var editActionHovered = false
     @State private var editingCustomGroup = false
     @State private var editorText = ""
     @State private var showingEditor = false
@@ -1168,9 +1169,19 @@ struct ProfileDetail: View {
                         }
                     }
                 } label: {
-                    Text("编辑文件…").fixedSize()
+                    Text("编辑文件…")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(GlassPalette.ink)
+                        .frame(width: 94, height: 34)
+                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.white.opacity(editActionHovered ? 0.46 : 0.30)))
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.55), lineWidth: 0.75)
+                            .allowsHitTesting(false))
                 }
-                .buttonStyle(ReferenceSecondaryButton())
+                .buttonStyle(.plain)
+                .onHover { editActionHovered = $0 }
+                .animation(GlassMotion.feedback(reduceMotion), value: editActionHovered)
                 .fixedSize()
                 .layoutPriority(1)
                 .disabled(model.connected || model.connecting)

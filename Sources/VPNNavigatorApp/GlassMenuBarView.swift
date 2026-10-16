@@ -15,11 +15,7 @@ struct GlassMenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
             HStack(spacing: 10) {
-                Image(systemName: "globe.americas.fill")
-                    .font(.system(size: 21)).foregroundStyle(.blue)
-                    .frame(width: 39, height: 39)
-                    .background(Color.blue.opacity(0.11),
-                                in: RoundedRectangle(cornerRadius: 12))
+                BrandMark(size: 39)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("VPN Navigator").font(.system(size: 13, weight: .bold))
                     Text("快速连接与会话状态")
@@ -45,7 +41,7 @@ struct GlassMenuBarView: View {
                 Spacer()
             }
             .padding(11)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .glassCard(cornerRadius: 12)
 
             HStack(spacing: 10) {
                 statistic("累计接收", bytes(model.traffic?.receivedBytes),
@@ -93,7 +89,7 @@ struct GlassMenuBarView: View {
         }
         .padding(15)
         .frame(width: 286)
-        .background(.ultraThinMaterial)
+        .background(.regularMaterial)
     }
 
     private func statistic(_ title: String, _ value: String,
@@ -106,6 +102,6 @@ struct GlassMenuBarView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(11)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .glassCard(cornerRadius: 10)
     }
 }

@@ -217,6 +217,7 @@ struct NetworkDiagnosticsView: View {
             .padding(.bottom, 20)
             .frame(maxWidth: 1100, alignment: .topLeading)
         }
+        .scrollIndicators(.hidden)
         .onAppear {
             if health == nil { runDiagnostics() }
         }
@@ -242,7 +243,7 @@ struct NetworkDiagnosticsView: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.trailing)
         }
-        .padding(.vertical, 9)
+        .padding(.vertical, 6)
     }
 
     private func routeStep(_ title: String, value: String, index: Int) -> some View {

@@ -945,7 +945,7 @@ struct SystemSettingsPane: View {
     private var helperReady: Bool { model.helperStatus == "已启用" }
 
     var body: some View {
-        GeometryReader { _ in
+        ScrollView {
             VStack(alignment: .leading, spacing: 11) {
                 WorkspaceHeading(title: "设置与维护",
                     subtitle: "", symbol: "gearshape")
@@ -1028,7 +1028,7 @@ struct SystemSettingsPane: View {
             .padding(.horizontal, 20)
             .padding(.top, GlassLayout.pageTop)
             .padding(.bottom, 20)
-            .frame(maxWidth: 1060, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: 1060, alignment: .topLeading)
         }
     }
 
@@ -1067,8 +1067,8 @@ struct SystemSettingsPane: View {
             actions()
         }
         .padding(.horizontal, 16)
-        .frame(minHeight: 86)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .frame(minHeight: 73)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(cornerRadius: 15)
     }
 }

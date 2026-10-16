@@ -755,53 +755,56 @@ private struct RoutingWorkspace: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 13) {
-                WorkspaceHeading(title: "路由与规则",
+        // Reference composition: two separate full-height glass columns.
+        // IPv6 preview belongs to the right inspector, not a detached tile
+        // floating above a large empty area.
+        GeometryReader { _ in
+            VStack(alignment: .leading, spacing: GlassLayout.sectionSpacing) {
+                WorkspaceHeading(
+                    title: "路由与规则",
                     subtitle: "管理 VPN 路由模式与中国 IPv4 规则",
-                    symbol: "point.3.connected.trianglepath.dotted")
+                    symbol: "point.3.connected.trianglepath.dotted"
+                )
 
-                HStack(alignment: .top, spacing: 0) {
+                HStack(alignment: .top, spacing: GlassLayout.cardGap) {
                     VStack(alignment: .leading, spacing: 11) {
-                        Text("路由模式")
+                        Label("路由模式", systemImage: "point.3.connected.trianglepath.dotted")
                             .font(.system(size: 13, weight: .bold))
-                            .padding(.bottom, 1)
                         ForEach(RoutingMode.allCases) { mode in
                             routeOption(mode)
                         }
+                        Spacer(minLength: 6)
                         Text(model.selected.map { "所选配置：\($0.name)" } ??
                              "请先选择配置后再修改路由")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
-                            .padding(.top, 3)
                     }
-                    .padding(15)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity,
+                           alignment: .topLeading)
+                    .glassCard(cornerRadius: 16)
 
-                    Rectangle()
-                        .fill(Color.white.opacity(0.45))
-                        .frame(width: 1)
-                        .padding(.vertical, 17)
-
-                    VStack(alignment: .leading, spacing: 13) {
-                        Text("中国 IPv4 规则")
+                    VStack(alignment: .leading, spacing: 15) {
+                        Label("中国 IPv4 规则", systemImage: "globe.asia.australia.fill")
                             .font(.system(size: 13, weight: .bold))
-                        HStack(alignment: .center, spacing: 13) {
-                            GlassIcon(symbol: "globe.asia.australia.fill", size: 54)
-                            VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .center, spacing: 14) {
+                            GlassIcon(symbol: "globe.asia.australia.fill", size: 50)
+                            VStack(alignment: .leading, spacing: 9) {
                                 ruleDetail("规则版本", "未提供")
                                 ruleDetail("规则来源", "chnroutes2")
                                 ruleDetail("规则数量",
                                     model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
                                 ruleDetail("历史快照",
                                     model.ruleSnapshots.first.map {
-                                        $0.savedAt.formatted(.dateTime.year().month().day().hour().minute())
+                                        $0.savedAt.formatted(
+                                            .dateTime.year().month().day().hour().minute())
                                     } ?? "尚无快照")
                             }
                         }
                         HStack(spacing: 9) {
                             Button("更新规则") { Task { await model.refreshRules() } }
                                 .buttonStyle(.borderedProminent)
+                                .tint(GlassPalette.blue)
                                 .disabled(model.busy)
                             Menu {
                                 ForEach(model.ruleSnapshots) { saved in
@@ -813,46 +816,50 @@ private struct RoutingWorkspace: View {
                             } label: {
                                 Text("历史版本")
                             }
-                            .buttonStyle(.bordered)
-                            .fixedSize(horizontal: true, vertical: false)
+                            .buttonStyle(ReferenceSecondaryButton())
                             .disabled(model.ruleSnapshots.isEmpty || model.busy)
                             .help("选择历史快照以进行确认恢复")
                         }
                         .controlSize(.regular)
-                    }
-                    .padding(15)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                }
-                .glassCard(cornerRadius: 17)
 
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    HStack(spacing: 11) {
-                        GlassIcon(symbol: "shield.lefthalf.filled", size: 38)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("IPv6 规则（预览）")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text(model.ipv6Preview.map {
-                                "\($0.routes.count) 个 APNIC 注册前缀 · 仅供查看，不修改路由"
-                            } ?? "未下载 · 仅供查看，不修改系统 IPv6 路由")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer(minLength: 0)
-                        Button("刷新") { Task { await model.updateIPv6Preview() } }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
+                        Spacer(minLength: 10)
+                        HStack(spacing: 10) {
+                            GlassIcon(symbol: "shield.lefthalf.filled", size: 38)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("IPv6 规则（预览）")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text(model.ipv6Preview.map {
+                                    "\($0.routes.count) 个 APNIC 注册前缀 · 仅供查看"
+                                } ?? "未下载 · 不修改系统 IPv6 路由")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 0)
+                            Button("刷新") {
+                                Task { await model.updateIPv6Preview() }
+                            }
+                            .buttonStyle(ReferenceSecondaryButton())
                             .disabled(model.busy)
+                        }
+                        .padding(12)
+                        .background(Color.white.opacity(0.19),
+                                    in: RoundedRectangle(cornerRadius: 13))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 13)
+                                .strokeBorder(Color.white.opacity(0.59), lineWidth: 1)
+                        }
                     }
-                    .padding(12)
-                    .frame(maxWidth: 435)
-                    .glassCard(cornerRadius: 15)
+                    .padding(16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity,
+                           alignment: .topLeading)
+                    .glassCard(cornerRadius: 16)
                 }
+                .frame(maxHeight: .infinity)
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, GlassLayout.pageInset)
             .padding(.top, GlassLayout.pageTop)
-            .padding(.bottom, 18)
-            .frame(maxWidth: 1100, alignment: .leading)
+            .padding(.bottom, 19)
         }
         .confirmationDialog("恢复旧版 IPv4 规则？",
                             isPresented: Binding(

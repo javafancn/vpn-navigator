@@ -350,29 +350,51 @@ private struct ConnectionOverview: View {
 
                     VStack(spacing: 12) {
                         VPNPanel("快速连接", symbol: "slider.horizontal.3", minContentHeight: 185) {
-                            Picker("配置文件", selection: $model.selectedID) {
-                                Text("请选择配置").tag(UUID?.none)
-                                ForEach(model.profiles) { profile in
-                                    Text(profile.name).tag(Optional(profile.id))
+                            HStack(spacing: 9) {
+                                Text("配置文件")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .frame(width: 63, alignment: .leading)
+                                Menu {
+                                    ForEach(model.profiles) { profile in
+                                        Button {
+                                            model.selectedID = profile.id
+                                        } label: {
+                                            if model.selectedID == profile.id {
+                                                Label(profile.name, systemImage: "checkmark")
+                                            } else {
+                                                Text(profile.name)
+                                            }
+                                        }
+                                    }
+                                } label: {
+                                    connectionField(model.selected?.name ?? "请选择配置")
                                 }
+                                .menuStyle(.borderlessButton)
+                                .disabled(model.profiles.isEmpty || model.busy)
                             }
-                            .pickerStyle(.menu)
-                            .controlSize(.small)
-                            .disabled(model.profiles.isEmpty)
-                            .font(.system(size: 11))
-
-                            Picker("路由模式", selection: Binding(
-                                get: { model.selected?.mode ?? .original },
-                                set: { value in Task { await model.setMode(value) } }
-                            )) {
-                                Text("Original").tag(RoutingMode.original)
-                                Text("Full VPN").tag(RoutingMode.fullVPN)
-                                Text("中国 IPv4 直连").tag(RoutingMode.chinaDirect)
+                            HStack(spacing: 9) {
+                                Text("路由模式")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .frame(width: 63, alignment: .leading)
+                                Menu {
+                                    ForEach(RoutingMode.allCases) { mode in
+                                        Button {
+                                            Task { await model.setMode(mode) }
+                                        } label: {
+                                            if model.selected?.mode == mode {
+                                                Label(mode.rawValue, systemImage: "checkmark")
+                                            } else {
+                                                Text(mode.rawValue)
+                                            }
+                                        }
+                                    }
+                                } label: {
+                                    connectionField(model.selected?.mode.rawValue ?? "Original")
+                                }
+                                .menuStyle(.borderlessButton)
+                                .disabled(model.selected == nil || model.busy ||
+                                          model.connected || model.connecting)
                             }
-                            .pickerStyle(.menu)
-                            .controlSize(.small)
-                            .disabled(model.selected == nil ||
-                                      model.busy || model.connected || model.connecting)
                             HStack(spacing: 8) {
                                 Text("配置文件").foregroundStyle(.secondary)
                                 Spacer(minLength: 2)
@@ -405,6 +427,16 @@ private struct ConnectionOverview: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer(minLength: 0)
+                                if model.connected, let traffic = model.traffic {
+                                    VStack(alignment: .trailing, spacing: 4) {
+                                        Label(formattedBytes(traffic.receivedBytes),
+                                              systemImage: "arrow.down")
+                                        Label(formattedBytes(traffic.sentBytes),
+                                              systemImage: "arrow.up")
+                                    }
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundStyle(GlassPalette.blue)
+                                }
                             }
                         }
                         Spacer(minLength: 0)
@@ -461,6 +493,30 @@ private struct ConnectionOverview: View {
         } message: {
             Text("应用将验证旧会话退出，然后连接新配置。")
         }
+    }
+
+    private func connectionField(_ value: String) -> some View {
+        HStack(spacing: 6) {
+            Text(value)
+                .font(.system(size: 12))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 16, height: 16)
+                .background(GlassPalette.blue, in: RoundedRectangle(cornerRadius: 5))
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 26)
+        .background(GlassSurface.panel.opacity(0.65),
+                    in: RoundedRectangle(cornerRadius: 7))
+        .overlay {
+            RoundedRectangle(cornerRadius: 7)
+                .strokeBorder(Color.white.opacity(0.86), lineWidth: 1)
+        }
+        .contentShape(Rectangle())
     }
 
     private func miniStatistic(_ title: String, symbol: String,

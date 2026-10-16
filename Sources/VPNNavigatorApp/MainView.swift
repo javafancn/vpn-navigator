@@ -47,7 +47,7 @@ struct MainView: View {
         ZStack {
             GlassAtmosphere()
             HStack(spacing: 0) {
-                sidebar.frame(width: 247)
+                sidebar.frame(width: 254)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
                 VStack(spacing: 0) {
                     Group {
@@ -102,30 +102,32 @@ struct MainView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                BrandMark(size: 37)
+                BrandMark(size: 54)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("VPN Navigator").font(.system(size: 13, weight: .bold))
+                    Text("VPN Navigator").font(.system(size: 15, weight: .bold))
                         .lineLimit(1)
-                    Text("网络连接控制台").font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text("网络连接控制台").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
-            .padding(.leading, 16)
+            .padding(.leading, 19)
             .padding(.trailing, 8)
             .padding(.top, 53)
-            .padding(.bottom, 49)
+            .padding(.bottom, 30)
 
             ForEach(WorkspaceTab.allCases) { item in
                 Button { withAnimation(.easeInOut(duration: 0.16)) { tab = item } } label: {
                     HStack(spacing: 12) {
                         Image(systemName: item.symbol)
-                            .font(.system(size: 15, weight: .medium))
-                            .frame(width: 22)
-                        Text(item.title).font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(tab == item ? Color.white : GlassPalette.blue)
+                            .frame(width: 24)
+                        Text(item.title)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(tab == item ? Color.white : Color.primary)
                         Spacer(minLength: 0)
                     }
-                    .foregroundStyle(tab == item ? Color.white : GlassPalette.blue)
-                    .padding(.horizontal, 12)
-                    .frame(height: 40)
+                    .padding(.horizontal, 13)
+                    .frame(height: 43)
                     .background {
                         if tab == item {
                             RoundedRectangle(cornerRadius: 9)
@@ -140,8 +142,8 @@ struct MainView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(tab == item ? .isSelected : [])
-                .padding(.horizontal, 10)
-                .padding(.bottom, 12)
+                .padding(.horizontal, 15)
+                .padding(.bottom, 9)
             }
             Spacer(minLength: 20)
             VStack(alignment: .leading, spacing: 8) {
@@ -184,15 +186,15 @@ struct WorkspaceHeading: View {
     var body: some View {
         HStack(spacing: 12) {
             if symbol == "globe.americas.fill" {
-                BrandMark(size: 43)
+                BrandMark(size: 56)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 23, weight: .bold, design: .rounded))
+                    .font(.system(size: 27, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
                 if !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -206,9 +208,12 @@ struct VPNPanel<Content: View>: View {
     let title: String
     let symbol: String
     private let content: Content
-    init(_ title: String, symbol: String, @ViewBuilder content: () -> Content) {
+    var minContentHeight: CGFloat = 0
+    init(_ title: String, symbol: String, minContentHeight: CGFloat = 0,
+         @ViewBuilder content: () -> Content) {
         self.title = title
         self.symbol = symbol
+        self.minContentHeight = minContentHeight
         self.content = content()
     }
     var body: some View {
@@ -219,6 +224,7 @@ struct VPNPanel<Content: View>: View {
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minHeight: minContentHeight, alignment: .topLeading)
         .padding(15)
         .glassCard(cornerRadius: 15)
     }
@@ -253,7 +259,7 @@ private struct ConnectionOverview: View {
                 WorkspaceHeading(title: "连接总览",
                     subtitle: "清晰掌控当前 VPN 状态与网络策略",
                     symbol: "globe.americas.fill")
-                    .padding(.bottom, 43)
+                    .padding(.bottom, 33)
 
                 HStack(alignment: .top, spacing: 12) {
                     VStack(spacing: 7) {
@@ -270,34 +276,40 @@ private struct ConnectionOverview: View {
                         } label: {
                             ZStack {
                                 Circle()
-                                    .fill(GlassPalette.cyan.opacity(0.10))
-                                    .frame(width: 193, height: 193)
+                                    .stroke(GlassPalette.cyan.opacity(0.68), lineWidth: 17)
+                                    .frame(width: 183, height: 183)
+                                    .blur(radius: 17)
                                 Circle()
-                                    .strokeBorder(Color.white.opacity(0.48), lineWidth: 2)
-                                    .frame(width: 188, height: 188)
+                                    .fill(GlassPalette.cyan.opacity(0.14))
+                                    .frame(width: 195, height: 195)
                                 Circle()
-                                    .strokeBorder(GlassPalette.cyan.opacity(0.60), lineWidth: 6)
-                                    .blur(radius: 7)
-                                    .frame(width: 180, height: 180)
+                                    .strokeBorder(Color.white.opacity(0.40), lineWidth: 2)
+                                    .frame(width: 189, height: 189)
                                 Circle()
-                                    .strokeBorder(Color.white.opacity(0.95), lineWidth: 4)
-                                    .frame(width: 169, height: 169)
+                                    .strokeBorder(GlassPalette.cyan.opacity(0.85), lineWidth: 5)
+                                    .frame(width: 179, height: 179)
+                                    .shadow(color: GlassPalette.cyan.opacity(0.7), radius: 11)
                                 Circle()
-                                    .fill(
-                                        LinearGradient(colors: model.connected ?
-                                            [Color(red: 0.19, green: 0.76, blue: 0.57),
-                                             Color(red: 0.04, green: 0.64, blue: 0.47)] :
-                                            [Color(red: 0.11, green: 0.64, blue: 1),
-                                             Color(red: 0.02, green: 0.41, blue: 0.98)],
-                                            startPoint: .topLeading, endPoint: .bottomTrailing))
-                                    .frame(width: 151, height: 151)
-                                    .shadow(color: GlassPalette.blue.opacity(0.42),
+                                    .strokeBorder(Color.white.opacity(0.96), lineWidth: 5)
+                                    .frame(width: 170, height: 170)
+                                Circle()
+                                    .fill(RadialGradient(
+                                        colors: model.connected ?
+                                            [Color(red: 0.03, green: 0.61, blue: 0.40),
+                                             Color(red: 0.20, green: 0.83, blue: 0.65)] :
+                                            [Color(red: 0.00, green: 0.40, blue: 0.98),
+                                             Color(red: 0.02, green: 0.59, blue: 1.00),
+                                             Color(red: 0.11, green: 0.77, blue: 1.00)],
+                                        center: .center, startRadius: 0, endRadius: 83))
+                                    .frame(width: 156, height: 156)
+                                    .shadow(color: GlassPalette.blue.opacity(0.37),
                                             radius: 15, y: 5)
                                 Image(systemName: "power")
-                                    .font(.system(size: 48, weight: .ultraLight))
+                                    .font(.system(size: 49, weight: .regular))
                                     .foregroundStyle(.white)
+                                    .shadow(color: .white.opacity(0.65), radius: 4)
                             }
-                            .frame(width: 201, height: 201)
+                            .frame(width: 205, height: 205)
                             .contentShape(Circle())
                         }
                         .buttonStyle(.plain)
@@ -327,11 +339,11 @@ private struct ConnectionOverview: View {
                         Spacer(minLength: 8)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 304)
+                     .frame(height: 316)
                     .glassCard(cornerRadius: 17, active: true)
 
                     VStack(spacing: 12) {
-                        VPNPanel("快速连接", symbol: "slider.horizontal.3") {
+                        VPNPanel("快速连接", symbol: "slider.horizontal.3", minContentHeight: 185) {
                             Picker("配置文件", selection: $model.selectedID) {
                                 Text("请选择配置").tag(UUID?.none)
                                 ForEach(model.profiles) { profile in
@@ -458,7 +470,7 @@ private struct ConnectionOverview: View {
                 .frame(height: 27)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 112)
+        .frame(height: 130)
         .padding(13)
         .glassCard(cornerRadius: 15)
     }

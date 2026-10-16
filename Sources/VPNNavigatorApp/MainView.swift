@@ -46,6 +46,11 @@ struct MainView: View {
     var body: some View {
         ZStack {
             GlassAtmosphere()
+            // Neutral-blue frosted tint; the scenery is still 100% macOS wallpaper.
+            Color(red: 0.78, green: 0.86, blue: 1.0)
+                .opacity(0.075)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
             HStack(spacing: 0) {
                 sidebar.frame(width: 254)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
@@ -162,10 +167,7 @@ struct MainView: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.ultraThinMaterial).opacity(0.35)
-            }
+            .glassCard(cornerRadius: 12)
             .padding(.horizontal, 12)
             .padding(.bottom, 14)
         }
@@ -386,7 +388,7 @@ private struct ConnectionOverview: View {
                             }
                             .font(.system(size: 11))
                         }
-                        VPNPanel("当前连接", symbol: "globe.americas.fill") {
+                        VPNPanel("当前连接", symbol: "globe.americas.fill", minContentHeight: 55) {
                             HStack(spacing: 8) {
                                 BrandMark(size: 30)
                                 VStack(alignment: .leading, spacing: 3) {
@@ -448,6 +450,7 @@ private struct ConnectionOverview: View {
             .padding(.bottom, 16)
             .frame(maxWidth: 1100, alignment: .leading)
         }
+        .scrollIndicators(.hidden)
         .confirmationDialog("切换 VPN 配置？", isPresented: $confirmSwitch) {
             Button("断开当前连接并切换") { Task { await model.switchToSelected() } }
             Button("取消", role: .cancel) { }
@@ -916,10 +919,10 @@ struct ProfileDetail: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 13) {
                 HStack(spacing: 13) {
-                    GlassIcon(symbol: "network.badge.shield.half.filled", size: 48)
+                    GlassIcon(symbol: "network.badge.shield.half.filled", size: 54)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(profile.name)
-                            .font(.system(size: 21, weight: .bold, design: .rounded))
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
                         Text(profile.sourceFilename)
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
@@ -990,8 +993,10 @@ struct ProfileDetail: View {
                 .padding(.top, 6)
             }
             .padding(19)
+            .frame(minHeight: 430, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .scrollIndicators(.hidden)
         .confirmationDialog("确定要删除此配置？", isPresented: $confirmDelete) {
             Button("删除配置", role: .destructive) {
                 Task { await model.deleteSelected() }
@@ -1072,12 +1077,9 @@ struct ProfileDetail: View {
                     .textFieldStyle(.roundedBorder)
             }
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("创建时间：\(profile.importedAt, format: .dateTime.year().month().day())")
-                    Text("文件类型：OpenVPN")
-                }
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+                Text("本地配置资料")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Button("保存更改") {
                     Task {
@@ -1087,6 +1089,19 @@ struct ProfileDetail: View {
                 }
                 .buttonStyle(.borderedProminent)
             }
+            VStack(alignment: .leading, spacing: 8) {
+                LabeledContent("创建时间") {
+                    Text(profile.importedAt, format: .dateTime.year().month().day().hour().minute())
+                }
+                LabeledContent("文件类型", value: "OpenVPN (.ovpn)")
+                LabeledContent("本地存储", value: "应用私有配置仓库")
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.16),
+                        in: RoundedRectangle(cornerRadius: 12))
         }
         .padding(10)
     }

@@ -73,17 +73,32 @@ jobs:
             sleep 3
           fi
           screencapture -x "$RUNNER_TEMP/VPNNavigator-Desktop-Before.png" || true
+          cat > "$RUNNER_TEMP/window-id.swift" <<'SWIFT'
+          import AppKit
+          import CoreGraphics
+          let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+          for item in windows {
+              let owner = item[kCGWindowOwnerName as String] as? String ?? ""
+              let bounds = item[kCGWindowBounds as String] as? [String: Any] ?? [:]
+              if owner.contains("VPN"), let width = bounds["Width"] as? Double, width >= 800,
+                 let number = item[kCGWindowNumber as String] as? Int {
+                  print(number)
+                  FileHandle.standardError.write(Data("owner=\(owner), bounds=\(bounds)\n".utf8))
+                  exit(0)
+              }
+          }
+          exit(1)
+          SWIFT
           APP='dist/VPN Navigator.app'
-          # Render ALL FIVE REAL SwiftUI pages against a system wallpaper.
-          # No screenshot or wallpaper becomes part of the app bundle.
           for PAGE in overview profiles routing diagnostics settings; do
             killall VPNNavigatorApp 2>/dev/null || true
             sleep 1
-            open -n "$APP" --args "--vpnnav-ui-tab=$PAGE" "--vpnnav-ui-glass-snapshot" "--vpnnav-ui-demo-snapshot" "--vpnnav-snapshot-dir=$RUNNER_TEMP/native-frames"
-            sleep 5
-            test -s "$RUNNER_TEMP/native-frames/VPNNavigator-$PAGE.png"
-            cp "$RUNNER_TEMP/native-frames/VPNNavigator-$PAGE.png" "$RUNNER_TEMP/VPNNavigator-$PAGE.png"
-            cat "$RUNNER_TEMP/native-frames/$PAGE-bounds.txt"
+            open -n "$APP" --args "--vpnnav-ui-tab=$PAGE" "--vpnnav-ui-glass-snapshot" "--vpnnav-ui-demo-snapshot"
+            sleep 7
+            WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift" 2> "$RUNNER_TEMP/$PAGE-bounds.txt")"
+            cat "$RUNNER_TEMP/$PAGE-bounds.txt"
+            screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-$PAGE.png"
+            test -s "$RUNNER_TEMP/VPNNavigator-$PAGE.png"
           done
           killall VPNNavigatorApp 2>/dev/null || true
       - uses: actions/upload-artifact@v4
@@ -96,7 +111,7 @@ jobs:
             ${{ runner.temp }}/VPNNavigator-diagnostics.png
             ${{ runner.temp }}/VPNNavigator-settings.png
             ${{ runner.temp }}/VPNNavigator-Desktop-Before.png
-            ${{ runner.temp }}/native-frames/*-bounds.txt
+            ${{ runner.temp }}/*-bounds.txt
           if-no-files-found: error
           retention-days: 7
       - name: Package verified .app using macOS ditto

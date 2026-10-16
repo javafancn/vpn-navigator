@@ -83,6 +83,7 @@ struct MainView: View {
         }
         .frame(minWidth: 1100, minHeight: 700)
         .preferredColorScheme(.light)
+        .environment(\.locale, Locale(identifier: "zh_CN"))
         .fileImporter(isPresented: $importing,
                       allowedContentTypes: [.init(filenameExtension: "ovpn")!],
                       allowsMultipleSelection: true) { result in
@@ -327,6 +328,7 @@ private struct ConnectionOverview: View {
                             }
                             .menuStyle(.borderlessButton)
                             .menuIndicator(.hidden)
+                            .buttonStyle(.plain)
                             .disabled(model.profiles.isEmpty || model.busy)
                         }
                         quickRow("路由模式") {
@@ -339,6 +341,7 @@ private struct ConnectionOverview: View {
                             }
                             .menuStyle(.borderlessButton)
                             .menuIndicator(.hidden)
+                            .buttonStyle(.plain)
                             .disabled(model.selected == nil || model.busy || model.connected || model.connecting)
                         }
                         quickRow("配置文件") {

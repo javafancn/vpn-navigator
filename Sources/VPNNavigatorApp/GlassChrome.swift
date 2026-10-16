@@ -131,7 +131,6 @@ struct GlassAtmosphere: View {
 }
 
 final class NativeWindowGlass: NSVisualEffectView {
-    private var snapshotScheduled = false
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         configureWindow()
@@ -147,25 +146,7 @@ final class NativeWindowGlass: NSVisualEffectView {
         window.contentAspectRatio = NSSize(width: 11, height: 7)
         // Let users drag the chrome, not form controls or cards.
         window.isMovableByWindowBackground = true
-        if !snapshotScheduled,
-           let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--vpnnav-snapshot-dir=") }) {
-            snapshotScheduled = true
-            let folder = String(argument.dropFirst("--vpnnav-snapshot-dir=".count))
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak window] in
-                guard let window else { return }
-                let page = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--vpnnav-ui-tab=") })?.split(separator: "=").last.map(String.init) ?? "overview"
-                let destination = URL(fileURLWithPath: folder, isDirectory: true)
-                try? FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-                let path = destination.appendingPathComponent("VPNNavigator-" + page + ".png")
-                let capture = Process()
-                capture.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-                capture.arguments = ["-x", "-o", "-l", String(window.windowNumber), path.path]
-                try? capture.run()
-                capture.waitUntilExit()
-                let bounds = "frame=\(window.frame), content=\(window.contentLayoutRect), windowID=\(window.windowNumber), captureExit=\(capture.terminationStatus)"
-                try? bounds.write(to: destination.appendingPathComponent(page + "-bounds.txt"), atomically: true, encoding: .utf8)
-            }
-        }
+
     }
 }
 

@@ -802,6 +802,7 @@ private struct RoutingWorkspace: View {
                                 Text("历史版本")
                             }
                             .buttonStyle(.bordered)
+                            .fixedSize(horizontal: true, vertical: false)
                             .disabled(model.ruleSnapshots.isEmpty || model.busy)
                             .help("选择历史快照以进行确认恢复")
                         }

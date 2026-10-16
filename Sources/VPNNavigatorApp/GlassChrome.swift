@@ -66,16 +66,16 @@ enum GlassSurface {
 
     static var windowOpacity: Double {
         switch preset {
-        case "lighter": return 0.30
-        case "denser": return 0.58
-        default: return 0.54
+        case "lighter": return 0.34
+        case "denser": return 0.55
+        default: return 0.45
         }
     }
     static var cardOpacity: Double {
         switch preset {
         case "lighter": return 0.39
-        case "denser": return 0.62
-        default: return 0.58
+        case "denser": return 0.60
+        default: return 0.48
         }
     }
 }
@@ -192,8 +192,8 @@ private struct GlassCardModifier: ViewModifier {
             .overlay {
                 shape.strokeBorder(
                     LinearGradient(colors: [
-                        Color.white.opacity(appearance == .dark ? 0.40 : 0.92),
-                        Color.white.opacity(0.25)
+                        Color.white.opacity(appearance == .dark ? 0.34 : 0.86),
+                        Color.white.opacity(0.30)
                     ], startPoint: .topLeading, endPoint: .bottomTrailing),
                     lineWidth: 1)
             }

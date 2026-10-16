@@ -449,9 +449,12 @@ private struct ConnectionOverview: View {
                                 VStack(spacing: 6) {
                                     Toggle("保存在钥匙串", isOn: $model.rememberCredentials)
                                     TextField("用户名", text: $model.username)
+                                        .textFieldStyle(.plain)
+                                        .referenceInput()
                                     SecureField("密码", text: $model.password)
+                                        .textFieldStyle(.plain)
+                                        .referenceInput()
                                 }
-                                .textFieldStyle(.roundedBorder)
                             }
                             .font(.system(size: 12))
                         }
@@ -574,7 +577,7 @@ private struct ConnectionOverview: View {
                     .foregroundStyle(.secondary)
             }
             Text(value)
-                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                .font(.system(size: 23, weight: .semibold, design: .rounded))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
             TrafficSparkline(samples: samples)
@@ -636,7 +639,7 @@ private struct ProfileLibrary: View {
                         .font(.system(size: 12, weight: .semibold))
                         .frame(height: 24)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(ReferencePrimaryButton())
                 .tint(GlassPalette.blue)
             }
 
@@ -690,8 +693,8 @@ private struct ProfileLibrary: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .background(
                                         model.selectedID == profile.id ?
-                                          GlassPalette.blue.opacity(0.14) :
-                                          Color.clear,
+                                          GlassPalette.blue.opacity(0.17) :
+                                          Color.white.opacity(0.035),
                                         in: RoundedRectangle(cornerRadius: 11))
                                     .overlay {
                                         RoundedRectangle(cornerRadius: 11)
@@ -811,7 +814,7 @@ private struct RoutingWorkspace: View {
                         }
                         HStack(spacing: 10) {
                             Button("更新规则") { Task { await model.refreshRules() } }
-                                .buttonStyle(.borderedProminent)
+                                .buttonStyle(ReferencePrimaryButton())
                                 .tint(GlassPalette.blue)
                                 .disabled(model.busy)
                             Menu {
@@ -1003,7 +1006,7 @@ struct SystemSettingsPane: View {
                     Button("开始恢复") {
                         Task { await model.retryNetworkRecovery() }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(ReferenceSecondaryButton())
                     .controlSize(.regular)
                     .disabled(model.connected || model.connecting)
                 }
@@ -1146,7 +1149,7 @@ struct ProfileDetail: View {
                             }
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(ReferencePrimaryButton())
                 }
             }
             .padding(24)
@@ -1184,7 +1187,7 @@ struct ProfileDetail: View {
                         Image(systemName: draftFavorite ? "star.fill" : "star")
                             .foregroundStyle(draftFavorite ? .orange : .secondary)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(ReferenceSecondaryButton())
                     .help("收藏此配置")
                     Menu {
                         Button("导出预览…") { Task { await model.exportPreview() } }
@@ -1243,7 +1246,7 @@ struct ProfileDetail: View {
                                                        notes: draftNotes, favorite: draftFavorite)
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(ReferencePrimaryButton())
                     Button("导出预览…") { Task { await model.exportPreview() } }
                         .disabled(profile.mode == .chinaDirect && model.rules == nil)
                 }
@@ -1298,7 +1301,7 @@ struct ProfileDetail: View {
                         }
                     }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(ReferenceSecondaryButton())
                 .disabled(model.connected || model.connecting)
             }
             editorRow("备注") {
@@ -1344,7 +1347,7 @@ struct ProfileDetail: View {
                     }
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(ReferencePrimaryButton())
             LabeledContent("源文件", value: profile.sourceFilename)
             LabeledContent("保存位置", value: "本机私有配置仓库")
             Text("只有断开连接后才能更改或恢复配置。")

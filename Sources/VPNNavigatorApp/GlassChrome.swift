@@ -68,14 +68,14 @@ enum GlassSurface {
         switch preset {
         case "lighter": return 0.30
         case "denser": return 0.58
-        default: return 0.46
+        default: return 0.54
         }
     }
     static var cardOpacity: Double {
         switch preset {
         case "lighter": return 0.39
         case "denser": return 0.62
-        default: return 0.52
+        default: return 0.58
         }
     }
 }

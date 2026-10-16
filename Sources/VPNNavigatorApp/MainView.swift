@@ -436,6 +436,7 @@ private struct ConnectionOverview: View {
 
 private struct ProfileLibrary: View {
     @EnvironmentObject private var model: AppModel
+    let onImport: () -> Void
     @State private var query = ""
 
     private var filtered: [VPNProfile] {
@@ -455,7 +456,8 @@ private struct ProfileLibrary: View {
                 subtitle: "管理和编辑 VPN 配置文件",
                 symbol: "square.stack.3d.up.fill")
 
-            HStack(spacing: 9) {
+            HStack(spacing: 10) {
+                HStack(spacing: 9) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
                     .font(.system(size: 12))
@@ -473,9 +475,17 @@ private struct ProfileLibrary: View {
                     .accessibilityLabel("清除搜索")
                 }
             }
-            .padding(.horizontal, 12)
-            .frame(height: 35)
-            .glassCard(cornerRadius: 10)
+                .padding(.horizontal, 12)
+                .frame(height: 36)
+                .glassCard(cornerRadius: 10)
+                Button(action: onImport) {
+                    Label("导入配置", systemImage: "plus")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(height: 24)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(GlassPalette.blue)
+            }
 
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
@@ -565,7 +575,7 @@ private struct ProfileLibrary: View {
             .frame(maxHeight: .infinity)
         }
         .padding(.horizontal, 20)
-        .padding(.top, 20)
+        .padding(.top, 31)
         .padding(.bottom, 18)
     }
 }
@@ -868,14 +878,35 @@ struct ProfileDetail: View {
                     .buttonStyle(.bordered)
                     .help("收藏此配置")
                 }
-                Picker("配置页面", selection: $tab) {
+                HStack(spacing: 4) {
                     ForEach(ProfileInspectorTab.allCases) { section in
-                        Text(section.rawValue).tag(section)
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.15)) { tab = section }
+                        } label: {
+                            Text(section.rawValue)
+                                .font(.system(size: 11, weight: tab == section ?
+                                              .semibold : .regular))
+                                .foregroundStyle(tab == section ?
+                                                 Color.white : Color.primary)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 30)
+                                .background {
+                                    if tab == section {
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(GlassPalette.blue)
+                                    }
+                                }
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .controlSize(.large)
+                .padding(4)
+                .background(Color.white.opacity(0.27),
+                            in: RoundedRectangle(cornerRadius: 10))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(Color.white.opacity(0.62), lineWidth: 1)
+                }
 
                 Group {
                     switch tab {
@@ -956,22 +987,37 @@ struct ProfileDetail: View {
                 TextField("配置名称", text: $draftName)
                     .textFieldStyle(.roundedBorder)
             }
-            editorRow("分组") {
+            editorRow("类别") {
                 TextField("分组名称", text: $draftGroup)
                     .textFieldStyle(.roundedBorder)
             }
             editorRow("配置文件") {
                 Label(profile.sourceFilename, systemImage: "doc.text")
-                    .font(.system(size: 12)).lineLimit(1)
+                    .font(.system(size: 12))
+                    .lineLimit(1)
                 Spacer()
+                Button("编辑文件…") {
+                    Task {
+                        if let text = await model.editSource(for: profile) {
+                            editorText = text
+                            showingEditor = true
+                        }
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.connected || model.connecting)
             }
             editorRow("备注") {
                 TextField("添加备注信息", text: $draftNotes)
                     .textFieldStyle(.roundedBorder)
             }
             HStack {
-                Text("OpenVPN · 本地配置")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("创建时间：\(profile.importedAt, format: .dateTime.year().month().day())")
+                    Text("文件类型：OpenVPN")
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
                 Spacer()
                 Button("保存更改") {
                     Task {
@@ -982,8 +1028,7 @@ struct ProfileDetail: View {
                 .buttonStyle(.borderedProminent)
             }
         }
-        .padding(16)
-        .glassCard(cornerRadius: 14)
+        .padding(10)
     }
 
     private var advanced: some View {

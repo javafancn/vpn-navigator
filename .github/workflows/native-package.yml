@@ -88,6 +88,15 @@ jobs:
             fi
           done
           killall VPNNavigatorApp 2>/dev/null || true
+          # Compare the same native desktop under three frosted veil strengths.
+          # These are reference-only screenshot arguments, not real-user data.
+          for FOG in lighter denser; do
+            open -n "$APP" --args "--vpnnav-ui-tab=overview" "--vpnnav-ui-glass-snapshot" "--vpnnav-ui-demo-snapshot" "--vpnnav-mist=$FOG" || true
+            sleep 5
+            screencapture -x "$RUNNER_TEMP/VPNNavigator-fog-$FOG.png" || true
+            killall VPNNavigatorApp 2>/dev/null || true
+            sleep 1
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: VPNNavigator-visual-smoke
@@ -98,6 +107,7 @@ jobs:
             ${{ runner.temp }}/VPNNavigator-diagnostics.png
             ${{ runner.temp }}/VPNNavigator-settings.png
             ${{ runner.temp }}/VPNNavigator-Desktop-Before.png
+            ${{ runner.temp }}/VPNNavigator-fog-*.png
           if-no-files-found: ignore
           retention-days: 7
       - name: Package verified .app using macOS ditto

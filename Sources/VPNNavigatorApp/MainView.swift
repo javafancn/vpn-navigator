@@ -369,7 +369,7 @@ private struct ConnectionOverview: View {
                                 } label: {
                                     connectionField(model.selected?.name ?? "请选择配置")
                                 }
-                                .menuStyle(.borderlessButton)
+                                .buttonStyle(.plain)
                                 .disabled(model.profiles.isEmpty || model.busy)
                             }
                             HStack(spacing: 9) {
@@ -391,7 +391,7 @@ private struct ConnectionOverview: View {
                                 } label: {
                                     connectionField(model.selected?.mode.rawValue ?? "Original")
                                 }
-                                .menuStyle(.borderlessButton)
+                                .buttonStyle(.plain)
                                 .disabled(model.selected == nil || model.busy ||
                                           model.connected || model.connecting)
                             }

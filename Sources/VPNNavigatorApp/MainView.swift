@@ -32,6 +32,17 @@ struct MainView: View {
     @State private var tab: WorkspaceTab = .overview
     @State private var importing = false
 
+    /// The UI snapshot argument selects a real application page for macOS
+    /// screenshot checks. It never changes connectivity or network state.
+    init() {
+        if let value = ProcessInfo.processInfo.arguments
+            .first(where: { $0.hasPrefix("--vpnnav-ui-tab=") })?
+            .split(separator: "=", maxSplits: 1).last,
+           let initialTab = WorkspaceTab(rawValue: String(value)) {
+            _tab = State(initialValue: initialTab)
+        }
+    }
+
     var body: some View {
         ZStack {
             GlassAtmosphere()

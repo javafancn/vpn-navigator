@@ -923,7 +923,65 @@ struct ProfileDetail: View {
     @State private var history: [ProfileRevision] = []
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
+        GeometryReader { proxy in
+            if proxy.size.height >= 475 {
+                inspectorContent
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    inspectorContent
+                }
+            }
+        }
+        .confirmationDialog("确定要删除此配置？", isPresented: $confirmDelete) {
+            Button("删除配置", role: .destructive) {
+                Task { await model.deleteSelected() }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("会删除本机存储的配置及相应凭据，且无法撤销。")
+        }
+        .sheet(isPresented: $showingEditor) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("编辑 OpenVPN 配置")
+                    .font(.system(size: 20, weight: .bold))
+                Text("文件可能含有私钥。危险脚本和不受支持的配置不能保存；修改在重新连接后生效。")
+                    .font(.callout).foregroundStyle(.secondary)
+                TextEditor(text: $editorText)
+                    .font(.system(.body, design: .monospaced))
+                    .padding(5)
+                    .glassCard(cornerRadius: 12)
+                HStack {
+                    Button("取消") {
+                        editorText = ""
+                        showingEditor = false
+                    }
+                    Spacer()
+                    Button("保存新版本") {
+                        Task {
+                            if await model.saveSource(for: profile, text: editorText) {
+                                editorText = ""
+                                history = await model.revisions(for: profile)
+                                showingEditor = false
+                            }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(24)
+            .frame(minWidth: 690, minHeight: 505)
+            .background(GlassAtmosphere())
+        }
+        .onAppear {
+            draftName = profile.name
+            draftGroup = profile.group
+            draftNotes = profile.notes
+            draftFavorite = profile.isFavorite
+            Task { history = await model.revisions(for: profile) }
+        }
+    }
+
+    private var inspectorContent: some View {
             VStack(alignment: .leading, spacing: 13) {
                 HStack(spacing: 13) {
                     GlassIcon(symbol: "network.badge.shield.half.filled", size: 54)
@@ -1002,55 +1060,6 @@ struct ProfileDetail: View {
             .padding(19)
             .frame(minHeight: 405, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .scrollIndicators(.hidden)
-        .confirmationDialog("确定要删除此配置？", isPresented: $confirmDelete) {
-            Button("删除配置", role: .destructive) {
-                Task { await model.deleteSelected() }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("会删除本机存储的配置及相应凭据，且无法撤销。")
-        }
-        .sheet(isPresented: $showingEditor) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("编辑 OpenVPN 配置")
-                    .font(.system(size: 20, weight: .bold))
-                Text("文件可能含有私钥。危险脚本和不受支持的配置不能保存；修改在重新连接后生效。")
-                    .font(.callout).foregroundStyle(.secondary)
-                TextEditor(text: $editorText)
-                    .font(.system(.body, design: .monospaced))
-                    .padding(5)
-                    .glassCard(cornerRadius: 12)
-                HStack {
-                    Button("取消") {
-                        editorText = ""
-                        showingEditor = false
-                    }
-                    Spacer()
-                    Button("保存新版本") {
-                        Task {
-                            if await model.saveSource(for: profile, text: editorText) {
-                                editorText = ""
-                                history = await model.revisions(for: profile)
-                                showingEditor = false
-                            }
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-            }
-            .padding(24)
-            .frame(minWidth: 690, minHeight: 505)
-            .background(GlassAtmosphere())
-        }
-        .onAppear {
-            draftName = profile.name
-            draftGroup = profile.group
-            draftNotes = profile.notes
-            draftFavorite = profile.isFavorite
-            Task { history = await model.revisions(for: profile) }
-        }
     }
 
     private var metadata: some View {

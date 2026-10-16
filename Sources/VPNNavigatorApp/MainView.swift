@@ -47,7 +47,7 @@ struct MainView: View {
         ZStack {
             GlassAtmosphere()
             HStack(spacing: 0) {
-                sidebar.frame(width: 236)
+                sidebar.frame(width: 247)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
                 VStack(spacing: 0) {
                     Group {
@@ -271,17 +271,17 @@ private struct ConnectionOverview: View {
                             ZStack {
                                 Circle()
                                     .fill(GlassPalette.cyan.opacity(0.10))
-                                    .frame(width: 168, height: 168)
+                                    .frame(width: 193, height: 193)
                                 Circle()
                                     .strokeBorder(Color.white.opacity(0.48), lineWidth: 2)
-                                    .frame(width: 162, height: 162)
+                                    .frame(width: 188, height: 188)
                                 Circle()
                                     .strokeBorder(GlassPalette.cyan.opacity(0.60), lineWidth: 6)
                                     .blur(radius: 7)
-                                    .frame(width: 152, height: 152)
+                                    .frame(width: 180, height: 180)
                                 Circle()
                                     .strokeBorder(Color.white.opacity(0.95), lineWidth: 4)
-                                    .frame(width: 143, height: 143)
+                                    .frame(width: 169, height: 169)
                                 Circle()
                                     .fill(
                                         LinearGradient(colors: model.connected ?
@@ -290,14 +290,14 @@ private struct ConnectionOverview: View {
                                             [Color(red: 0.11, green: 0.64, blue: 1),
                                              Color(red: 0.02, green: 0.41, blue: 0.98)],
                                             startPoint: .topLeading, endPoint: .bottomTrailing))
-                                    .frame(width: 126, height: 126)
+                                    .frame(width: 151, height: 151)
                                     .shadow(color: GlassPalette.blue.opacity(0.42),
                                             radius: 15, y: 5)
                                 Image(systemName: "power")
-                                    .font(.system(size: 42, weight: .ultraLight))
+                                    .font(.system(size: 48, weight: .ultraLight))
                                     .foregroundStyle(.white)
                             }
-                            .frame(width: 173, height: 173)
+                            .frame(width: 201, height: 201)
                             .contentShape(Circle())
                         }
                         .buttonStyle(.plain)
@@ -368,15 +368,20 @@ private struct ConnectionOverview: View {
                             }
                             .font(.system(size: 11))
                         }
-                        VPNPanel("连接保护", symbol: "checkmark.shield") {
-                            Label("受管连接异常时安全断开",
-                                  systemImage: "checkmark.circle.fill")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.green)
-                            Text("PF Kill Switch 尚未启用，不能保证零泄漏。")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                        VPNPanel("当前连接", symbol: "globe.americas.fill") {
+                            HStack(spacing: 8) {
+                                BrandMark(size: 30)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(model.activeProfile?.name ??
+                                         model.selected?.name ?? "尚未选择配置")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .lineLimit(1)
+                                    Text(model.connected ? "VPN 会话运行中" : "等待连接")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 0)
+                            }
                         }
                         Spacer(minLength: 0)
                     }
@@ -393,8 +398,31 @@ private struct ConnectionOverview: View {
                         value: formattedBytes(model.traffic?.sentBytes),
                         samples: model.sendTrend.samples)
                         .frame(width: 202)
-                    miniStatistic("中国 IPv4 规则", symbol: "globe.asia.australia.fill",
-                        value: model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
+                    HStack(alignment: .top, spacing: 9) {
+                        Image(systemName: "checkmark.shield.fill")
+                            .font(.system(size: 19, weight: .semibold))
+                            .foregroundStyle(.green)
+                            .frame(width: 39, height: 39)
+                            .background(Color.green.opacity(0.12),
+                                        in: RoundedRectangle(cornerRadius: 10))
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("连接保护")
+                                .font(.system(size: 12, weight: .semibold))
+                            Label("受管连接异常时安全断开",
+                                  systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                                .font(.system(size: 10))
+                            Text("PF Kill Switch 尚未启用，不能保证零泄漏。")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(13)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: 112, alignment: .top)
+                    .glassCard(cornerRadius: 15)
                 }
             }
             .padding(.horizontal, 20)
@@ -420,12 +448,8 @@ private struct ConnectionOverview: View {
                 .font(.system(size: 20, weight: .semibold, design: .rounded))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
-            if title != "中国 IPv4 规则" {
-                TrafficSparkline(samples: samples)
-                    .frame(height: 27)
-            } else {
-                Spacer(minLength: 8)
-            }
+            TrafficSparkline(samples: samples)
+                .frame(height: 27)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 112)

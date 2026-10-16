@@ -739,142 +739,151 @@ private struct RoutingWorkspace: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 15) {
+            VStack(alignment: .leading, spacing: 13) {
                 WorkspaceHeading(title: "路由与规则",
                     subtitle: "管理 VPN 路由模式与中国 IPv4 规则",
                     symbol: "point.3.connected.trianglepath.dotted")
 
-                HStack(alignment: .top, spacing: 13) {
-                    VPNPanel("路由模式", symbol: "arrow.triangle.branch") {
-                        VStack(alignment: .leading, spacing: 7) {
-                            ForEach(RoutingMode.allCases) { mode in
-                                let current = model.selected?.mode ?? .original
-                                Button {
-                                    Task { await model.setMode(mode) }
-                                } label: {
-                                    HStack(alignment: .center, spacing: 12) {
-                                        Image(systemName: current == mode ?
-                                              "largecircle.fill.circle" : "circle")
-                                            .font(.system(size: 19))
-                                            .foregroundStyle(current == mode ?
-                                                GlassPalette.blue : Color.gray)
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(title(for: mode))
-                                                .font(.system(size: 12, weight: .semibold))
-                                                .foregroundStyle(.primary)
-                                            Text(subtitle(for: mode))
-                                                .font(.system(size: 10))
-                                                .foregroundStyle(.secondary)
-                                                .fixedSize(horizontal: false, vertical: true)
-                                        }
-                                        Spacer(minLength: 0)
-                                    }
-                                    .padding(.horizontal, 11)
-                                    .frame(maxWidth: .infinity, minHeight: 64,
-                                           alignment: .leading)
-                                    .background(
-                                        current == mode ?
-                                            GlassPalette.blue.opacity(0.13) :
-                                            Color.white.opacity(0.06),
-                                        in: RoundedRectangle(cornerRadius: 12))
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(model.selected == nil ||
-                                          model.connected || model.connecting || model.busy)
-                            }
+                HStack(alignment: .top, spacing: 0) {
+                    VStack(alignment: .leading, spacing: 11) {
+                        Text("路由模式")
+                            .font(.system(size: 13, weight: .bold))
+                            .padding(.bottom, 1)
+                        ForEach(RoutingMode.allCases) { mode in
+                            routeOption(mode)
                         }
-                        Text(model.selected.map {
-                            "所选配置：\($0.name)"
-                        } ?? "导入配置后即可切换路由模式")
+                        Text(model.selected.map { "所选配置：\($0.name)" } ??
+                             "请先选择配置后再修改路由")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
+                            .padding(.top, 3)
                     }
-                    .frame(maxWidth: .infinity)
+                    .padding(17)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
 
-                    VStack(spacing: 12) {
-                        VPNPanel("中国 IPv4 规则", symbol: "globe.asia.australia.fill") {
-                            HStack(spacing: 11) {
-                                GlassIcon(symbol: "globe.asia.australia.fill", size: 46)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(model.rules.map { "\($0.routes.count) 条规则" } ?? "未下载")
-                                        .font(.system(size: 19, weight: .bold, design: .rounded))
-                                    Text("已验证的中国 IPv4 网段")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                            }
-                            Divider().opacity(0.3)
-                            HStack {
-                                Text("规则来源")
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Text("chnroutes2").lineLimit(1)
-                            }
-                            HStack {
-                                Text("规则版本")
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                if let saved = model.ruleSnapshots.first?.savedAt {
-                                    Text(saved, format: .dateTime.year().month().day())
-                                } else {
-                                    Text("尚无快照")
-                                }
-                            }
-                            HStack {
-                                Text("状态")
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Text(model.rules == nil ? "未下载" : "已缓存 · 已验证")
-                                    .foregroundStyle(model.rules == nil ?
-                                                     Color.secondary : Color.green)
-                            }
-                            .font(.system(size: 11))
+                    Rectangle()
+                        .fill(Color.white.opacity(0.45))
+                        .frame(width: 1)
+                        .padding(.vertical, 17)
 
-                            HStack(spacing: 8) {
-                                Button("更新规则") {
-                                    Task { await model.refreshRules() }
-                                }
+                    VStack(alignment: .leading, spacing: 13) {
+                        Text("中国 IPv4 规则")
+                            .font(.system(size: 13, weight: .bold))
+                        HStack(alignment: .center, spacing: 13) {
+                            GlassIcon(symbol: "globe.asia.australia.fill", size: 54)
+                            VStack(alignment: .leading, spacing: 8) {
+                                ruleDetail("规则版本",
+                                    model.ruleSnapshots.first.map {
+                                        $0.savedAt.formatted(.dateTime.year().month().day())
+                                    } ?? "尚无快照")
+                                ruleDetail("规则来源", "chnroutes2")
+                                ruleDetail("规则数量",
+                                    model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
+                                ruleDetail("最后更新",
+                                    model.ruleSnapshots.first.map {
+                                        $0.savedAt.formatted(.dateTime.year().month().day().hour().minute())
+                                    } ?? "尚未更新")
+                            }
+                        }
+                        HStack(spacing: 9) {
+                            Button("更新规则") { Task { await model.refreshRules() } }
                                 .buttonStyle(.borderedProminent)
                                 .disabled(model.busy)
-                                if let saved = model.ruleSnapshots.dropFirst().first {
-                                    Button("恢复旧版") {
-                                        Task { await model.restoreRuleSnapshot(saved.id) }
-                                    }
-                                    .disabled(model.busy)
+                            if let previous = model.ruleSnapshots.dropFirst().first {
+                                Button("历史版本") {
+                                    Task { await model.restoreRuleSnapshot(previous.id) }
                                 }
-                                Spacer(minLength: 0)
-                            }
-                            .controlSize(.small)
-                        }
-
-                        VPNPanel("IPv6 规则（预览）", symbol: "shield.lefthalf.filled") {
-                            HStack(spacing: 6) {
-                                Text(model.ipv6Preview.map {
-                                    "\($0.routes.count) 个 APNIC 注册前缀"
-                                } ?? "未下载")
-                                    .font(.system(size: 11))
-                                Spacer(minLength: 0)
-                                Button("刷新") {
-                                    Task { await model.updateIPv6Preview() }
-                                }
-                                .controlSize(.small)
+                                .buttonStyle(.bordered)
                                 .disabled(model.busy)
+                                .help("恢复上一个已验证的规则快照")
+                            } else {
+                                Button("历史版本") { }
+                                    .buttonStyle(.bordered)
+                                    .disabled(true)
+                                    .help("尚无可恢复的历史快照")
                             }
-                            Text("仅供查看，不修改系统 IPv6 路由")
+                        }
+                        .controlSize(.regular)
+                    }
+                    .padding(17)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .glassCard(cornerRadius: 17)
+
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    HStack(spacing: 11) {
+                        GlassIcon(symbol: "shield.lefthalf.filled", size: 38)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("IPv6 规则（预览）")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(model.ipv6Preview.map {
+                                "\($0.routes.count) 个 APNIC 注册前缀 · 仅供查看，不修改路由"
+                            } ?? "未下载 · 仅供查看，不修改系统 IPv6 路由")
                                 .font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                         }
+                        Spacer(minLength: 0)
+                        Button("刷新") { Task { await model.updateIPv6Preview() } }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(model.busy)
                     }
-                    .frame(maxWidth: .infinity)
+                    .padding(12)
+                    .frame(maxWidth: 435)
+                    .glassCard(cornerRadius: 15)
                 }
             }
             .padding(.horizontal, 20)
             .padding(.top, 31)
-            .padding(.bottom, 20)
+            .padding(.bottom, 18)
             .frame(maxWidth: 1100, alignment: .leading)
         }
+    }
+
+    private func routeOption(_ mode: RoutingMode) -> some View {
+        let selected = model.selected?.mode ?? .original
+        return Button {
+            Task { await model.setMode(mode) }
+        } label: {
+            HStack(spacing: 11) {
+                Image(systemName: selected == mode ?
+                      "largecircle.fill.circle" : "circle")
+                    .font(.system(size: 19))
+                    .foregroundStyle(selected == mode ?
+                                     GlassPalette.blue : Color.gray)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title(for: mode))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Text(subtitle(for: mode))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 11)
+            .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
+            .background(selected == mode ?
+                        GlassPalette.blue.opacity(0.11) : Color.white.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: 12))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(model.selected == nil || model.busy ||
+                  model.connected || model.connecting)
+    }
+
+    private func ruleDetail(_ label: String, _ value: String) -> some View {
+        HStack(spacing: 8) {
+            Text(label).foregroundStyle(.secondary)
+            Spacer(minLength: 4)
+            Text(value)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .font(.system(size: 11))
     }
 }
 

@@ -665,6 +665,10 @@ private struct ProfileLibrary: View {
                                             Image(systemName: "star.fill")
                                                 .foregroundStyle(.orange)
                                                 .font(.system(size: 11))
+                                        } else {
+                                            Circle()
+                                                .fill(Color.secondary.opacity(0.30))
+                                                .frame(width: 7, height: 7)
                                         }
                                     }
                                     .padding(.horizontal, 7)
@@ -672,7 +676,7 @@ private struct ProfileLibrary: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .background(
                                         model.selectedID == profile.id ?
-                                          GlassPalette.blue.opacity(0.17) :
+                                          GlassPalette.blue.opacity(0.12) :
                                           Color.clear,
                                         in: RoundedRectangle(cornerRadius: 11))
                                     .contentShape(Rectangle())
@@ -1013,6 +1017,7 @@ struct ProfileDetail: View {
     @State private var draftGroup = ""
     @State private var draftNotes = ""
     @State private var draftFavorite = false
+    @State private var editingCustomGroup = false
     @State private var editorText = ""
     @State private var showingEditor = false
     @State private var confirmDelete = false
@@ -1027,6 +1032,13 @@ struct ProfileDetail: View {
                     inspectorContent
                 }
             }
+        }
+        .alert("自定义类别", isPresented: $editingCustomGroup) {
+            TextField("类别名称", text: $draftGroup)
+            Button("确定") { }
+            Button("取消", role: .cancel) { }
+        } message: {
+            Text("输入此配置文件所属的类别名称。")
         }
         .confirmationDialog("确定要删除此配置？", isPresented: $confirmDelete) {
             Button("删除配置", role: .destructive) {
@@ -1101,6 +1113,18 @@ struct ProfileDetail: View {
                     }
                     .buttonStyle(.bordered)
                     .help("收藏此配置")
+                    Menu {
+                        Button("导出预览…") { Task { await model.exportPreview() } }
+                        Button("删除配置…", role: .destructive) {
+                            confirmDelete = true
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .frame(width: 22, height: 22)
+                            .foregroundStyle(.secondary)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
                 }
                 HStack(spacing: 4) {
                     ForEach(ProfileInspectorTab.allCases) { section in
@@ -1146,9 +1170,15 @@ struct ProfileDetail: View {
                         .foregroundStyle(.secondary)
                     Text(profile.importedAt, format: .dateTime.year().month().day())
                     Spacer()
+                    Button("保存更改") {
+                        Task {
+                            await model.updateMetadata(name: draftName, group: draftGroup,
+                                                       notes: draftNotes, favorite: draftFavorite)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
                     Button("导出预览…") { Task { await model.exportPreview() } }
                         .disabled(profile.mode == .chinaDirect && model.rules == nil)
-                    Button("删除配置…", role: .destructive) { confirmDelete = true }
                 }
                 .font(.system(size: 11))
                 .padding(.top, 6)
@@ -1165,8 +1195,28 @@ struct ProfileDetail: View {
                     .textFieldStyle(.roundedBorder)
             }
             editorRow("类别") {
-                TextField("分组名称", text: $draftGroup)
-                    .textFieldStyle(.roundedBorder)
+                Menu {
+                    ForEach(["个人", "工作", "家庭", "其他"], id: \.self) { group in
+                        Button(group) { draftGroup = group }
+                    }
+                    Divider()
+                    Button("自定义类别…") { editingCustomGroup = true }
+                } label: {
+                    HStack {
+                        Text(draftGroup.isEmpty ? "选择类别" : draftGroup)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Image(systemName: "chevron.down")
+                            .foregroundStyle(.secondary)
+                            .font(.system(size: 10))
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(height: 27)
+                    .background(.white.opacity(0.50),
+                                in: RoundedRectangle(cornerRadius: 7))
+                }
+                .menuStyle(.borderlessButton)
             }
             editorRow("配置文件") {
                 Label(profile.sourceFilename, systemImage: "doc.text")
@@ -1188,25 +1238,19 @@ struct ProfileDetail: View {
                 TextField("添加备注信息", text: $draftNotes)
                     .textFieldStyle(.roundedBorder)
             }
-            HStack {
-                Text("本地配置资料")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("保存更改") {
-                    Task {
-                        await model.updateMetadata(name: draftName,
-                            group: draftGroup, notes: draftNotes, favorite: draftFavorite)
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-            }
             VStack(alignment: .leading, spacing: 8) {
                 LabeledContent("创建时间") {
                     Text(profile.importedAt, format: .dateTime.year().month().day().hour().minute())
                 }
-                LabeledContent("文件类型", value: "OpenVPN (.ovpn)")
-                LabeledContent("本地存储", value: "应用私有配置仓库")
+                LabeledContent("修改时间") {
+                    if let editedAt = history.first?.createdAt {
+                        Text(editedAt, format: .dateTime.year().month().day().hour().minute())
+                    } else {
+                        Text("无编辑记录")
+                    }
+                }
+                LabeledContent("文件大小", value: "未读取")
+                LabeledContent("配置类型", value: "OpenVPN")
             }
             .font(.system(size: 11))
             .foregroundStyle(.secondary)

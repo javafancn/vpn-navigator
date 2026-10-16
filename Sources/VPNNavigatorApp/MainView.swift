@@ -729,7 +729,7 @@ struct SystemSettingsPane: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 15) {
                 WorkspaceHeading(title: "设置与维护",
-                    subtitle: "安全地管理后台服务、应用版本与网络恢复",
+                    subtitle: "管理安全设置、更新和应用信息",
                     symbol: "gearshape.fill")
 
                 settingRow("特权辅助服务",
@@ -784,27 +784,31 @@ struct SystemSettingsPane: View {
         status: String, statusColor: Color,
         @ViewBuilder actions: () -> Actions
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 12) {
-                GlassIcon(symbol: symbol, size: 41)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.system(size: 13, weight: .semibold))
-                    Text(subtitle).font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 12)
+        HStack(alignment: .center, spacing: 13) {
+            GlassIcon(symbol: symbol, size: 44)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 15)
+            VStack(alignment: .trailing, spacing: 8) {
                 Text(status)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(statusColor)
                     .lineLimit(1)
+                HStack(spacing: 7) {
+                    actions()
+                }
+                .controlSize(.small)
             }
-            HStack(spacing: 8) {
-                actions()
-                Spacer(minLength: 0)
-            }
-            .controlSize(.small)
         }
-        .padding(15)
+        .padding(.horizontal, 17)
+        .padding(.vertical, 13)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(cornerRadius: 15)
     }
 }

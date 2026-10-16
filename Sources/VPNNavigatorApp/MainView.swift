@@ -78,6 +78,11 @@ struct MainView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .referenceWorkspaceSurface()
+                    .padding(.leading, 8)
+                    .padding(.trailing, 8)
+                    .padding(.top, 8)
+                    .padding(.bottom, 8)
                     .overlay(alignment: .topTrailing) {
                         Button { importing = true } label: {
                             Image(systemName: "plus")

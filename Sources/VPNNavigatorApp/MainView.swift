@@ -242,11 +242,13 @@ struct VPNPanel<Content: View>: View {
     let symbol: String
     private let content: Content
     var minContentHeight: CGFloat = 0
+    var fillHeight: Bool = false
     init(_ title: String, symbol: String, minContentHeight: CGFloat = 0,
-         @ViewBuilder content: () -> Content) {
+         fillHeight: Bool = false, @ViewBuilder content: () -> Content) {
         self.title = title
         self.symbol = symbol
         self.minContentHeight = minContentHeight
+        self.fillHeight = fillHeight
         self.content = content()
     }
     var body: some View {
@@ -259,6 +261,7 @@ struct VPNPanel<Content: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(minHeight: minContentHeight, alignment: .topLeading)
         .padding(15)
+        .frame(maxHeight: fillHeight ? .infinity : nil, alignment: .topLeading)
         .glassCard(cornerRadius: 15)
     }
 }
@@ -378,11 +381,11 @@ private struct ConnectionOverview: View {
                         Spacer(minLength: 8)
                     }
                     .frame(maxWidth: .infinity)
-                     .frame(height: 304)
+                     .frame(height: 330)
                     .glassCard(cornerRadius: 17, active: true)
 
                     VStack(spacing: 12) {
-                        VPNPanel("快速连接", symbol: "slider.horizontal.3", minContentHeight: 185) {
+                        VPNPanel("快速连接", symbol: "slider.horizontal.3", minContentHeight: 204) {
                             HStack(spacing: 9) {
                                 Text("配置文件")
                                     .font(.system(size: 12, weight: .medium))
@@ -475,7 +478,7 @@ private struct ConnectionOverview: View {
                         Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 304, alignment: .top)
+                    .frame(height: 330, alignment: .top)
                 }
 
                 HStack(spacing: 12) {
@@ -510,7 +513,7 @@ private struct ConnectionOverview: View {
                     }
                     .padding(13)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: 130, alignment: .top)
+                    .frame(height: 156, alignment: .top)
                     .glassCard(cornerRadius: 15)
                 }
             }
@@ -573,7 +576,7 @@ private struct ConnectionOverview: View {
                 .frame(height: 27)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 104)
+        .frame(height: 130)
         .padding(13)
         .glassCard(cornerRadius: 15)
     }
@@ -1217,13 +1220,7 @@ struct ProfileDetail: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(4)
-                .background(GlassSurface.panel.opacity(0.41),
-                            in: RoundedRectangle(cornerRadius: 10))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(Color.white.opacity(0.62), lineWidth: 1)
-                }
+                .referenceSegments()
 
                 Group {
                     switch tab {
@@ -1261,7 +1258,8 @@ struct ProfileDetail: View {
         VStack(alignment: .leading, spacing: 13) {
             editorRow("名称") {
                 TextField("配置名称", text: $draftName)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .referenceInput()
             }
             editorRow("类别") {
                 Menu {
@@ -1281,9 +1279,9 @@ struct ProfileDetail: View {
                             .font(.system(size: 10))
                     }
                     .padding(.horizontal, 10)
-                    .frame(height: 27)
-                    .background(Color.white.opacity(0.63),
-                                in: RoundedRectangle(cornerRadius: 7))
+                    .frame(height: 29)
+                    .background(Color.white.opacity(0.58),
+                                in: RoundedRectangle(cornerRadius: 8))
                     .overlay {
                         RoundedRectangle(cornerRadius: 7)
                             .strokeBorder(Color.white.opacity(0.77), lineWidth: 1)
@@ -1310,7 +1308,8 @@ struct ProfileDetail: View {
             }
             editorRow("备注") {
                 TextField("添加备注信息", text: $draftNotes)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .referenceInput()
             }
             VStack(alignment: .leading, spacing: 8) {
                 LabeledContent("创建时间") {

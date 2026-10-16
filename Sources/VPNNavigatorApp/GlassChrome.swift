@@ -65,9 +65,9 @@ private enum GlassMaterialTuning {
 /// Light glass colors are intentionally near-neutral instead of a saturated
 /// blue overlay: the supplied design is a white-lilac frost, not clear glass.
 enum GlassSurface {
-    static let mist = Color(red: 0.93, green: 0.96, blue: 1.00)
-    static let sidebar = Color(red: 0.90, green: 0.94, blue: 1.00)
-    static let panel = Color(red: 0.97, green: 0.98, blue: 1.00)
+    static let mist = Color(red: 0.91, green: 0.95, blue: 1.00)
+    static let sidebar = Color(red: 0.78, green: 0.86, blue: 0.99)
+    static let panel = Color(red: 0.97, green: 0.985, blue: 1.00)
 
     /// For screenshot calibration against the reference, without modifying
     /// the Mac's wallpaper or embedding a background image.
@@ -77,16 +77,16 @@ enum GlassSurface {
 
     static var windowOpacity: Double {
         switch preset {
-        case "lighter": return 0.32
-        case "denser": return 0.54
-        default: return 0.40
+        case "lighter": return 0.46
+        case "denser": return 0.79
+        default: return 0.66
         }
     }
     static var cardOpacity: Double {
         switch preset {
-        case "lighter": return 0.40
-        case "denser": return 0.64
-        default: return 0.54
+        case "lighter": return 0.62
+        case "denser": return 0.91
+        default: return 0.81
         }
     }
 }
@@ -142,6 +142,8 @@ final class NativeWindowGlass: NSVisualEffectView {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.styleMask.insert(.fullSizeContentView)
+        // Keep the same 11:7 proportion on every tab and during resizing.
+        window.contentAspectRatio = NSSize(width: 11, height: 7)
         // Let users drag the chrome, not form controls or cards.
         window.isMovableByWindowBackground = true
     }
@@ -195,7 +197,7 @@ struct ReferenceWorkspaceSurface: ViewModifier {
             .background {
                 shape.fill(appearance == .dark ?
                     Color.white.opacity(0.055) :
-                    Color.white.opacity(0.17))
+                    Color(red: 0.88, green: 0.93, blue: 1).opacity(0.32))
             }
             .overlay {
                 shape.strokeBorder(
@@ -243,9 +245,9 @@ private struct GlassCardModifier: ViewModifier {
                     // A subtle upper-left highlight separates layered panes
                     // without painting an opaque card over the desktop.
                     shape.fill(LinearGradient(colors: [
-                        Color.white.opacity(appearance == .dark ? 0.07 : 0.22),
-                        Color.white.opacity(0.02),
-                        GlassPalette.violet.opacity(appearance == .dark ? 0.025 : 0.048)
+                        Color.white.opacity(appearance == .dark ? 0.07 : 0.26),
+                        Color.white.opacity(appearance == .dark ? 0.01 : 0.08),
+                        GlassPalette.violet.opacity(appearance == .dark ? 0.025 : 0.075)
                     ], startPoint: .topLeading, endPoint: .bottomTrailing))
                     if active {
                         shape.fill(RadialGradient(colors: [
@@ -286,8 +288,8 @@ struct GlassIcon: View {
             .frame(width: size, height: size)
             .background {
                 RoundedRectangle(cornerRadius: size * 0.27)
-                    .fill(LinearGradient(colors: [Color.white.opacity(0.83),
-                                                  Color.white.opacity(0.32)],
+                    .fill(LinearGradient(colors: [Color.white.opacity(0.95),
+                                                  Color(red: 0.82, green: 0.91, blue: 1).opacity(0.70)],
                                          startPoint: .topLeading,
                                          endPoint: .bottomTrailing))
                     .overlay {

@@ -47,7 +47,7 @@ struct MainView: View {
         ZStack {
             GlassAtmosphere()
             HStack(spacing: 0) {
-                sidebar.frame(width: 238)
+                sidebar.frame(width: 250)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
                 VStack(spacing: 0) {
                     Group {
@@ -111,7 +111,7 @@ struct MainView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("VPN Navigator").font(.system(size: 15, weight: .bold))
                         .lineLimit(1)
-                    Text("网络连接控制台").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text("网络连接控制台").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }
             .padding(.leading, 19)
@@ -182,15 +182,15 @@ struct MainView: View {
                         .fill(model.connected ? Color.green : Color.secondary.opacity(0.7))
                         .frame(width: 7, height: 7)
                     Text("VPN Navigator")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                 }
                 Text(model.connected ? "已连接 · " + (model.activeProfile?.name ?? "VPN") :
                      model.connecting ? "正在建立连接" : "未连接 · 选择配置后开始")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
                     .lineLimit(1)
                 Text("macOS 13+ · " +
                     (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Alpha"))
-                    .font(.system(size: 10)).foregroundStyle(.tertiary)
+                    .font(.system(size: 11)).foregroundStyle(.tertiary)
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -206,7 +206,7 @@ struct MainView: View {
             .padding(.bottom, 14)
         }
         .background {
-            GlassSurface.sidebar.opacity(0.20)
+            GlassSurface.sidebar.opacity(0.42)
         }
         .overlay(alignment: .trailing) {
             Rectangle().fill(Color.white.opacity(0.36)).frame(width: 1)
@@ -228,11 +228,11 @@ struct WorkspaceHeading: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 25, weight: .bold, design: .rounded))
+                    .font(.system(size: ReferenceType.pageTitle, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
                 if !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.system(size: 12))
+                        .font(.system(size: ReferenceType.field))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -259,8 +259,8 @@ struct VPNPanel<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: symbol)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(appearance == .dark ? Color.white.opacity(0.91) : GlassPalette.ink.opacity(0.85))
+                .font(.system(size: ReferenceType.panelTitle, weight: .semibold))
+                .foregroundStyle(appearance == .dark ? Color.white.opacity(0.91) : GlassPalette.ink.opacity(0.94))
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -370,11 +370,11 @@ private struct ConnectionOverview: View {
                                              hasError ? Color.orange : Color.primary)
                         if model.connected {
                             Label("安全连接已建立", systemImage: "checkmark.circle.fill")
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(.green)
                         } else {
                             Text(statusDescription)
-                                .font(.system(size: 11))
+                                .font(.system(size: 12))
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                         }
@@ -386,14 +386,14 @@ private struct ConnectionOverview: View {
                         Spacer(minLength: 8)
                     }
                     .frame(maxWidth: .infinity)
-                     .frame(height: 288)
+                     .frame(height: 340)
                     .glassCard(cornerRadius: 17, active: true)
 
                     VStack(spacing: 12) {
-                        VPNPanel("快速连接", symbol: "slider.horizontal.3", minContentHeight: 166) {
+                        VPNPanel("快速连接", symbol: "slider.horizontal.3", minContentHeight: 190) {
                             HStack(spacing: 9) {
                                 Text("配置文件")
-                                    .font(.system(size: 12, weight: .medium))
+                                    .font(.system(size: 13, weight: .medium))
                                     .frame(width: 63, alignment: .leading)
                                 Menu {
                                     ForEach(model.profiles) { profile in
@@ -415,7 +415,7 @@ private struct ConnectionOverview: View {
                             }
                             HStack(spacing: 9) {
                                 Text("路由模式")
-                                    .font(.system(size: 12, weight: .medium))
+                                    .font(.system(size: 13, weight: .medium))
                                     .frame(width: 63, alignment: .leading)
                                 Menu {
                                     ForEach(RoutingMode.allCases) { mode in
@@ -443,7 +443,7 @@ private struct ConnectionOverview: View {
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                             }
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
 
                             DisclosureGroup("身份验证（按需）") {
                                 VStack(spacing: 6) {
@@ -453,7 +453,7 @@ private struct ConnectionOverview: View {
                                 }
                                 .textFieldStyle(.roundedBorder)
                             }
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                         }
                         VPNPanel("当前连接", symbol: "globe.americas.fill", minContentHeight: 55) {
                             HStack(spacing: 8) {
@@ -461,10 +461,10 @@ private struct ConnectionOverview: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(model.activeProfile?.name ??
                                          model.selected?.name ?? "尚未选择配置")
-                                        .font(.system(size: 11, weight: .semibold))
+                                        .font(.system(size: 12, weight: .semibold))
                                         .lineLimit(1)
                                     Text(model.connected ? "VPN 会话运行中" : "等待连接")
-                                        .font(.system(size: 10))
+                                        .font(.system(size: 11))
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer(minLength: 0)
@@ -475,7 +475,7 @@ private struct ConnectionOverview: View {
                                         Label(formattedBytes(traffic.sentBytes),
                                               systemImage: "arrow.up")
                                     }
-                                    .font(.system(size: 10, weight: .medium))
+                                    .font(.system(size: 11, weight: .medium))
                                     .foregroundStyle(GlassPalette.blue)
                                 }
                             }
@@ -483,7 +483,7 @@ private struct ConnectionOverview: View {
                         Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 288, alignment: .top)
+                    .frame(height: 340, alignment: .top)
                 }
 
                 HStack(spacing: 12) {
@@ -504,13 +504,13 @@ private struct ConnectionOverview: View {
                                         in: RoundedRectangle(cornerRadius: 10))
                         VStack(alignment: .leading, spacing: 8) {
                             Text("连接保护")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.system(size: 13, weight: .semibold))
                             Label("受管连接异常时安全断开",
                                   systemImage: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
-                                .font(.system(size: 10))
+                                .font(.system(size: 11))
                             Text("PF Kill Switch 尚未启用，不能保证零泄漏。")
-                                .font(.system(size: 10))
+                                .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -518,7 +518,7 @@ private struct ConnectionOverview: View {
                     }
                     .padding(13)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: 121, alignment: .top)
+                    .frame(height: 143, alignment: .top)
                     .glassCard(cornerRadius: 15)
                 }
             }
@@ -539,23 +539,23 @@ private struct ConnectionOverview: View {
     private func connectionField(_ value: String) -> some View {
         HStack(spacing: 6) {
             Text(value)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
             Spacer(minLength: 0)
             Image(systemName: "chevron.up.chevron.down")
-                .font(.system(size: 9, weight: .bold))
+                .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: 16, height: 16)
                 .background(GlassPalette.blue, in: RoundedRectangle(cornerRadius: 5))
         }
         .padding(.horizontal, 8)
-        .frame(height: 26)
-        .background(GlassSurface.panel.opacity(0.65),
-                    in: RoundedRectangle(cornerRadius: 7))
+        .frame(height: ReferenceMetrics.controlHeight)
+        .background(Color.white.opacity(0.88),
+                    in: RoundedRectangle(cornerRadius: ReferenceMetrics.corner))
         .overlay {
             RoundedRectangle(cornerRadius: 7)
-                .strokeBorder(Color.white.opacity(0.86), lineWidth: 1)
+                .strokeBorder(Color(red: 0.74, green: 0.84, blue: 0.97).opacity(0.72), lineWidth: 1)
         }
         .contentShape(Rectangle())
     }
@@ -570,7 +570,7 @@ private struct ConnectionOverview: View {
                     .frame(width: 28, height: 28)
                     .background(GlassPalette.blue.opacity(0.09), in: Circle())
                 Text(title)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
             }
             Text(value)
@@ -581,7 +581,7 @@ private struct ConnectionOverview: View {
                 .frame(height: 27)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 95)
+        .frame(height: 119)
         .padding(12)
         .glassCard(cornerRadius: 15)
     }
@@ -613,9 +613,9 @@ private struct ProfileLibrary: View {
                 HStack(spacing: 9) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                 TextField("搜索配置文件…", text: $query)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .textFieldStyle(.plain)
                 if !query.isEmpty {
                     Button {
@@ -630,10 +630,10 @@ private struct ProfileLibrary: View {
             }
                 .padding(.horizontal, 12)
                 .frame(height: 36)
-                .glassCard(cornerRadius: 10)
+                .referenceInput(height: 36)
                 Button(action: onImport) {
                     Label("导入配置", systemImage: "plus")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .frame(height: 24)
                 }
                 .buttonStyle(.borderedProminent)
@@ -644,11 +644,11 @@ private struct ProfileLibrary: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("全部配置 (\(filtered.count))")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.secondary)
                         Spacer()
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
                     .padding(.horizontal, 6)
@@ -665,11 +665,11 @@ private struct ProfileLibrary: View {
                                                   size: 34)
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(profile.name)
-                                                .font(.system(size: 12, weight: .semibold))
+                                                .font(.system(size: 13, weight: .semibold))
                                                 .foregroundStyle(.primary)
                                                 .lineLimit(1)
                                             Text(profile.sourceFilename)
-                                                .font(.system(size: 10))
+                                                .font(.system(size: 11))
                                                 .foregroundStyle(.secondary)
                                                 .lineLimit(1)
                                                 .truncationMode(.middle)
@@ -678,7 +678,7 @@ private struct ProfileLibrary: View {
                                         if profile.isFavorite {
                                             Image(systemName: "star.fill")
                                                 .foregroundStyle(.orange)
-                                                .font(.system(size: 11))
+                                                .font(.system(size: 12))
                                         } else {
                                             Circle()
                                                 .fill(Color.secondary.opacity(0.30))
@@ -709,12 +709,12 @@ private struct ProfileLibrary: View {
                     }
                     if filtered.isEmpty {
                         Label("没有匹配的配置", systemImage: "magnifyingglass")
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
                 }
                 .padding(10)
-                .frame(width: 226)
+                .frame(width: 255)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .glassCard(cornerRadius: 15)
 
@@ -726,7 +726,7 @@ private struct ProfileLibrary: View {
                             GlassIcon(symbol: "square.stack.3d.up", size: 45)
                             Text("尚未选择配置文件").font(.headline)
                             Text("点击右上角「导入配置」以添加 .ovpn 文件")
-                                .font(.system(size: 11))
+                                .font(.system(size: 12))
                                 .foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -780,7 +780,7 @@ private struct RoutingWorkspace: View {
                         }
                         Text(model.selected.map { "所选配置：\($0.name)" } ??
                              "请先选择配置后再修改路由")
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .padding(.top, 2)
                     }
@@ -841,11 +841,11 @@ private struct RoutingWorkspace: View {
                         GlassIcon(symbol: "shield.lefthalf.filled", size: 39)
                         VStack(alignment: .leading, spacing: 4) {
                             Text("IPv6 规则（预览）")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.system(size: 13, weight: .semibold))
                             Text(model.ipv6Preview.map {
                                 "\($0.routes.count) 个 APNIC 注册前缀 · 仅供查看"
                             } ?? "未下载 · 仅供查看，不修改系统 IPv6 路由")
-                                .font(.system(size: 10))
+                                .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 0)
@@ -894,10 +894,10 @@ private struct RoutingWorkspace: View {
                                      GlassPalette.blue : Color.gray)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title(for: mode))
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.primary)
                     Text(subtitle(for: mode))
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -929,7 +929,7 @@ private struct RoutingWorkspace: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
-        .font(.system(size: 11))
+        .font(.system(size: 12))
     }
 }
 
@@ -963,7 +963,7 @@ struct SystemSettingsPane: View {
                             statePill(model.helperStatus,
                                       success: helperReady)
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -989,7 +989,7 @@ struct SystemSettingsPane: View {
                             statePill(model.availableInstaller == nil ?
                                       "检查更新" : "可下载更新")
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -1017,7 +1017,7 @@ struct SystemSettingsPane: View {
                         Text("IPv6 分流尚未实现")
                     } label: {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                             .frame(width: 24, height: 30)
                             .foregroundStyle(.secondary)
                     }
@@ -1037,10 +1037,10 @@ struct SystemSettingsPane: View {
         HStack(spacing: 5) {
             if success {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
             }
             Text(text)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
         }
         .foregroundStyle(success ? Color.green : Color.secondary)
         .padding(.horizontal, 11)
@@ -1058,17 +1058,17 @@ struct SystemSettingsPane: View {
             GlassIcon(symbol: symbol, size: 46)
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                 Text(subtitle)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
             Spacer(minLength: 12)
             actions()
         }
-        .padding(.horizontal, 16)
-        .frame(minHeight: 73)
+        .padding(.horizontal, 20)
+        .frame(minHeight: 112)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(cornerRadius: 15)
     }
@@ -1170,7 +1170,7 @@ struct ProfileDetail: View {
                         Text(profile.name)
                             .font(.system(size: 24, weight: .bold, design: .rounded))
                         Text(profile.sourceFilename)
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     Spacer()
                     Button {
@@ -1205,7 +1205,7 @@ struct ProfileDetail: View {
                             withAnimation(.easeInOut(duration: 0.15)) { tab = section }
                         } label: {
                             Text(section.rawValue)
-                                .font(.system(size: 11, weight: tab == section ?
+                                .font(.system(size: 12, weight: tab == section ?
                                               .semibold : .regular))
                                 .foregroundStyle(tab == section ?
                                                  Color.white : Color.primary)
@@ -1247,7 +1247,7 @@ struct ProfileDetail: View {
                     Button("导出预览…") { Task { await model.exportPreview() } }
                         .disabled(profile.mode == .chinaDirect && model.rules == nil)
                 }
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .padding(.top, 6)
             }
             .padding(19)
@@ -1272,28 +1272,22 @@ struct ProfileDetail: View {
                 } label: {
                     HStack {
                         Text(draftGroup.isEmpty ? "选择类别" : draftGroup)
-                            .font(.system(size: 12))
+                            .font(.system(size: 13))
                             .foregroundStyle(.primary)
                         Spacer()
                         Image(systemName: "chevron.down")
                             .foregroundStyle(.secondary)
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                     }
                     .padding(.horizontal, 10)
-                    .frame(height: 29)
-                    .background(Color.white.opacity(0.58),
-                                in: RoundedRectangle(cornerRadius: 8))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 7)
-                            .strokeBorder(Color.white.opacity(0.77), lineWidth: 1)
-                    }
+                    .referenceInput()
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
             editorRow("配置文件") {
                 Label(profile.sourceFilename, systemImage: "doc.text")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .lineLimit(1)
                 Spacer()
                 Button("编辑文件…") {
@@ -1326,7 +1320,7 @@ struct ProfileDetail: View {
                 LabeledContent("文件大小", value: "未读取")
                 LabeledContent("配置类型", value: "OpenVPN")
             }
-            .font(.system(size: 11))
+            .font(.system(size: 12))
             .foregroundStyle(.secondary)
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1341,7 +1335,7 @@ struct ProfileDetail: View {
             Label("安全编辑", systemImage: "curlybraces")
                 .font(.system(size: 14, weight: .semibold))
             Text("保留原始 .ovpn 文件及版本快照，不会执行导入文件中的脚本。")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(.secondary)
             Button("编辑 .ovpn 文件…") {
                 Task {
                     if let text = await model.editSource(for: profile) {
@@ -1354,7 +1348,7 @@ struct ProfileDetail: View {
             LabeledContent("源文件", value: profile.sourceFilename)
             LabeledContent("保存位置", value: "本机私有配置仓库")
             Text("只有断开连接后才能更改或恢复配置。")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(.secondary)
         }
         .padding(17)
         .glassCard(cornerRadius: 14)
@@ -1363,7 +1357,7 @@ struct ProfileDetail: View {
     private var routeMode: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("所选配置的默认路由策略")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
             Picker("模式", selection: Binding(
                 get: { profile.mode },
                 set: { value in Task { await model.setMode(value) } }
@@ -1375,7 +1369,7 @@ struct ProfileDetail: View {
             .pickerStyle(.radioGroup)
             .disabled(model.busy || model.connected || model.connecting)
             Text("中国 IPv4 直连需要已经下载的网段规则；IPv6 分流与 Kill Switch 尚未实现。")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(.secondary)
         }
         .padding(17)
         .glassCard(cornerRadius: 14)
@@ -1385,7 +1379,7 @@ struct ProfileDetail: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("已保存的配置版本")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                 Spacer()
                 Button("刷新历史") {
                     Task { history = await model.revisions(for: profile) }
@@ -1410,12 +1404,12 @@ struct ProfileDetail: View {
                         }
                         .disabled(model.connected || model.connecting)
                     }
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     Divider().opacity(0.3)
                 }
             }
             Text("版本保存在本机，不会上传至云端。")
-                .font(.system(size: 10)).foregroundStyle(.secondary)
+                .font(.system(size: 11)).foregroundStyle(.secondary)
         }
         .padding(16)
         .glassCard(cornerRadius: 14)
@@ -1426,7 +1420,7 @@ struct ProfileDetail: View {
     ) -> some View {
         HStack(spacing: 12) {
             Text(title)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .frame(width: 64, alignment: .leading)
             content()

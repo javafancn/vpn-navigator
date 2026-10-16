@@ -23,7 +23,7 @@ private enum GlassMaterialTuning {
         case "popover": return .popover
         case "sidebar": return .sidebar
         case "hud": return .hudWindow
-        default: return .underWindowBackground
+        default: return .popover
         }
     }
     static var cardMaterial: NSVisualEffectView.Material {
@@ -31,21 +31,21 @@ private enum GlassMaterialTuning {
         case "popover": return .popover
         case "sidebar": return .sidebar
         case "hud": return .hudWindow
-        default: return .underWindowBackground
+        default: return .popover
         }
     }
     static var windowAlpha: CGFloat {
         switch preset {
         case "strong": return 0.92
         case "popover", "sidebar", "hud": return 0.84
-        default: return 0.46
+        default: return 0.80
         }
     }
     static var cardAlpha: CGFloat {
         switch preset {
         case "strong": return 0.90
         case "popover", "sidebar", "hud": return 0.84
-        default: return 0.50
+        default: return 0.76
         }
     }
 }
@@ -140,7 +140,7 @@ private struct GlassCardModifier: ViewModifier {
                         .clipShape(shape)
                     shape.fill(appearance == .dark
                                ? Color.black.opacity(0.22)
-                               : Color.white.opacity(0.36))
+                               : Color.white.opacity(0.25))
                 }
             }
             .overlay {
@@ -226,7 +226,7 @@ struct BrandMark: View {
                     Color.white.opacity(0.98), Color(red: 0.80, green: 0.90, blue: 1)
                 ], startPoint: .topLeading, endPoint: .bottomTrailing))
             Image(systemName: "globe")
-                .font(.system(size: size * 0.60, weight: .semibold))
+                .font(.system(size: size * 0.62, weight: .semibold))
                 .foregroundStyle(GlassPalette.blue)
                 .shadow(color: GlassPalette.cyan.opacity(0.25), radius: 2)
             Image(systemName: "shield.fill")

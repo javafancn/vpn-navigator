@@ -34,7 +34,7 @@ struct NetworkDiagnosticsView: View {
     }
 
     var body: some View {
-        GeometryReader { _ in
+        ScrollView {
             VStack(alignment: .leading, spacing: GlassLayout.sectionSpacing) {
                 HStack(alignment: .center, spacing: 10) {
                     WorkspaceHeading(title: "网络诊断", subtitle: "",
@@ -79,7 +79,7 @@ struct NetworkDiagnosticsView: View {
                     VPNPanel(selectedTab == .dns ? "DNS 解析" :
                              selectedTab == .routing ? "IPv4 路由检查" :
                              selectedTab == .latency ? "延迟测试" : "IPv4 连接测试",
-                             symbol: "checkmark.circle", fillHeight: true) {
+                             symbol: "checkmark.circle") {
                         HStack(spacing: 8) {
                             TextField("目标 IPv4 地址", text: $address)
                                 .textFieldStyle(.plain)
@@ -155,12 +155,11 @@ struct NetworkDiagnosticsView: View {
                         .background(Color.green.opacity(actualPath.isEmpty ? 0.045 : 0.11),
                                     in: RoundedRectangle(cornerRadius: 12))
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity)
 
                     VStack(spacing: 11) {
                         VPNPanel("当前路由路径",
-                                 symbol: "point.3.connected.trianglepath.dotted",
-                                 fillHeight: true) {
+                                 symbol: "point.3.connected.trianglepath.dotted") {
                             routeStep("本机出口接口",
                                 value: health?.ipv4DefaultInterface ?? "未检测", index: 0)
                             routeStep("目标网关",
@@ -205,10 +204,8 @@ struct NetworkDiagnosticsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .glassCard(cornerRadius: 15)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxHeight: .infinity)
-
                 if !healthError.isEmpty {
                     Label(healthError, systemImage: "exclamationmark.triangle")
                         .font(.system(size: 10))
@@ -218,7 +215,7 @@ struct NetworkDiagnosticsView: View {
             .padding(.horizontal, GlassLayout.pageInset)
             .padding(.top, GlassLayout.pageTop)
             .padding(.bottom, 20)
-            .frame(maxWidth: 1100, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: 1100, alignment: .topLeading)
         }
         .onAppear {
             if health == nil { runDiagnostics() }

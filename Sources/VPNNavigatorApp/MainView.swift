@@ -607,52 +607,49 @@ private struct RoutingWorkspace: View {
 
                 HStack(alignment: .top, spacing: 13) {
                     VPNPanel("路由模式", symbol: "arrow.triangle.branch") {
-                        if let profile = model.selected {
-                            VStack(alignment: .leading, spacing: 8) {
-                                ForEach(RoutingMode.allCases) { mode in
-                                    Button {
-                                        Task { await model.setMode(mode) }
-                                    } label: {
-                                        HStack(alignment: .center, spacing: 11) {
-                                            Image(systemName: profile.mode == mode ?
-                                                  "largecircle.fill.circle" : "circle")
-                                                .font(.system(size: 17))
-                                                .foregroundStyle(profile.mode == mode ?
-                                                                 GlassPalette.blue : Color.secondary)
-                                            VStack(alignment: .leading, spacing: 3) {
-                                                Text(title(for: mode))
-                                                    .font(.system(size: 12, weight: .semibold))
-                                                    .foregroundStyle(.primary)
-                                                Text(subtitle(for: mode))
-                                                    .font(.system(size: 10))
-                                                    .foregroundStyle(.secondary)
-                                                    .fixedSize(horizontal: false, vertical: true)
-                                            }
-                                            Spacer(minLength: 0)
+                        VStack(alignment: .leading, spacing: 7) {
+                            ForEach(RoutingMode.allCases) { mode in
+                                let current = model.selected?.mode ?? .original
+                                Button {
+                                    Task { await model.setMode(mode) }
+                                } label: {
+                                    HStack(alignment: .center, spacing: 12) {
+                                        Image(systemName: current == mode ?
+                                              "largecircle.fill.circle" : "circle")
+                                            .font(.system(size: 19))
+                                            .foregroundStyle(current == mode ?
+                                                GlassPalette.blue : Color.gray)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(title(for: mode))
+                                                .font(.system(size: 12, weight: .semibold))
+                                                .foregroundStyle(.primary)
+                                            Text(subtitle(for: mode))
+                                                .font(.system(size: 10))
+                                                .foregroundStyle(.secondary)
+                                                .fixedSize(horizontal: false, vertical: true)
                                         }
-                                        .padding(11)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .background(
-                                            profile.mode == mode ?
-                                                GlassPalette.blue.opacity(0.13) :
-                                                Color.white.opacity(0.08),
-                                            in: RoundedRectangle(cornerRadius: 12))
-                                        .contentShape(Rectangle())
+                                        Spacer(minLength: 0)
                                     }
-                                    .buttonStyle(.plain)
-                                    .disabled(model.connected || model.connecting || model.busy)
+                                    .padding(.horizontal, 11)
+                                    .frame(maxWidth: .infinity, minHeight: 64,
+                                           alignment: .leading)
+                                    .background(
+                                        current == mode ?
+                                            GlassPalette.blue.opacity(0.13) :
+                                            Color.white.opacity(0.06),
+                                        in: RoundedRectangle(cornerRadius: 12))
+                                    .contentShape(Rectangle())
                                 }
+                                .buttonStyle(.plain)
+                                .disabled(model.selected == nil ||
+                                          model.connected || model.connecting || model.busy)
                             }
-                            .accessibilityElement(children: .contain)
-                            Text("所选配置：\(profile.name) · 连接期间不可改动路由模式")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        } else {
-                            Label("请先导入并选择配置文件", systemImage: "info.circle")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
                         }
+                        Text(model.selected.map {
+                            "所选配置：\($0.name)"
+                        } ?? "导入配置后即可切换路由模式")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity)
 
@@ -734,7 +731,9 @@ private struct RoutingWorkspace: View {
                     .frame(maxWidth: .infinity)
                 }
             }
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.top, 31)
+            .padding(.bottom, 20)
             .frame(maxWidth: 1100, alignment: .leading)
         }
     }

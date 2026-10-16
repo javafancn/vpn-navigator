@@ -19,6 +19,7 @@ struct NetworkDiagnosticsView: View {
         case connection = "连接测试"
         case dns = "DNS 解析"
         case routing = "路由追踪"
+        case latency = "延迟测试"
         var id: String { rawValue }
     }
 
@@ -35,14 +36,10 @@ struct NetworkDiagnosticsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 15) {
-                HStack(spacing: 10) {
-                    WorkspaceHeading(title: "网络诊断",
-                        subtitle: "检查本机 IPv4 路由、DNS 与 IPv6 网络状态",
+                HStack(alignment: .center, spacing: 12) {
+                    WorkspaceHeading(title: "网络诊断", subtitle: "",
                         symbol: "waveform.path.ecg")
-                    Spacer(minLength: 8)
-                }
-
-                HStack(spacing: 0) {
+                    Spacer(minLength: 5)
                     Picker("诊断类型", selection: $selectedTab) {
                         ForEach(DiagnosticTab.allCases) { tab in
                             Text(tab.rawValue).tag(tab)
@@ -50,17 +47,9 @@ struct NetworkDiagnosticsView: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
-                    .controlSize(.small)
-                    Spacer(minLength: 8)
-                    Button {
-                        runDiagnostics()
-                    } label: {
-                        Label(checking ? "正在检查" : "连接测试",
-                              systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .disabled(checking || IPv4CIDR.parseAddress(address) == nil)
+                    .controlSize(.regular)
+                    .frame(width: 402)
+                    .padding(.trailing, 32)
                 }
 
                 HStack(alignment: .top, spacing: 13) {
@@ -75,6 +64,13 @@ struct NetworkDiagnosticsView: View {
                                 .disabled(checking || IPv4CIDR.parseAddress(address) == nil)
                         }
 
+                        if selectedTab == .latency {
+                            Label("当前版本不模拟延迟或测速，请参考系统路由信息。",
+                                  systemImage: "info.circle")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         Divider().opacity(0.4)
                         diagnosticRow("本机网络", subtitle: "默认 IPv4 出口接口",
                             value: health?.ipv4DefaultInterface ?? "尚未检查",
@@ -97,6 +93,24 @@ struct NetworkDiagnosticsView: View {
                             symbol: "shield",
                             color: health == nil ? .secondary :
                                   health?.ipv6Safety == .noDefaultRoute ? .green : .orange)
+                        HStack(spacing: 10) {
+                            Image(systemName: actualPath.isEmpty ?
+                                  "exclamationmark.circle.fill" : "checkmark.circle.fill")
+                                .font(.system(size: 23))
+                                .foregroundStyle(actualPath.isEmpty ? Color.orange : Color.green)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(actualPath.isEmpty ? "等待路由检查" : "已读取本机路由")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text("仅表示本机路由查询成功，不代表 VPN 已连接或无泄漏。")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(12)
+                        .background((actualPath.isEmpty ? Color.orange : Color.green)
+                            .opacity(0.11), in: RoundedRectangle(cornerRadius: 12))
                     }
                     .frame(maxWidth: .infinity)
 
@@ -141,7 +155,9 @@ struct NetworkDiagnosticsView: View {
                     .frame(maxWidth: .infinity)
                 }
             }
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.top, 32)
+            .padding(.bottom, 20)
             .frame(maxWidth: 1100, alignment: .leading)
         }
         .onAppear {

@@ -149,11 +149,11 @@ struct MainView: View {
                 Button { withAnimation(.easeInOut(duration: 0.16)) { tab = item } } label: {
                     HStack(spacing: 12) {
                         Image(systemName: item.symbol)
-                            .font(.system(size: 18, weight: .medium))
+                            .font(.system(size: 19, weight: .medium))
                             .foregroundStyle(tab == item ? Color.white : GlassPalette.blue)
                             .frame(width: 24)
                         Text(item.title)
-                            .font(.system(size: 18, weight: .medium))
+                            .font(.system(size: 19, weight: .medium))
                             .foregroundStyle(tab == item ? Color.white : GlassPalette.ink)
                         Spacer(minLength: 0)
                     }
@@ -198,7 +198,7 @@ struct WorkspaceHeading: View {
     var body: some View {
         HStack(spacing: 12) {
             if symbol == "globe.americas.fill" {
-                BrandMark(size: 56)
+                BrandMark(size: 64)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
@@ -260,9 +260,10 @@ private struct ConnectionOverview: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 18) {
             WorkspaceHeading(title: "连接总览", subtitle: "清晰掌控当前 VPN 状态与网络策略", symbol: "globe.americas.fill")
-                .padding(.bottom, 4)
+                .padding(.leading, 8)
+                .padding(.bottom, 10)
             HStack(spacing: 12) {
                 VStack(spacing: 6) {
                     Spacer(minLength: 0)
@@ -280,7 +281,7 @@ private struct ConnectionOverview: View {
                     .disabled(model.busy || model.connecting)
                     .accessibilityLabel(model.connected ? "断开 VPN" : "连接 VPN")
                     Text(statusTitle)
-                        .font(.system(size: 30, weight: .semibold))
+                        .font(.system(size: 32, weight: .semibold))
                         .foregroundStyle(model.connected ? Color.green : hasError ? Color.orange : GlassPalette.blue)
                     Text(model.connected ? "安全连接已建立" : model.connecting ? "正在建立安全连接…" : "点击上方按钮开始连接")
                         .font(.system(size: 16))
@@ -379,9 +380,9 @@ private struct ConnectionOverview: View {
             }
             HStack(spacing: 12) {
                 statistic("累计接收", symbol: "arrow.down.circle", value: bytes(model.traffic?.receivedBytes), samples: model.receiveTrend.samples)
-                    .frame(width: 195)
+                    .frame(width: 202)
                 statistic("累计发送", symbol: "arrow.up.circle", value: bytes(model.traffic?.sentBytes), samples: model.sendTrend.samples)
-                    .frame(width: 195)
+                    .frame(width: 202)
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "checkmark.shield.fill")
                         .font(.system(size: 28))
@@ -389,7 +390,7 @@ private struct ConnectionOverview: View {
                         .frame(width: 54, height: 54)
                         .background(Color.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 15))
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("连接保护").font(.system(size: 18, weight: .semibold))
+                        Text("连接保护").font(.system(size: 20, weight: .semibold))
                         Label("受管连接异常时安全断开", systemImage: "checkmark.circle.fill")
                             .font(.system(size: 12)).foregroundStyle(.green)
                         Text("PF Kill Switch 尚未启用，不能保证零泄漏。")
@@ -400,7 +401,7 @@ private struct ConnectionOverview: View {
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
-                .frame(height: 146, alignment: .topLeading)
+                .frame(height: 158, alignment: .topLeading)
                 .glassCard(cornerRadius: 17)
             }
             Spacer(minLength: 0)
@@ -436,14 +437,14 @@ private struct ConnectionOverview: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 9) {
                 Image(systemName: symbol).font(.system(size: 24)).foregroundStyle(GlassPalette.blue)
-                Text(title).font(.system(size: 14)).foregroundStyle(.secondary)
+                Text(title).font(.system(size: 16)).foregroundStyle(.secondary)
             }
-            Text(value).font(.system(size: 28, weight: .medium)).lineLimit(1).minimumScaleFactor(0.75)
+            Text(value).font(.system(size: 30, weight: .medium)).lineLimit(1).minimumScaleFactor(0.75)
             TrafficSparkline(samples: samples).frame(height: 33)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 146)
+        .frame(height: 158)
         .glassCard(cornerRadius: 17)
     }
 }
@@ -818,7 +819,7 @@ struct SystemSettingsPane: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                                        .menuIndicator(.hidden).buttonStyle(.plain)
+                    .menuIndicator(.hidden).buttonStyle(.plain)
                     .fixedSize()
                 }
 
@@ -844,7 +845,7 @@ struct SystemSettingsPane: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                                        .menuIndicator(.hidden).buttonStyle(.plain)
+                    .menuIndicator(.hidden).buttonStyle(.plain)
                     .fixedSize()
                 }
 
@@ -872,7 +873,7 @@ struct SystemSettingsPane: View {
                             .frame(width: 24, height: 30)
                             .foregroundStyle(.secondary)
                     }
-                                        .menuIndicator(.hidden).buttonStyle(.plain)
+                    .menuIndicator(.hidden).buttonStyle(.plain)
                     .fixedSize()
                 }
             }
@@ -1047,7 +1048,7 @@ struct ProfileDetail: View {
                             .frame(width: 22, height: 22)
                             .foregroundStyle(.secondary)
                     }
-                                        .menuIndicator(.hidden)
+                    .menuIndicator(.hidden)
                     .fixedSize()
                 }
                 HStack(spacing: 4) {

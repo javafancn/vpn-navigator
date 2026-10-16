@@ -50,18 +50,29 @@ struct MainView: View {
                 sidebar.frame(width: 236)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
                 VStack(spacing: 0) {
-                    topBar
-                    Rectangle().fill(Color.white.opacity(0.22)).frame(height: 1)
                     Group {
                         switch tab {
                         case .overview: ConnectionOverview()
-                        case .profiles: ProfileLibrary()
+                        case .profiles: ProfileLibrary(onImport: { importing = true })
                         case .routing: RoutingWorkspace()
                         case .diagnostics: NetworkDiagnosticsView()
                         case .settings: SystemSettingsPane()
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(alignment: .topTrailing) {
+                        Button { importing = true } label: {
+                            Image(systemName: "plus")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(GlassPalette.ink)
+                                .frame(width: 34, height: 34)
+                                .glassCard(cornerRadius: 10)
+                        }
+                        .buttonStyle(.plain)
+                        .help("导入 VPN 配置")
+                        .padding(.top, 16)
+                        .padding(.trailing, 18)
+                    }
                 }
             }
         }
@@ -100,8 +111,8 @@ struct MainView: View {
             }
             .padding(.leading, 16)
             .padding(.trailing, 8)
-            .padding(.top, 42)
-            .padding(.bottom, 24)
+            .padding(.top, 38)
+            .padding(.bottom, 21)
 
             ForEach(WorkspaceTab.allCases) { item in
                 Button { withAnimation(.easeInOut(duration: 0.16)) { tab = item } } label: {
@@ -112,7 +123,7 @@ struct MainView: View {
                         Text(item.title).font(.system(size: 12, weight: .medium))
                         Spacer(minLength: 0)
                     }
-                    .foregroundStyle(tab == item ? Color.white : Color.primary)
+                    .foregroundStyle(tab == item ? Color.white : GlassPalette.blue)
                     .padding(.horizontal, 12)
                     .frame(height: 36)
                     .background {
@@ -156,55 +167,36 @@ struct MainView: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 14)
         }
-        .background {
-            Rectangle().fill(.regularMaterial).opacity(0.53)
+        .background(Color.white.opacity(0.20))
+        .overlay(alignment: .trailing) {
+            Rectangle().fill(Color.white.opacity(0.36)).frame(width: 1)
         }
-        .background(Color.white.opacity(0.09))
     }
 
-    private var topBar: some View {
-        HStack {
-            Text(tab.title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.primary.opacity(0.83))
-            Spacer()
-            Text("安全 · 高效 · 专业")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .padding(.trailing, 10)
-            Button { importing = true } label: {
-                Label("导入配置", systemImage: "plus")
-                    .font(.system(size: 11, weight: .semibold))
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.blue)
-            .controlSize(.regular)
-        }
-        .padding(.leading, 24).padding(.trailing, 20)
-        .frame(height: 45)
-        .background {
-            Rectangle().fill(.regularMaterial).opacity(0.46)
-        }
-        .background(Color.white.opacity(0.12))
-    }
+
 }
 
 struct WorkspaceHeading: View {
     let title: String
     let subtitle: String
     let symbol: String
+
     var body: some View {
-        HStack(spacing: 11) {
+        HStack(spacing: 12) {
             if symbol == "globe.americas.fill" {
-                BrandMark(size: 40)
-            } else {
-                GlassIcon(symbol: symbol, size: 40)
+                BrandMark(size: 43)
             }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 21, weight: .bold, design: .rounded))
-                Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 23, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
             }
-            Spacer()
+            Spacer(minLength: 0)
         }
     }
 }
@@ -261,6 +253,7 @@ private struct ConnectionOverview: View {
                 WorkspaceHeading(title: "连接总览",
                     subtitle: "清晰掌控当前 VPN 状态与网络策略",
                     symbol: "globe.americas.fill")
+                    .padding(.bottom, 43)
 
                 HStack(alignment: .top, spacing: 12) {
                     VStack(spacing: 7) {
@@ -404,7 +397,9 @@ private struct ConnectionOverview: View {
                         value: model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
                 }
             }
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.top, 29)
+            .padding(.bottom, 16)
             .frame(maxWidth: 1100, alignment: .leading)
         }
         .confirmationDialog("切换 VPN 配置？", isPresented: $confirmSwitch) {

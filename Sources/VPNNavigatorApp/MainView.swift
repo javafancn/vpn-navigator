@@ -7,6 +7,24 @@ import VPNNavigatorCore
 enum WorkspaceTab: String, CaseIterable, Identifiable {
     case overview, profiles, routing, diagnostics, settings
     var id: String { rawValue }
+    // Window and sidebar proportions follow the supplied design collage.
+    // Content is never expanded into empty full-height cards.
+    var referenceSize: CGSize {
+        switch self {
+        case .overview: return CGSize(width: 990, height: 587)
+        case .profiles: return CGSize(width: 990, height: 595)
+        case .routing: return CGSize(width: 930, height: 450)
+        case .diagnostics: return CGSize(width: 930, height: 470)
+        case .settings: return CGSize(width: 860, height: 430)
+        }
+    }
+    var sidebarWidth: CGFloat {
+        switch self {
+        case .overview, .profiles: return 228
+        case .routing, .diagnostics: return 205
+        case .settings: return 193
+        }
+    }
     var title: String {
         switch self {
         case .overview: return "连接总览"
@@ -47,7 +65,7 @@ struct MainView: View {
         ZStack {
             GlassAtmosphere()
             HStack(spacing: 0) {
-                sidebar.frame(width: 238)
+                sidebar.frame(width: tab.sidebarWidth)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
                 VStack(spacing: 0) {
                     Group {
@@ -76,7 +94,8 @@ struct MainView: View {
                 }
             }
         }
-        .frame(minWidth: 1015, minHeight: 620)
+        .frame(minWidth: 810, minHeight: 400)
+        .background(ReferenceWindowSizer(size: tab.referenceSize))
         .preferredColorScheme(nil)
         .fileImporter(isPresented: $importing,
                       allowedContentTypes: [.init(filenameExtension: "ovpn")!],
@@ -111,8 +130,8 @@ struct MainView: View {
             }
             .padding(.leading, 19)
             .padding(.trailing, 8)
-            .padding(.top, 42)
-            .padding(.bottom, 23)
+            .padding(.top, tab == .overview || tab == .profiles ? 37 : 24)
+            .padding(.bottom, tab == .overview || tab == .profiles ? 21 : 13)
 
             if tab != .overview {
                 Button {
@@ -128,7 +147,7 @@ struct MainView: View {
                     }
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 13)
-                    .frame(height: 41)
+                    .frame(height: 38)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -152,7 +171,7 @@ struct MainView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 13)
-                    .frame(height: 41)
+                    .frame(height: 38)
                     .background {
                         if tab == item {
                             RoundedRectangle(cornerRadius: 9)
@@ -170,8 +189,8 @@ struct MainView: View {
                 .padding(.horizontal, 15)
                 .padding(.bottom, 9)
             }
-            Spacer(minLength: 20)
-            VStack(alignment: .leading, spacing: 8) {
+            Spacer(minLength: 10)
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 7) {
                     Circle()
                         .fill(model.connected ? Color.green : Color.secondary.opacity(0.7))
@@ -187,11 +206,11 @@ struct MainView: View {
                     (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Alpha"))
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
-            .padding(12)
+            .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(GlassSurface.panel.opacity(0.35))
+                    .fill(GlassSurface.panel.opacity(0.31))
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 12)
@@ -295,7 +314,7 @@ private struct ConnectionOverview: View {
                 WorkspaceHeading(title: "连接总览",
                     subtitle: "清晰掌控当前 VPN 状态与网络策略",
                     symbol: "globe.americas.fill")
-                    .padding(.bottom, 17)
+                    .padding(.bottom, 4)
 
                 HStack(alignment: .top, spacing: 12) {
                     VStack(spacing: 7) {
@@ -381,11 +400,11 @@ private struct ConnectionOverview: View {
                         Spacer(minLength: 8)
                     }
                     .frame(maxWidth: .infinity)
-                     .frame(height: 330)
+                     .frame(height: 288)
                     .glassCard(cornerRadius: 17, active: true)
 
                     VStack(spacing: 12) {
-                        VPNPanel("快速连接", symbol: "slider.horizontal.3", minContentHeight: 204) {
+                        VPNPanel("快速连接", symbol: "slider.horizontal.3", minContentHeight: 166) {
                             HStack(spacing: 9) {
                                 Text("配置文件")
                                     .font(.system(size: 12, weight: .medium))
@@ -478,7 +497,7 @@ private struct ConnectionOverview: View {
                         Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 330, alignment: .top)
+                    .frame(height: 288, alignment: .top)
                 }
 
                 HStack(spacing: 12) {
@@ -513,7 +532,7 @@ private struct ConnectionOverview: View {
                     }
                     .padding(13)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: 156, alignment: .top)
+                    .frame(height: 121, alignment: .top)
                     .glassCard(cornerRadius: 15)
                 }
             }
@@ -576,8 +595,8 @@ private struct ConnectionOverview: View {
                 .frame(height: 27)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 130)
-        .padding(13)
+        .frame(height: 95)
+        .padding(12)
         .glassCard(cornerRadius: 15)
     }
 }

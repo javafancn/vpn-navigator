@@ -34,8 +34,8 @@ struct NetworkDiagnosticsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 15) {
+        GeometryReader { _ in
+            VStack(alignment: .leading, spacing: GlassLayout.sectionSpacing) {
                 HStack(alignment: .center, spacing: 10) {
                     WorkspaceHeading(title: "网络诊断", subtitle: "",
                         symbol: "waveform.path.ecg")
@@ -79,11 +79,11 @@ struct NetworkDiagnosticsView: View {
                     VPNPanel(selectedTab == .dns ? "DNS 解析" :
                              selectedTab == .routing ? "IPv4 路由检查" :
                              selectedTab == .latency ? "延迟测试" : "IPv4 连接测试",
-                             symbol: "checkmark.circle") {
+                             symbol: "checkmark.circle", fillHeight: true) {
                         HStack(spacing: 8) {
                             TextField("目标 IPv4 地址", text: $address)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(size: 11))
+                                .textFieldStyle(.plain)
+                                .referenceInput(height: 28)
                             Button(checking ? "检查中…" : "检查") { runDiagnostics() }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
@@ -123,8 +123,12 @@ struct NetworkDiagnosticsView: View {
                                 }
                             }
                             .padding(.horizontal, 10)
-                            .background(GlassSurface.panel.opacity(0.29),
+                            .background(Color.white.opacity(0.29),
                                         in: RoundedRectangle(cornerRadius: 12))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .strokeBorder(Color.white.opacity(0.41), lineWidth: 1)
+                            }
                         }
 
                         HStack(alignment: .center, spacing: 10) {
@@ -151,11 +155,12 @@ struct NetworkDiagnosticsView: View {
                         .background(Color.green.opacity(actualPath.isEmpty ? 0.045 : 0.11),
                                     in: RoundedRectangle(cornerRadius: 12))
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                     VStack(spacing: 11) {
                         VPNPanel("当前路由路径",
-                                 symbol: "point.3.connected.trianglepath.dotted") {
+                                 symbol: "point.3.connected.trianglepath.dotted",
+                                 fillHeight: true) {
                             routeStep("本机出口接口",
                                 value: health?.ipv4DefaultInterface ?? "未检测", index: 0)
                             routeStep("目标网关",
@@ -200,8 +205,9 @@ struct NetworkDiagnosticsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .glassCard(cornerRadius: 15)
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                .frame(maxHeight: .infinity)
 
                 if !healthError.isEmpty {
                     Label(healthError, systemImage: "exclamationmark.triangle")
@@ -212,7 +218,7 @@ struct NetworkDiagnosticsView: View {
             .padding(.horizontal, GlassLayout.pageInset)
             .padding(.top, GlassLayout.pageTop)
             .padding(.bottom, 20)
-            .frame(maxWidth: 1100, alignment: .leading)
+            .frame(maxWidth: 1100, maxHeight: .infinity, alignment: .topLeading)
         }
         .onAppear {
             if health == nil { runDiagnostics() }

@@ -395,9 +395,11 @@ private struct ConnectionOverview: View {
                     miniStatistic("累计接收", symbol: "arrow.down.circle.fill",
                         value: formattedBytes(model.traffic?.receivedBytes),
                         samples: model.receiveTrend.samples)
+                        .frame(width: 202)
                     miniStatistic("累计发送", symbol: "arrow.up.circle.fill",
                         value: formattedBytes(model.traffic?.sentBytes),
                         samples: model.sendTrend.samples)
+                        .frame(width: 202)
                     miniStatistic("中国 IPv4 规则", symbol: "globe.asia.australia.fill",
                         value: model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
                 }
@@ -431,7 +433,7 @@ private struct ConnectionOverview: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 89)
+        .frame(height: 112)
         .padding(13)
         .glassCard(cornerRadius: 15)
     }

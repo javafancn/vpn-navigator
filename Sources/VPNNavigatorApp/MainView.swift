@@ -1243,10 +1243,15 @@ struct ProfileDetail: View {
                     }
                     .padding(.horizontal, 10)
                     .frame(height: 27)
-                    .background(.white.opacity(0.50),
+                    .background(Color.white.opacity(0.63),
                                 in: RoundedRectangle(cornerRadius: 7))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 7)
+                            .strokeBorder(Color.white.opacity(0.77), lineWidth: 1)
+                    }
+                    .contentShape(Rectangle())
                 }
-                .menuStyle(.borderlessButton)
+                .buttonStyle(.plain)
             }
             editorRow("配置文件") {
                 Label(profile.sourceFilename, systemImage: "doc.text")

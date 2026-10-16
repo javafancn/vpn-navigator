@@ -143,7 +143,9 @@ final class NativeWindowGlass: NSVisualEffectView {
         window.titleVisibility = .hidden
         window.styleMask.insert(.fullSizeContentView)
         // Keep the same 11:7 proportion on every tab and during resizing.
-        window.contentAspectRatio = NSSize(width: 11, height: 7)
+        if window.title.contains("VPN Navigator"), !(window is NSPanel) {
+            window.contentAspectRatio = NSSize(width: 11, height: 7)
+        }
         // Let users drag the chrome, not form controls or cards.
         window.isMovableByWindowBackground = true
 

@@ -14,6 +14,7 @@ struct NetworkDiagnosticsView: View {
     @State private var healthError = ""
     @State private var selectedTab: DiagnosticTab = .connection
     @State private var checking = false
+    @State private var showingTarget = false
 
     private enum DiagnosticTab: String, CaseIterable, Identifiable {
         case connection = "连接测试"
@@ -54,13 +55,22 @@ struct NetworkDiagnosticsView: View {
             }.frame(height: 56)
             HStack(alignment: .top, spacing: 14) {
                 VStack(alignment: .leading, spacing: 16) {
-                    panelTitle(selectedTab == .dns ? "DNS 解析" : selectedTab == .routing ? "IPv4 路由检查" : selectedTab == .latency ? "延迟测试" : "IPv4 连接测试")
-                    HStack(spacing: 8) {
-                        TextField("目标 IPv4 地址", text: $address)
-                            .textFieldStyle(.plain).referenceInput()
-                        Button(checking ? "检查中…" : "检查") { runDiagnostics() }
-                            .buttonStyle(ReferencePrimaryButton())
-                            .disabled(checking || IPv4CIDR.parseAddress(address) == nil)
+                    HStack {
+                        panelTitle(selectedTab == .dns ? "DNS 解析" : selectedTab == .routing ? "IPv4 路由检查" : selectedTab == .latency ? "延迟测试" : "IPv4 连接测试")
+                        Spacer(minLength: 0)
+                        Button { showingTarget = true } label: {
+                            Image(systemName: "ellipsis").font(.system(size: 16)).foregroundStyle(GlassPalette.blue)
+                        }
+                        .buttonStyle(.plain).help("诊断目标与重新检查")
+                        .popover(isPresented: $showingTarget) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("诊断目标").font(.headline)
+                                TextField("目标 IPv4 地址", text: $address).textFieldStyle(.plain).referenceInput()
+                                Button(checking ? "检查中…" : "开始检查") { runDiagnostics(); showingTarget = false }
+                                    .buttonStyle(ReferencePrimaryButton())
+                                    .disabled(checking || IPv4CIDR.parseAddress(address) == nil)
+                            }.padding(18).frame(width: 280)
+                        }
                     }
                     if selectedTab == .latency {
                         Text("真实延迟测量尚未接入。")
@@ -110,13 +120,7 @@ struct NetworkDiagnosticsView: View {
                             routeStep("目的地址", value: address, index: 2)
                         }
                         Spacer(minLength: 0)
-                        if let decision = IPDiagnostics.decide(ip: address, mode: model.selected?.mode ?? .original, rules: model.rules) {
-                            Divider().opacity(0.25)
-                            Label("预期路径：\(decision.expected.rawValue)", systemImage: "info.circle")
-                                .font(.system(size: 14, weight: .medium)).foregroundStyle(GlassPalette.blue)
-                            Text(decision.reason).font(.system(size: 12)).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+
                     }
                     .padding(18)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -132,15 +136,16 @@ struct NetworkDiagnosticsView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: 112).glassCard(cornerRadius: 18)
+                    .frame(height: 100).glassCard(cornerRadius: 18)
                 }.frame(maxWidth: .infinity)
-            }.frame(maxHeight: .infinity)
+            }.frame(height: 350)
+            Spacer(minLength: 0)
             if !healthError.isEmpty {
                 Label(healthError, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(.orange)
             }
         }
         .padding(.horizontal, GlassLayout.pageInset)
-        .padding(.top, GlassLayout.pageTop)
+        .padding(.top, 12)
         .padding(.bottom, 20)
         .onAppear { if health == nil { runDiagnostics() } }
     }
@@ -161,19 +166,19 @@ struct NetworkDiagnosticsView: View {
             Spacer(minLength: 0)
             Text(value).font(.system(size: 13)).foregroundStyle(GlassPalette.ink)
                 .lineLimit(1).minimumScaleFactor(0.8)
-        }.frame(height: 54).help(subtitle)
+        }.frame(height: 42).help(subtitle)
     }
 
     private func routeStep(_ title: String, value: String, index: Int) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(spacing: 0) {
                 Circle().fill(GlassPalette.blue).frame(width: 11, height: 11)
-                Rectangle().fill(index == 2 ? Color.clear : GlassPalette.blue.opacity(0.45)).frame(width: 2, height: 45)
+                Rectangle().fill(index == 2 ? Color.clear : GlassPalette.blue.opacity(0.45)).frame(width: 2, height: 33)
             }.padding(.top, 5)
             Text(value).font(.system(size: 16)).foregroundStyle(GlassPalette.ink.opacity(0.80)).lineLimit(1)
             Spacer(minLength: 0)
             Text(title).font(.system(size: 12)).foregroundStyle(.secondary)
-        }.frame(height: 56).accessibilityElement(children: .combine)
+        }.frame(height: 44).accessibilityElement(children: .combine)
     }
 
     private func runDiagnostics() {

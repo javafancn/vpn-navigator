@@ -63,7 +63,7 @@ struct MainView: View {
                     .referenceWorkspaceSurface()
                     .padding(.leading, 8)
                     .padding(.trailing, 8)
-                    .padding(.top, 26)
+                    .padding(.top, tab == .overview ? 26 : 0)
                     .padding(.bottom, 16)
                     .overlay(alignment: .topTrailing) {
                         Button { importing = true } label: {
@@ -326,8 +326,7 @@ private struct ConnectionOverview: View {
                             } label: {
                                 selectionField(model.selected?.name ?? "请选择配置", stepper: true)
                             }
-                            .menuStyle(.borderlessButton)
-                            .menuIndicator(.hidden)
+                                                        .menuIndicator(.hidden)
                             .buttonStyle(.plain)
                             .disabled(model.profiles.isEmpty || model.busy)
                         }
@@ -339,8 +338,7 @@ private struct ConnectionOverview: View {
                             } label: {
                                 selectionField(model.selected?.mode.rawValue ?? "Original", stepper: false)
                             }
-                            .menuStyle(.borderlessButton)
-                            .menuIndicator(.hidden)
+                                                        .menuIndicator(.hidden)
                             .buttonStyle(.plain)
                             .disabled(model.selected == nil || model.busy || model.connected || model.connecting)
                         }
@@ -492,6 +490,7 @@ private struct ProfileLibrary: View {
             WorkspaceHeading(title: "配置文件",
                 subtitle: "管理和编辑 VPN 配置文件",
                 symbol: "square.stack.3d.up.fill")
+                .padding(.bottom, 14)
 
             HStack(spacing: 10) {
                 HStack(spacing: 9) {
@@ -512,7 +511,7 @@ private struct ProfileLibrary: View {
                     .accessibilityLabel("清除搜索")
                 }
             }
-                .referenceInput(height: 38)
+                .referenceInput(height: 42)
                 Button(action: onImport) {
                     Label("导入配置", systemImage: "plus")
                         .font(.system(size: 14, weight: .semibold))
@@ -620,7 +619,7 @@ private struct ProfileLibrary: View {
             .frame(maxHeight: .infinity)
         }
         .padding(.horizontal, 20)
-        .padding(.top, GlassLayout.pageTop)
+        .padding(.top, 12)
         .padding(.bottom, 18)
     }
 }
@@ -645,21 +644,19 @@ private struct RoutingWorkspace: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             WorkspaceHeading(title: "路由与规则", subtitle: "管理 VPN 路由模式与中国 IPv4 规则", symbol: "point.3.connected.trianglepath.dotted")
             HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 10) {
                     Text("路由模式").font(.system(size: 20, weight: .semibold))
                     ForEach(RoutingMode.allCases) { mode in routeOption(mode) }
                     Spacer(minLength: 12)
-                    Text(model.selected.map { "所选配置：\($0.name)" } ?? "选择配置后即可修改路由模式")
-                        .font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .glassCard(cornerRadius: 18)
                 VStack(spacing: 14) {
-                    VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: 16) {
                         Text("中国 IPv4 规则").font(.system(size: 20, weight: .semibold))
                         HStack(alignment: .top, spacing: 16) {
                             GlassIcon(symbol: "globe.asia.australia", size: 67)
@@ -681,7 +678,7 @@ private struct RoutingWorkspace: View {
                                     Button(saved.savedAt.formatted(.dateTime.year().month().day().hour().minute())) { snapshotToRestore = saved }
                                 }
                             } label: { Text("历史版本").frame(maxWidth: .infinity) }
-                            .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                            .menuIndicator(.hidden)
                             .buttonStyle(ReferenceSecondaryButton())
                             .disabled(model.ruleSnapshots.isEmpty || model.busy)
                         }
@@ -707,16 +704,17 @@ private struct RoutingWorkspace: View {
                         }.buttonStyle(.plain).disabled(model.busy).help("刷新 IPv6 预览")
                     }
                     .padding(16)
-                    .frame(height: 112)
+                    .frame(height: 100)
                     .frame(maxWidth: .infinity)
                     .glassCard(cornerRadius: 18)
                 }
                 .frame(maxWidth: .infinity)
             }
-            .frame(maxHeight: .infinity)
+            .frame(height: 380)
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, GlassLayout.pageInset)
-        .padding(.top, GlassLayout.pageTop)
+        .padding(.top, 12)
         .padding(.bottom, 20)
         .confirmationDialog("恢复旧版 IPv4 规则？", isPresented: Binding(
             get: { snapshotToRestore != nil }, set: { if !$0 { snapshotToRestore = nil } }
@@ -754,7 +752,7 @@ private struct RoutingWorkspace: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 11)
-            .frame(maxWidth: .infinity, minHeight: 94, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
             .background(selected == mode ?
                         GlassPalette.blue.opacity(0.10) : Color.white.opacity(0.10),
                         in: RoundedRectangle(cornerRadius: 12))
@@ -817,8 +815,7 @@ struct SystemSettingsPane: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
+                                        .menuIndicator(.hidden).buttonStyle(.plain)
                     .fixedSize()
                 }
 
@@ -844,8 +841,7 @@ struct SystemSettingsPane: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
+                                        .menuIndicator(.hidden).buttonStyle(.plain)
                     .fixedSize()
                 }
 
@@ -873,13 +869,12 @@ struct SystemSettingsPane: View {
                             .frame(width: 24, height: 30)
                             .foregroundStyle(.secondary)
                     }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
+                                        .menuIndicator(.hidden).buttonStyle(.plain)
                     .fixedSize()
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, GlassLayout.pageTop)
+            .padding(.top, 12)
             .padding(.bottom, 20)
             .frame(maxWidth: 1060, alignment: .topLeading)
         }
@@ -1016,7 +1011,7 @@ struct ProfileDetail: View {
     }
 
     private var inspectorContent: some View {
-            VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 13) {
                     BrandMark(size: 54)
                     VStack(alignment: .leading, spacing: 2) {
@@ -1049,8 +1044,7 @@ struct ProfileDetail: View {
                             .frame(width: 22, height: 22)
                             .foregroundStyle(.secondary)
                     }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
+                                        .menuIndicator(.hidden)
                     .fixedSize()
                 }
                 HStack(spacing: 4) {
@@ -1111,7 +1105,7 @@ struct ProfileDetail: View {
     }
 
     private var metadata: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             editorRow("名称") {
                 TextField("配置名称", text: $draftName)
                     .textFieldStyle(.plain)
@@ -1163,7 +1157,7 @@ struct ProfileDetail: View {
                     .textFieldStyle(.plain)
                     .referenceInput(height: 58)
             }
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
                 LabeledContent("创建时间") {
                     Text(profile.importedAt, format: .dateTime.year().month().day().hour().minute())
                 }
@@ -1177,9 +1171,9 @@ struct ProfileDetail: View {
                 LabeledContent("文件大小", value: "未读取")
                 LabeledContent("配置类型", value: "OpenVPN")
             }
-            .font(.system(size: 14))
+            .font(.system(size: 13))
             .foregroundStyle(.secondary)
-            .padding(12)
+            .padding(4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.white.opacity(0.16),
                         in: RoundedRectangle(cornerRadius: 12))

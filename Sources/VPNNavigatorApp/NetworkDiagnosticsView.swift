@@ -36,72 +36,110 @@ struct NetworkDiagnosticsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 15) {
-                HStack(alignment: .center, spacing: 12) {
+                HStack(alignment: .center, spacing: 10) {
                     WorkspaceHeading(title: "网络诊断", subtitle: "",
                         symbol: "waveform.path.ecg")
-                    Spacer(minLength: 5)
-                    Picker("诊断类型", selection: $selectedTab) {
+                    Spacer(minLength: 2)
+                    HStack(spacing: 3) {
                         ForEach(DiagnosticTab.allCases) { tab in
-                            Text(tab.rawValue).tag(tab)
+                            Button {
+                                selectedTab = tab
+                            } label: {
+                                Text(tab.rawValue)
+                                    .font(.system(size: 11, weight: selectedTab == tab ?
+                                                   .semibold : .medium))
+                                    .foregroundStyle(selectedTab == tab ?
+                                                     GlassPalette.blue : .secondary)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 29)
+                                    .background {
+                                        if selectedTab == tab {
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(GlassSurface.panel.opacity(0.82))
+                                                .shadow(color: .blue.opacity(0.12),
+                                                        radius: 5, y: 2)
+                                        }
+                                    }
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .controlSize(.regular)
-                    .frame(width: 402)
-                    .padding(.trailing, 32)
+                    .padding(3)
+                    .frame(width: 360)
+                    .background(GlassSurface.sidebar.opacity(0.36),
+                                in: RoundedRectangle(cornerRadius: 11))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 11)
+                            .strokeBorder(Color.white.opacity(0.70), lineWidth: 1)
+                    }
+                    .padding(.trailing, 26)
                 }
 
-                HStack(alignment: .top, spacing: 13) {
-                    VPNPanel(selectedTab == .dns ? "DNS 状态" : "IPv4 连接测试",
-                             symbol: "checkmark.shield") {
-                        HStack(spacing: 9) {
+                HStack(alignment: .top, spacing: 12) {
+                    VPNPanel(selectedTab == .dns ? "DNS 解析" :
+                             selectedTab == .routing ? "IPv4 路由检查" :
+                             selectedTab == .latency ? "延迟测试" : "IPv4 连接测试",
+                             symbol: "checkmark.circle") {
+                        HStack(spacing: 8) {
                             TextField("目标 IPv4 地址", text: $address)
                                 .textFieldStyle(.roundedBorder)
                                 .font(.system(size: 11))
-                            Button("检查") { runDiagnostics() }
+                            Button(checking ? "检查中…" : "检查") { runDiagnostics() }
+                                .buttonStyle(.bordered)
                                 .controlSize(.small)
                                 .disabled(checking || IPv4CIDR.parseAddress(address) == nil)
                         }
+                        .padding(.bottom, 2)
 
                         if selectedTab == .latency {
-                            Label("当前版本不模拟延迟或测速，请参考系统路由信息。",
+                            Label("尚未支持真实延迟测量，不能显示模拟的毫秒值。",
                                   systemImage: "info.circle")
-                                .font(.system(size: 10))
+                                .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.vertical, 10)
+                        } else {
+                            VStack(alignment: .leading, spacing: 0) {
+                                if selectedTab == .connection {
+                                    diagnosticRow("本机网络", subtitle: "默认 IPv4 出口接口",
+                                        value: health?.ipv4DefaultInterface ?? "尚未检查",
+                                        checked: health?.ipv4DefaultInterface != nil)
+                                    Divider().opacity(0.24)
+                                }
+                                if selectedTab == .connection || selectedTab == .routing {
+                                    diagnosticRow("网关连接", subtitle: "目标 IP 的实际路由网关",
+                                        value: targetGateway.isEmpty ? "未查询" : targetGateway,
+                                        checked: !targetGateway.isEmpty)
+                                    Divider().opacity(0.24)
+                                    diagnosticRow("目标路由", subtitle: "系统路由表查询",
+                                        value: targetInterface.isEmpty ? "未查询" : targetInterface,
+                                        checked: !targetInterface.isEmpty)
+                                    Divider().opacity(0.24)
+                                }
+                                if selectedTab == .connection || selectedTab == .dns {
+                                    diagnosticRow("DNS 解析器", subtitle: "系统 scutil --dns",
+                                        value: health.map { "\($0.resolverCount) 个解析器" } ??
+                                               "尚未检查",
+                                        checked: (health?.resolverCount ?? 0) > 0)
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .background(GlassSurface.panel.opacity(0.29),
+                                        in: RoundedRectangle(cornerRadius: 12))
                         }
-                        Divider().opacity(0.4)
-                        diagnosticRow("本机网络", subtitle: "默认 IPv4 出口接口",
-                            value: health?.ipv4DefaultInterface ?? "尚未检查",
-                            symbol: "desktopcomputer",
-                            color: health?.ipv4DefaultInterface == nil ? .secondary : .green)
-                        diagnosticRow("网络网关", subtitle: "目标 IP 的实际路由网关",
-                            value: targetGateway.isEmpty ? "尚未查询" : targetGateway,
-                            symbol: "network",
-                            color: targetGateway.isEmpty ? .secondary : .green)
-                        diagnosticRow("目标路由", subtitle: "系统 route -n get 检查",
-                            value: targetInterface.isEmpty ? "尚未查询" : targetInterface,
-                            symbol: "arrow.triangle.branch",
-                            color: targetInterface.isEmpty ? .secondary : .green)
-                        diagnosticRow("DNS 解析器", subtitle: "系统 scutil --dns",
-                            value: health.map { "\($0.resolverCount) 个解析器" } ?? "尚未检查",
-                            symbol: "globe",
-                            color: health == nil ? .secondary : .green)
-                        diagnosticRow("IPv6 路由", subtitle: "物理网络旁路检查",
-                            value: ipv6Description,
-                            symbol: "shield",
-                            color: health == nil ? .secondary :
-                                  health?.ipv6Safety == .noDefaultRoute ? .green : .orange)
-                        HStack(spacing: 10) {
+
+                        HStack(alignment: .center, spacing: 10) {
                             Image(systemName: actualPath.isEmpty ?
-                                  "exclamationmark.circle.fill" : "checkmark.circle.fill")
-                                .font(.system(size: 23))
-                                .foregroundStyle(actualPath.isEmpty ? Color.orange : Color.green)
+                                  "info.circle.fill" : "checkmark.circle.fill")
+                                .font(.system(size: 28))
+                                .foregroundStyle(actualPath.isEmpty ?
+                                                 Color.orange : Color.green)
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(actualPath.isEmpty ? "等待路由检查" : "已读取本机路由")
-                                    .font(.system(size: 12, weight: .semibold))
-                                Text("仅表示本机路由查询成功，不代表 VPN 已连接或无泄漏。")
+                                Text(actualPath.isEmpty ?
+                                     "等待连接检查" : "本机路由已读取")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text(actualPath.isEmpty ?
+                                     "检查本机连接与路由状态" :
+                                     "本机路由查询成功；不代表 VPN 已连接或不存在泄漏")
                                     .font(.system(size: 10))
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -109,13 +147,15 @@ struct NetworkDiagnosticsView: View {
                             Spacer(minLength: 0)
                         }
                         .padding(12)
-                        .background((actualPath.isEmpty ? Color.orange : Color.green)
-                            .opacity(0.11), in: RoundedRectangle(cornerRadius: 12))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.green.opacity(actualPath.isEmpty ? 0.045 : 0.11),
+                                    in: RoundedRectangle(cornerRadius: 12))
                     }
                     .frame(maxWidth: .infinity)
 
-                    VStack(spacing: 12) {
-                        VPNPanel("当前路由路径", symbol: "point.topleft.down.curvedto.point.bottomright.up") {
+                    VStack(spacing: 11) {
+                        VPNPanel("当前路由路径",
+                                 symbol: "point.3.connected.trianglepath.dotted") {
                             routeStep("本机出口接口",
                                 value: health?.ipv4DefaultInterface ?? "未检测", index: 0)
                             routeStep("目标网关",
@@ -126,13 +166,11 @@ struct NetworkDiagnosticsView: View {
                                 ip: address,
                                 mode: model.selected?.mode ?? .original,
                                 rules: model.rules) {
-                                Divider().opacity(0.4)
-                                HStack(spacing: 6) {
-                                    Image(systemName: "info.circle")
-                                        .foregroundStyle(GlassPalette.blue)
-                                    Text("预期路径：\(decision.expected.rawValue)")
-                                        .font(.system(size: 11, weight: .semibold))
-                                }
+                                Divider().opacity(0.28)
+                                Label("预期路径：\(decision.expected.rawValue)",
+                                      systemImage: "info.circle")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(GlassPalette.blue)
                                 Text(decision.reason)
                                     .font(.system(size: 10))
                                     .foregroundStyle(.secondary)
@@ -140,19 +178,35 @@ struct NetworkDiagnosticsView: View {
                             }
                         }
 
-                        VPNPanel("安全提醒", symbol: "exclamationmark.shield") {
-                            Text("路由表、DNS 和 IPv6 信息均来自本机系统命令；无法据此证明公网出口位置、实际延迟或零泄漏。")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            if !healthError.isEmpty {
-                                Text(healthError)
+                        HStack(spacing: 11) {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .font(.system(size: 24))
+                                .foregroundStyle(.orange)
+                                .frame(width: 34)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("IPv6 连接（预览）")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text(ipv6Description)
                                     .font(.system(size: 10))
-                                    .foregroundStyle(.orange)
+                                    .foregroundStyle(health?.ipv6Safety == .noDefaultRoute ?
+                                                     Color.green : Color.orange)
+                                Text("仅核查本机路由，未实现 IPv6 分流。")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
                             }
+                            Spacer(minLength: 0)
                         }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .glassCard(cornerRadius: 15)
                     }
                     .frame(maxWidth: .infinity)
+                }
+
+                if !healthError.isEmpty {
+                    Label(healthError, systemImage: "exclamationmark.triangle")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.orange)
                 }
             }
             .padding(.horizontal, 20)
@@ -166,16 +220,14 @@ struct NetworkDiagnosticsView: View {
     }
 
     private func diagnosticRow(_ title: String, subtitle: String,
-                               value: String, symbol: String,
-                               color: Color) -> some View {
+                               value: String, checked: Bool) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: symbol)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(GlassPalette.blue)
-                .frame(width: 25)
+            Image(systemName: checked ? "checkmark.circle.fill" : "circle.dotted")
+                .font(.system(size: 16))
+                .foregroundStyle(checked ? Color.green : Color.secondary)
+                .frame(width: 26)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
+                Text(title).font(.system(size: 11, weight: .semibold))
                 Text(subtitle)
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
@@ -183,11 +235,11 @@ struct NetworkDiagnosticsView: View {
             Spacer(minLength: 4)
             Text(value)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(color)
+                .foregroundStyle(checked ? Color.green : Color.secondary)
                 .lineLimit(2)
                 .multilineTextAlignment(.trailing)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 10)
     }
 
     private func routeStep(_ title: String, value: String, index: Int) -> some View {

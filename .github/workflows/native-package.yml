@@ -88,6 +88,15 @@ jobs:
             fi
           done
           killall VPNNavigatorApp 2>/dev/null || true
+          # Four additional screenshots on the SAME wallpaper to compare
+          # actual native material diffusion before selecting a default.
+          for PRESET in strong popover sidebar hud; do
+            open -n "$APP" --args "--vpnnav-ui-tab=overview" "--vpnnav-ui-glass-snapshot" "--vpnnav-ui-demo-snapshot" "--vpnnav-glass-preset=$PRESET" || true
+            sleep 4
+            screencapture -x "$RUNNER_TEMP/VPNNavigator-material-$PRESET.png" || true
+            killall VPNNavigatorApp 2>/dev/null || true
+            sleep 1
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: VPNNavigator-visual-smoke
@@ -98,6 +107,7 @@ jobs:
             ${{ runner.temp }}/VPNNavigator-diagnostics.png
             ${{ runner.temp }}/VPNNavigator-settings.png
             ${{ runner.temp }}/VPNNavigator-Desktop-Before.png
+            ${{ runner.temp }}/VPNNavigator-material-*.png
           if-no-files-found: ignore
           retention-days: 7
       - name: Package verified .app using macOS ditto

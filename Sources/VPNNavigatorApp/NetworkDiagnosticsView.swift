@@ -51,7 +51,7 @@ struct NetworkDiagnosticsView: View {
                                     .foregroundStyle(selectedTab == tab ?
                                                      GlassPalette.blue : .secondary)
                                     .frame(maxWidth: .infinity)
-                                    .frame(height: 29)
+                                    .frame(height: 30)
                                     .background {
                                         if selectedTab == tab {
                                             RoundedRectangle(cornerRadius: 8)
@@ -65,7 +65,7 @@ struct NetworkDiagnosticsView: View {
                         }
                     }
                     .padding(3)
-                    .frame(width: 360)
+                    .frame(width: 345)
                     .background(GlassSurface.sidebar.opacity(0.36),
                                 in: RoundedRectangle(cornerRadius: 11))
                     .overlay {
@@ -209,7 +209,7 @@ struct NetworkDiagnosticsView: View {
                         .foregroundStyle(.orange)
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, GlassLayout.pageInset)
             .padding(.top, 32)
             .padding(.bottom, 20)
             .frame(maxWidth: 1100, alignment: .leading)

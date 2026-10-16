@@ -35,6 +35,7 @@ struct NetworkDiagnosticsView: View {
     }
 
     var body: some View {
+        GeometryReader { geometry in
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 18) {
                 Text("网络诊断").font(.system(size: ReferenceType.pageTitle, weight: .bold))
@@ -109,7 +110,8 @@ struct NetworkDiagnosticsView: View {
                     .background(Color.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
                 }
                 .padding(18)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(width: max(280, (geometry.size.width - 54) * 0.61))
+                .frame(maxHeight: .infinity, alignment: .topLeading)
                 .glassCard(cornerRadius: 18)
                 VStack(spacing: 14) {
                     VStack(alignment: .leading, spacing: 14) {
@@ -130,7 +132,7 @@ struct NetworkDiagnosticsView: View {
                         VStack(alignment: .leading, spacing: 7) {
                             Text("IPv6 连接（预览）").font(.system(size: 16, weight: .semibold))
                             Text(ipv6Description).font(.system(size: 12)).foregroundStyle(.secondary)
-                            Text("仅检查本机路由，未实现 IPv6 分流。")
+                            Text("仅检查路由，未实现 IPv6 分流。")
                                 .font(.system(size: 12)).foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 0)
@@ -148,6 +150,7 @@ struct NetworkDiagnosticsView: View {
         .padding(.top, 12)
         .padding(.bottom, 20)
         .onAppear { if health == nil { runDiagnostics() } }
+        }
     }
 
     private func panelTitle(_ title: String) -> some View {
@@ -162,7 +165,7 @@ struct NetworkDiagnosticsView: View {
             Image(systemName: checked ? "checkmark.circle.fill" : "circle.dotted")
                 .font(.system(size: 20)).foregroundStyle(checked ? Color.green : .secondary)
                 .frame(width: 24)
-            Text(title).font(.system(size: 14)).foregroundStyle(.secondary)
+            Text(title).font(.system(size: 16)).foregroundStyle(.secondary)
             Spacer(minLength: 0)
             Text(value).font(.system(size: 13)).foregroundStyle(GlassPalette.ink)
                 .lineLimit(1).minimumScaleFactor(0.8)

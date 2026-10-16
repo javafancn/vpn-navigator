@@ -644,6 +644,7 @@ private struct RoutingWorkspace: View {
     }
 
     var body: some View {
+        GeometryReader { geometry in
         VStack(alignment: .leading, spacing: 14) {
             WorkspaceHeading(title: "路由与规则", subtitle: "管理 VPN 路由模式与中国 IPv4 规则", symbol: "point.3.connected.trianglepath.dotted")
             HStack(alignment: .top, spacing: 14) {
@@ -653,7 +654,8 @@ private struct RoutingWorkspace: View {
                     Spacer(minLength: 12)
                 }
                 .padding(20)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(width: max(280, (geometry.size.width - 54) * 0.44))
+                .frame(maxHeight: .infinity, alignment: .topLeading)
                 .glassCard(cornerRadius: 18)
                 VStack(spacing: 14) {
                     VStack(alignment: .leading, spacing: 16) {
@@ -727,6 +729,7 @@ private struct RoutingWorkspace: View {
             }
             Button("取消", role: .cancel) { snapshotToRestore = nil }
         } message: { Text("恢复会替换当前规则，已有受管连接的安全限制仍然适用。") }
+        }
     }
 
     private func routeOption(_ mode: RoutingMode) -> some View {

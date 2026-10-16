@@ -923,7 +923,7 @@ struct ProfileDetail: View {
     @State private var history: [ProfileRevision] = []
 
     var body: some View {
-        ScrollView {
+        ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 13) {
                 HStack(spacing: 13) {
                     GlassIcon(symbol: "network.badge.shield.half.filled", size: 54)

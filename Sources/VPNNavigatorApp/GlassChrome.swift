@@ -7,7 +7,6 @@ enum GlassPalette {
     static let blue = Color(red: 0.0, green: 0.478, blue: 1.0)
     static let cyan = Color(red: 0.10, green: 0.73, blue: 1.0)
     static let ink = Color(red: 0.055, green: 0.075, blue: 0.18)
-    static let violet = Color(red: 0.67, green: 0.60, blue: 0.94)
 }
 
 /// Shared visual measurements for all five workspaces. Keep these independent
@@ -21,107 +20,27 @@ enum GlassLayout {
 }
 
 
-// Screenshot-only material calibration. Each preset renders the *real* desktop
-// using native AppKit; no wallpaper or screenshot is bundled with the app.
-// Standard users get the tuned default, not a demonstration background.
-private enum GlassMaterialTuning {
-    static let preset: String = ProcessInfo.processInfo.arguments
-        .first(where: { $0.hasPrefix("--vpnnav-glass-preset=") })?
-        .split(separator: "=", maxSplits: 1).last.map(String.init) ?? "standard"
-
-    static var windowMaterial: NSVisualEffectView.Material {
-        switch preset {
-        case "popover": return .popover
-        case "sidebar": return .sidebar
-        case "hud": return .hudWindow
-        default: return .sidebar
-        }
-    }
-    static var cardMaterial: NSVisualEffectView.Material {
-        switch preset {
-        case "popover": return .popover
-        case "sidebar": return .sidebar
-        case "hud": return .hudWindow
-        default: return .sidebar
-        }
-    }
-    static var windowAlpha: CGFloat {
-        switch preset {
-        case "strong": return 1.0
-        case "popover", "sidebar", "hud": return 0.84
-        default: return 0.82
-        }
-    }
-    static var cardAlpha: CGFloat {
-        switch preset {
-        case "strong": return 1.0
-        case "popover", "sidebar", "hud": return 0.84
-        default: return 0.25
-        }
-    }
-}
-
-
-/// Light glass colors are intentionally near-neutral instead of a saturated
-/// blue overlay: the supplied design is a white-lilac frost, not clear glass.
+/// Neutral optical layers. Wallpaper colour belongs to WindowServer, not to
+/// application gradients. Keep these shared fills achromatic on every page.
 enum GlassSurface {
-    static let mist = Color(red: 0.91, green: 0.95, blue: 1.00)
-    static let sidebar = Color(red: 0.76, green: 0.84, blue: 0.96)
-    static let panel = Color(red: 0.97, green: 0.985, blue: 1.00)
-
-    /// For screenshot calibration against the reference, without modifying
-    /// the Mac's wallpaper or embedding a background image.
-    static let preset: String = ProcessInfo.processInfo.arguments
-        .first(where: { $0.hasPrefix("--vpnnav-mist=") })?
-        .split(separator: "=", maxSplits: 1).last.map(String.init) ?? "reference"
-
-    static var windowOpacity: Double {
-        switch preset {
-        case "lighter": return 0.46
-        case "denser": return 0.79
-        default: return 0.25
-        }
-    }
-    static var cardOpacity: Double {
-        switch preset {
-        case "lighter": return 0.62
-        case "denser": return 0.91
-        default: return 0.32
-        }
-    }
+    static let mist = Color.white
+    static let sidebar = Color.white
+    static let panel = Color.white
+    static let windowOpacity = 0.045
+    static let cardOpacity = 0.16
 }
 
-/// This is the actual macOS desktop backdrop, not an app-drawn landscape.
-/// The wallpaper belongs to the OS and changes as the user changes desktops.
-/// Avoid gradients, mountain artwork and any opaque full-window fill.
 struct GlassAtmosphere: View {
-    @Environment(\.colorScheme) private var appearance
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         ZStack {
-            DesktopVisualEffect()
-            // Native blur softens wallpaper detail; this independent veil
-            // reduces wallpaper contrast. Blur alpha alone cannot do both.
             if reduceTransparency &&
                 !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot") {
                 Color(nsColor: .windowBackgroundColor)
             } else {
-                GlassSurface.mist.opacity(
-                    appearance == .dark ? GlassSurface.windowOpacity * 0.55 :
-                                          GlassSurface.windowOpacity)
-                // Gentle blue-lilac atmospheric light, like the design
-                // reference, over REAL macOS vibrancy. Not a wallpaper.
-                LinearGradient(
-                    colors: [
-                        GlassPalette.blue.opacity(appearance == .dark ? 0.025 : 0.055),
-                        Color.clear,
-                        GlassPalette.violet.opacity(appearance == .dark ? 0.025 : 0.025)
-                    ], startPoint: .topLeading, endPoint: .bottomTrailing)
-                RadialGradient(
-                    colors: [GlassPalette.cyan.opacity(appearance == .dark ? 0.018 : 0.045),
-                             .clear],
-                    center: .topTrailing, startRadius: 22, endRadius: 620)
+                DesktopVisualEffect()
+                Color.white.opacity(GlassSurface.windowOpacity)
             }
         }
         .ignoresSafeArea()
@@ -152,40 +71,18 @@ final class NativeWindowGlass: NSVisualEffectView {
     }
 }
 
+/// One full-strength native blur. Lowering the effect view's alpha also
+/// reveals unblurred wallpaper; tune readability with the neutral veil above.
 struct DesktopVisualEffect: NSViewRepresentable {
     func makeNSView(context: Context) -> NativeWindowGlass {
         let view = NativeWindowGlass()
-        view.material = GlassMaterialTuning.windowMaterial
+        view.material = .sidebar
         view.blendingMode = .behindWindow
-        view.state = .active
-        // A fully opaque under-window material hides colorful wallpapers.
-        // Compose only a fraction of the native blur over a CLEAR NSWindow.
-        view.alphaValue = GlassMaterialTuning.windowAlpha
+        view.state = .followsWindowActiveState
         return view
     }
     func updateNSView(_ view: NativeWindowGlass, context: Context) {
         view.configureWindow()
-        view.material = GlassMaterialTuning.windowMaterial
-        view.alphaValue = GlassMaterialTuning.windowAlpha
-    }
-}
-
-/// Per-card AppKit blur samples the same desktop as the transparent window.
-/// Unlike nesting opaque SwiftUI materials, a fractional native visual effect
-/// adds local diffusion without hiding the wallpaper with a solid gray surface.
-private struct NativeCardBlur: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = GlassMaterialTuning.cardMaterial
-        view.blendingMode = .behindWindow
-        view.state = .active
-        view.alphaValue = GlassMaterialTuning.cardAlpha
-        return view
-    }
-
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {
-        view.material = GlassMaterialTuning.cardMaterial
-        view.alphaValue = GlassMaterialTuning.cardAlpha
     }
 }
 
@@ -193,24 +90,12 @@ private struct NativeCardBlur: NSViewRepresentable {
 /// translucent content canvas in addition to the individual frosted tiles;
 /// without this layer the header looks detached from the whole page.
 struct ReferenceWorkspaceSurface: ViewModifier {
-    @Environment(\.colorScheme) private var appearance
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         content
-            .background {
-                shape.fill(appearance == .dark ?
-                    Color.white.opacity(0.055) :
-                    Color(red: 0.90, green: 0.95, blue: 1).opacity(0.12))
-            }
-            .overlay {
-                shape.strokeBorder(
-                    LinearGradient(colors: [
-                        Color.white.opacity(0.84),
-                        Color.white.opacity(0.14),
-                        Color.white.opacity(0.32)
-                    ], startPoint: .topLeading, endPoint: .bottomTrailing),
-                    lineWidth: 1)
-            }
+            .background(shape.fill(Color.white.opacity(0.035)))
+            .overlay(shape.strokeBorder(Color.white.opacity(0.30), lineWidth: 0.75)
+                .allowsHitTesting(false))
     }
 }
 extension View {
@@ -223,50 +108,20 @@ extension View {
 /// while giving text and controls their own *local* blur and readable tint.
 /// No wallpaper image, opaque app background, or fake macOS glass API.
 private struct GlassCardModifier: ViewModifier {
-    @Environment(\.colorScheme) private var appearance
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var cornerRadius: CGFloat
     var active: Bool
 
     func body(content: Content) -> some View {
-        // CI runners may force Reduce Transparency in their accessibility
-        // configuration. An explicit UI-only snapshot flag lets screenshots
-        // exercise normal glass without changing the user's system setting.
         let opaqueFallback = reduceTransparency &&
             !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot")
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
-            .background {
-                if opaqueFallback {
-                    shape.fill(Color(nsColor: .windowBackgroundColor))
-                } else {
-                    shape.fill(appearance == .dark
-                               ? Color.black.opacity(0.22)
-                               : GlassSurface.panel.opacity(GlassSurface.cardOpacity))
-                    // A subtle upper-left highlight separates layered panes
-                    // without painting an opaque card over the desktop.
-                    shape.fill(LinearGradient(colors: [
-                        Color.white.opacity(appearance == .dark ? 0.07 : 0.24),
-                        Color.white.opacity(appearance == .dark ? 0.01 : 0.08),
-                        GlassPalette.violet.opacity(appearance == .dark ? 0.025 : 0.025)
-                    ], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    if active {
-                        shape.fill(RadialGradient(colors: [
-                            GlassPalette.cyan.opacity(0.11), .clear
-                        ], center: .topLeading, startRadius: 0, endRadius: 350))
-                    }
-                }
-            }
-            .overlay {
-                shape.strokeBorder(
-                    LinearGradient(colors: [
-                        Color.white.opacity(appearance == .dark ? 0.38 : 0.93),
-                        GlassPalette.blue.opacity(appearance == .dark ? 0.08 : 0.09),
-                        Color.white.opacity(0.34)
-                    ], startPoint: .topLeading, endPoint: .bottomTrailing),
-                    lineWidth: 1)
-            }
-            .shadow(color: GlassPalette.ink.opacity(0.025), radius: 5, y: 2)
+            .background(shape.fill(opaqueFallback ? Color(nsColor: .windowBackgroundColor) :
+                Color.white.opacity(GlassSurface.cardOpacity)))
+            .overlay(shape.strokeBorder(Color.white.opacity(active ? 0.65 : 0.50), lineWidth: 0.75)
+                .allowsHitTesting(false))
+            .shadow(color: Color.black.opacity(active ? 0.04 : 0.025), radius: 8, y: 3)
     }
 }
 
@@ -288,17 +143,14 @@ struct GlassIcon: View {
             .frame(width: size, height: size)
             .background {
                 RoundedRectangle(cornerRadius: size * 0.27)
-                    .fill(LinearGradient(colors: [Color.white.opacity(0.95),
-                                                  Color(red: 0.82, green: 0.91, blue: 1).opacity(0.70)],
-                                         startPoint: .topLeading,
-                                         endPoint: .bottomTrailing))
+                    .fill(Color.white.opacity(0.46))
                     .overlay {
                         RoundedRectangle(cornerRadius: size * 0.27)
-                            .fill(color.opacity(0.08))
+                            .fill(color.opacity(0.06))
                     }
             }
             .overlay(RoundedRectangle(cornerRadius: size * 0.27)
-                .strokeBorder(Color.white.opacity(0.85), lineWidth: 1))
+                .strokeBorder(Color.white.opacity(0.65), lineWidth: 0.75))
     }
 }
 
@@ -356,7 +208,7 @@ struct BrandMark: View {
         .frame(width: size, height: size)
         .overlay(RoundedRectangle(cornerRadius: size * 0.27)
             .strokeBorder(Color.white.opacity(0.92), lineWidth: 1))
-        .shadow(color: GlassPalette.blue.opacity(0.16), radius: 9, y: 3)
+        .shadow(color: Color.black.opacity(0.06), radius: 5, y: 2)
         .accessibilityLabel("VPN Navigator")
     }
 }

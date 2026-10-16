@@ -15,6 +15,8 @@ struct NetworkDiagnosticsView: View {
     @State private var selectedTab: DiagnosticTab = .connection
     @State private var checking = false
     @State private var showingTarget = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var diagnosticSelection
 
     private enum DiagnosticTab: String, CaseIterable, Identifiable {
         case connection = "连接测试"
@@ -47,11 +49,18 @@ struct NetworkDiagnosticsView: View {
                                 .font(.system(size: 14, weight: selectedTab == tab ? .semibold : .regular))
                                 .foregroundStyle(selectedTab == tab ? GlassPalette.blue : GlassPalette.ink.opacity(0.58))
                                 .frame(maxWidth: .infinity).frame(height: 34)
-                                .background(selectedTab == tab ? Color.white.opacity(0.70) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                                .background {
+                                    if selectedTab == tab {
+                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                            .fill(Color.white.opacity(0.50))
+                                            .matchedGeometryEffect(id: "diagnostic-selection", in: diagnosticSelection)
+                                    }
+                                }
                         }.buttonStyle(.plain)
                     }
                 }
                 .referenceSegments().frame(width: 420)
+                .animation(GlassMotion.selection(reduceMotion), value: selectedTab)
                 .padding(.trailing, 25)
             }.frame(height: 56)
             HStack(alignment: .top, spacing: 14) {

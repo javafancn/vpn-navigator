@@ -55,7 +55,7 @@ struct GlassMenuBarView: View {
                     NSApp.activate(ignoringOtherApps: true)
                     NSApp.windows.first(where: { $0.title.contains("VPN Navigator") && !$0.isKind(of: NSPanel.self) })?.makeKeyAndOrderFront(nil)
                 } label: { menuRow("打开主窗口", symbol: "macwindow") }
-                .buttonStyle(.plain)
+                .buttonStyle(ReferenceQuietButton())
                 Divider().opacity(0.2)
                 Button {
                     Task {
@@ -63,7 +63,7 @@ struct GlassMenuBarView: View {
                         if !model.connected && !model.connecting { NSApp.terminate(nil) }
                     }
                 } label: { menuRow("退出", symbol: "power") }
-                .buttonStyle(.plain).disabled(model.connecting || model.busy)
+                .buttonStyle(ReferenceQuietButton()).disabled(model.connecting || model.busy)
             }
             .padding(.horizontal, 12).glassCard(cornerRadius: 15)
         }

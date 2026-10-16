@@ -19,10 +19,12 @@ enum ReferenceMetrics {
 /// than .roundedBorder defaults. Only presentation is changed here.
 struct ReferenceInputChrome: ViewModifier {
     @Environment(\.colorScheme) private var appearance
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var height: CGFloat = ReferenceMetrics.controlHeight
+    var focused = false
     func body(content: Content) -> some View {
         content
-            .font(.system(size: ReferenceType.field, weight: .medium))
+            .font(.system(size: ReferenceType.field))
             .foregroundStyle(appearance == .dark ? Color.white : GlassPalette.ink)
             .padding(.horizontal, 11)
             .frame(height: height)
@@ -30,22 +32,24 @@ struct ReferenceInputChrome: ViewModifier {
                 RoundedRectangle(cornerRadius: ReferenceMetrics.corner, style: .continuous)
                     .fill(appearance == .dark ?
                           Color.white.opacity(0.13) :
-                          Color(red: 0.99, green: 0.995, blue: 1).opacity(0.58))
+                          Color.white.opacity(focused ? 0.40 : 0.28))
             }
             .overlay {
                 RoundedRectangle(cornerRadius: ReferenceMetrics.corner, style: .continuous)
-                    .strokeBorder(appearance == .dark ?
-                                  Color.white.opacity(0.29) :
-                                  Color(red: 0.73, green: 0.82, blue: 0.95).opacity(0.35),
-                                  lineWidth: 1)
+                    .strokeBorder(focused ? GlassPalette.blue.opacity(0.65) :
+                        Color.white.opacity(appearance == .dark ? 0.25 : 0.48),
+                        lineWidth: focused ? 1.5 : 0.75)
+                    .allowsHitTesting(false)
             }
+            .tint(GlassPalette.blue)
+            .animation(GlassMotion.feedback(reduceMotion), value: focused)
     }
 }
 
 extension View {
     /// Applies the same frosted text/selection container across all pages.
-    func referenceInput(height: CGFloat = ReferenceMetrics.controlHeight) -> some View {
-        modifier(ReferenceInputChrome(height: height))
+    func referenceInput(height: CGFloat = ReferenceMetrics.controlHeight, focused: Bool = false) -> some View {
+        modifier(ReferenceInputChrome(height: height, focused: focused))
     }
 }
 
@@ -76,10 +80,10 @@ struct ReferenceSegmentChrome: ViewModifier {
             .padding(3)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(red: 0.96, green: 0.98, blue: 1).opacity(0.35)))
+                    .fill(Color.white.opacity(0.16)))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.96), lineWidth: 1)
+                    .strokeBorder(Color.white.opacity(0.42), lineWidth: 0.75)
             }
     }
 }
@@ -109,51 +113,98 @@ struct ReferenceFormRow<Content: View>: View {
     }
 }
 
-/// Consistent emphasis for the small auxiliary call-to-action buttons.
+/// State changes animate only on interaction. There is no idle glow/timer.
+enum GlassMotion {
+    static func feedback(_ reduced: Bool) -> Animation? {
+        reduced ? nil : .easeOut(duration: 0.12)
+    }
+    static func selection(_ reduced: Bool) -> Animation? {
+        reduced ? nil : .spring(response: 0.30, dampingFraction: 0.88)
+    }
+    static func page(_ reduced: Bool) -> Animation? {
+        reduced ? nil : .easeOut(duration: 0.16)
+    }
+}
+
 struct ReferenceSecondaryButton: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: ReferenceType.caption + 1, weight: .semibold))
-            .foregroundStyle(GlassPalette.ink)
-            .padding(.horizontal, 12)
-            .frame(minHeight: 34)
-            .background {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.white.opacity(configuration.isPressed ? 0.68 : 0.55))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Color.white.opacity(0.87), lineWidth: 1)
-            }
+        ReferenceButtonBody(label: configuration.label,
+            pressed: configuration.isPressed, primary: false)
     }
 }
 
- 
-/// The gradient CTA used in the supplied blue/white reference for import,
-/// update, save, and other primary workspace actions.
 struct ReferencePrimaryButton: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: ReferenceType.field, weight: .semibold))
-            .foregroundStyle(Color.white)
-            .padding(.horizontal, 13)
-            .frame(minHeight: 36)
-            .background {
-                RoundedRectangle(cornerRadius: ReferenceMetrics.corner)
-                    .fill(LinearGradient(
-                        colors: [Color(red: 0.13, green: 0.58, blue: 1),
-                                 Color(red: 0.01, green: 0.40, blue: 0.93)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .opacity(isEnabled ? (configuration.isPressed ? 0.78 : 1) : 0.46)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: ReferenceMetrics.corner)
-                    .strokeBorder(Color.white.opacity(0.50), lineWidth: 1)
-            }
-            .shadow(color: GlassPalette.blue.opacity(isEnabled ? 0.15 : 0),
-                    radius: 4, y: 2)
+        ReferenceButtonBody(label: configuration.label,
+            pressed: configuration.isPressed, primary: true)
     }
 }
 
+private struct ReferenceButtonBody<Label: View>: View {
+    let label: Label
+    let pressed: Bool
+    let primary: Bool
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovered = false
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: ReferenceMetrics.corner, style: .continuous)
+        label
+            .font(.system(size: primary ? ReferenceType.field : ReferenceType.caption + 1,
+                          weight: .medium))
+            .foregroundStyle(primary ? Color.white : GlassPalette.ink)
+            .padding(.horizontal, primary ? 13 : 12)
+            .frame(minHeight: primary ? 36 : 34)
+            .background {
+                if primary {
+                    shape.fill(LinearGradient(colors: [
+                        Color(red: 0.08, green: 0.55, blue: 1), GlassPalette.blue
+                    ], startPoint: .top, endPoint: .bottom))
+                } else {
+                    shape.fill(Color.white.opacity(pressed ? 0.22 : hovered && enabled ? 0.46 : 0.30))
+                }
+            }
+            .overlay(shape.strokeBorder(Color.white.opacity(primary ? 0.40 : 0.55), lineWidth: 0.75)
+                .allowsHitTesting(false))
+            .shadow(color: Color.black.opacity(primary && enabled ? 0.07 : 0.015), radius: 4, y: 2)
+            .brightness(primary && hovered && enabled ? 0.035 : 0)
+            .opacity(enabled ? pressed ? 0.88 : 1 : 0.45)
+            .scaleEffect(pressed && !reduceMotion ? 0.985 : 1)
+            .contentShape(shape)
+            .onHover { hovered = $0 }
+            .animation(GlassMotion.feedback(reduceMotion), value: hovered)
+            .animation(GlassMotion.feedback(reduceMotion), value: pressed)
+    }
+}
+
+/// Navigation, list and icon buttons keep their own geometry/material.
+/// Feedback does not reflow neighbouring controls or capture text-field focus.
+struct ReferenceQuietButton: ButtonStyle {
+    var cornerRadius: CGFloat = 9
+    var hoverOpacity: Double = 0.12
+    func makeBody(configuration: Configuration) -> some View {
+        ReferenceQuietButtonBody(label: configuration.label, pressed: configuration.isPressed,
+            cornerRadius: cornerRadius, hoverOpacity: hoverOpacity)
+    }
+}
+
+private struct ReferenceQuietButtonBody<Label: View>: View {
+    let label: Label
+    let pressed: Bool
+    let cornerRadius: CGFloat
+    let hoverOpacity: Double
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovered = false
+    var body: some View {
+        label
+            .background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.white.opacity(hovered && enabled ? hoverOpacity : 0)))
+            .opacity(pressed ? 0.82 : 1)
+            .scaleEffect(pressed && !reduceMotion ? 0.992 : 1)
+            .onHover { hovered = $0 }
+            .animation(GlassMotion.feedback(reduceMotion), value: hovered)
+            .animation(GlassMotion.feedback(reduceMotion), value: pressed)
+    }
+}

@@ -31,6 +31,8 @@ struct MainView: View {
     @EnvironmentObject private var model: AppModel
     @State private var tab: WorkspaceTab = .overview
     @State private var importing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var sidebarSelection
 
     /// The UI snapshot argument selects a real application page for macOS
     /// screenshot checks. It never changes connectivity or network state.
@@ -59,6 +61,9 @@ struct MainView: View {
                         case .settings: SystemSettingsPane()
                         }
                     }
+                    .id(tab)
+                    .transition(.opacity)
+                    .animation(GlassMotion.page(reduceMotion), value: tab)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .referenceWorkspaceSurface()
                     .padding(.leading, 8)
@@ -73,7 +78,7 @@ struct MainView: View {
                                 .frame(width: 34, height: 34)
                                 .glassCard(cornerRadius: 10)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(ReferenceQuietButton(cornerRadius: 10))
                         .help("导入 VPN 配置")
                         .padding(.top, 16)
                         .padding(.trailing, 18)
@@ -112,7 +117,7 @@ struct MainView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("VPN Navigator").font(.system(size: 18, weight: .bold))
                         .lineLimit(1)
-                    Text("网络连接控制台").font(.system(size: 16)).foregroundStyle(.secondary)
+                    Text("网络连接控制台").font(.system(size: 13)).foregroundStyle(.secondary)
                 }
             }
             .padding(.leading, 19)
@@ -122,7 +127,7 @@ struct MainView: View {
 
             if tab != .overview {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.16)) { tab = .overview }
+                    tab = .overview
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "person.crop.circle")
@@ -137,7 +142,7 @@ struct MainView: View {
                     .frame(height: 48)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ReferenceQuietButton())
                 .help("返回连接总览")
                 .padding(.horizontal, 15)
                 .padding(.bottom, 7)
@@ -146,7 +151,7 @@ struct MainView: View {
             ForEach(tab == .overview ?
                     WorkspaceTab.allCases :
                     WorkspaceTab.allCases.filter { $0 != .overview }) { item in
-                Button { withAnimation(.easeInOut(duration: 0.16)) { tab = item } } label: {
+                Button { tab = item } label: {
                     HStack(spacing: 12) {
                         Image(systemName: item.symbol)
                             .font(.system(size: 19, weight: .medium))
@@ -166,12 +171,13 @@ struct MainView: View {
                                     Color(red: 0.12, green: 0.53, blue: 1),
                                     Color(red: 0.03, green: 0.39, blue: 0.91)
                                 ], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                .shadow(color: .blue.opacity(0.28), radius: 4, y: 2)
+                                .shadow(color: GlassPalette.blue.opacity(0.15), radius: 4, y: 2)
+                                .matchedGeometryEffect(id: "workspace-selection", in: sidebarSelection)
                         }
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ReferenceQuietButton())
                 .accessibilityAddTraits(tab == item ? .isSelected : [])
                 .padding(.horizontal, 15)
                 .padding(.bottom, 7)
@@ -180,8 +186,9 @@ struct MainView: View {
 
         }
         .background {
-            GlassSurface.sidebar.opacity(0.13)
+            GlassSurface.sidebar.opacity(0.04)
         }
+        .animation(GlassMotion.selection(reduceMotion), value: tab)
         .overlay(alignment: .trailing) {
             Rectangle().fill(Color.white.opacity(0.36)).frame(width: 1)
         }
@@ -277,7 +284,7 @@ private struct ConnectionOverview: View {
                             else { await model.connectSelected() }
                         }
                     } label: { ReferencePowerOrb() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(ReferenceQuietButton(cornerRadius: 110, hoverOpacity: 0.04))
                     .disabled(model.busy || model.connecting)
                     .accessibilityLabel(model.connected ? "断开 VPN" : "连接 VPN")
                     Text(statusTitle)
@@ -474,6 +481,7 @@ private struct ProfileLibrary: View {
     @EnvironmentObject private var model: AppModel
     let onImport: () -> Void
     @State private var query = ""
+    @FocusState private var searchFocused: Bool
 
     private var filtered: [VPNProfile] {
         model.profiles.filter {
@@ -499,6 +507,7 @@ private struct ProfileLibrary: View {
                     .foregroundStyle(.secondary)
                     .font(.system(size: 16))
                 TextField("搜索配置文件…", text: $query)
+                    .focused($searchFocused)
                     .font(.system(size: 16))
                     .textFieldStyle(.plain)
                 if !query.isEmpty {
@@ -512,7 +521,7 @@ private struct ProfileLibrary: View {
                     .accessibilityLabel("清除搜索")
                 }
             }
-                .referenceInput(height: 42)
+                .referenceInput(height: 42, focused: searchFocused)
                 Button(action: onImport) {
                     Label("导入配置", systemImage: "plus")
                         .font(.system(size: 14, weight: .semibold))
@@ -539,7 +548,7 @@ private struct ProfileLibrary: View {
                     ScrollView {
                         LazyVStack(spacing: 5) {
                             ForEach(filtered) { profile in
-                                Button { model.selectedID = profile.id } label: {
+                                Button { searchFocused = false; model.selectedID = profile.id } label: {
                                     HStack(spacing: 9) {
                                         GlassIcon(symbol: "globe",
                                                   color: profile.isFavorite ?
@@ -583,7 +592,7 @@ private struct ProfileLibrary: View {
                                     }
                                     .contentShape(Rectangle())
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(ReferenceQuietButton(cornerRadius: 11))
                                 .accessibilityAddTraits(
                                     model.selectedID == profile.id ? .isSelected : [])
                             }
@@ -768,7 +777,7 @@ private struct RoutingWorkspace: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ReferenceQuietButton(cornerRadius: 12))
         .disabled(model.selected == nil || model.busy ||
                   model.connected || model.connecting)
     }
@@ -937,6 +946,10 @@ private enum ProfileInspectorTab: String, CaseIterable, Identifiable {
 struct ProfileDetail: View {
     @EnvironmentObject private var model: AppModel
     let profile: VPNProfile
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var inspectorSelection
+    private enum EditorField: Hashable { case name, notes }
+    @FocusState private var focusedField: EditorField?
     @State private var tab: ProfileInspectorTab = .details
     @State private var draftName = ""
     @State private var draftGroup = ""
@@ -1054,7 +1067,7 @@ struct ProfileDetail: View {
                 HStack(spacing: 4) {
                     ForEach(ProfileInspectorTab.allCases) { section in
                         Button {
-                            withAnimation(.easeInOut(duration: 0.15)) { tab = section }
+                            tab = section
                         } label: {
                             Text(section.rawValue)
                                 .font(.system(size: 14, weight: tab == section ?
@@ -1067,6 +1080,7 @@ struct ProfileDetail: View {
                                     if tab == section {
                                         RoundedRectangle(cornerRadius: 8)
                                             .fill(GlassPalette.blue)
+                                            .matchedGeometryEffect(id: "inspector-selection", in: inspectorSelection)
                                     }
                                 }
                         }
@@ -1074,6 +1088,7 @@ struct ProfileDetail: View {
                     }
                 }
                 .referenceSegments()
+                .animation(GlassMotion.selection(reduceMotion), value: tab)
 
                 Group {
                     switch tab {
@@ -1113,7 +1128,8 @@ struct ProfileDetail: View {
             editorRow("名称") {
                 TextField("配置名称", text: $draftName)
                     .textFieldStyle(.plain)
-                    .referenceInput()
+                    .focused($focusedField, equals: .name)
+                    .referenceInput(focused: focusedField == .name)
             }
             editorRow("类别") {
                 Menu {
@@ -1159,7 +1175,8 @@ struct ProfileDetail: View {
                 TextField("添加备注信息…", text: $draftNotes, axis: .vertical)
                     .lineLimit(2...2)
                     .textFieldStyle(.plain)
-                    .referenceInput(height: 58)
+                    .focused($focusedField, equals: .notes)
+                    .referenceInput(height: 58, focused: focusedField == .notes)
             }
             VStack(alignment: .leading, spacing: 5) {
                 LabeledContent("创建时间") {

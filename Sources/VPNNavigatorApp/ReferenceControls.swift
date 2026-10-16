@@ -1,25 +1,42 @@
 import SwiftUI
 
+/// One type ramp and one control geometry for all five native pages.
+enum ReferenceType {
+    static let pageTitle: CGFloat = 27
+    static let panelTitle: CGFloat = 14
+    static let section: CGFloat = 13
+    static let field: CGFloat = 13
+    static let caption: CGFloat = 11
+}
+enum ReferenceMetrics {
+    static let controlHeight: CGFloat = 32
+    static let rowHeight: CGFloat = 35
+    static let corner: CGFloat = 9
+}
+
 /// Common macOS 13+ form components derived from the six-panel UI reference.
 /// The reference's controls are deliberately flatter and more translucent
 /// than .roundedBorder defaults. Only presentation is changed here.
 struct ReferenceInputChrome: ViewModifier {
     @Environment(\.colorScheme) private var appearance
-    var height: CGFloat = 29
+    var height: CGFloat = ReferenceMetrics.controlHeight
     func body(content: Content) -> some View {
         content
-            .font(.system(size: 12, weight: .medium))
+            .font(.system(size: ReferenceType.field, weight: .medium))
             .foregroundStyle(appearance == .dark ? Color.white : GlassPalette.ink)
             .padding(.horizontal, 11)
             .frame(height: height)
             .background {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: ReferenceMetrics.corner, style: .continuous)
                     .fill(appearance == .dark ?
-                          Color.white.opacity(0.10) : Color.white.opacity(0.59))
+                          Color.white.opacity(0.13) :
+                          Color(red: 0.99, green: 0.995, blue: 1).opacity(0.89))
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Color.white.opacity(appearance == .dark ? 0.27 : 0.86),
+                RoundedRectangle(cornerRadius: ReferenceMetrics.corner, style: .continuous)
+                    .strokeBorder(appearance == .dark ?
+                                  Color.white.opacity(0.29) :
+                                  Color(red: 0.73, green: 0.82, blue: 0.95).opacity(0.69),
                                   lineWidth: 1)
             }
     }
@@ -27,7 +44,7 @@ struct ReferenceInputChrome: ViewModifier {
 
 extension View {
     /// Applies the same frosted text/selection container across all pages.
-    func referenceInput(height: CGFloat = 29) -> some View {
+    func referenceInput(height: CGFloat = ReferenceMetrics.controlHeight) -> some View {
         modifier(ReferenceInputChrome(height: height))
     }
 }
@@ -59,10 +76,10 @@ struct ReferenceSegmentChrome: ViewModifier {
             .padding(4)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(GlassSurface.panel.opacity(0.46)))
+                    .fill(Color(red: 0.96, green: 0.98, blue: 1).opacity(0.84)))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.70), lineWidth: 1)
+                    .strokeBorder(Color.white.opacity(0.96), lineWidth: 1)
             }
     }
 }
@@ -96,13 +113,13 @@ struct ReferenceFormRow<Content: View>: View {
 struct ReferenceSecondaryButton: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: ReferenceType.caption + 1, weight: .semibold))
             .foregroundStyle(GlassPalette.ink)
             .padding(.horizontal, 12)
-            .frame(minHeight: 27)
+            .frame(minHeight: 30)
             .background {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.white.opacity(configuration.isPressed ? 0.40 : 0.62))
+                    .fill(Color.white.opacity(configuration.isPressed ? 0.68 : 0.91))
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 8)

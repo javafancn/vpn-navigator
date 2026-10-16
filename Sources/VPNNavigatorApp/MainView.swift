@@ -36,7 +36,7 @@ struct MainView: View {
         ZStack {
             GlassAtmosphere()
             HStack(spacing: 0) {
-                sidebar.frame(width: 184)
+                sidebar.frame(width: 236)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
                 VStack(spacing: 0) {
                     topBar
@@ -82,7 +82,7 @@ struct MainView: View {
             HStack(spacing: 10) {
                 BrandMark(size: 37)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("VPN Navigator").font(.system(size: 12, weight: .bold))
+                    Text("VPN Navigator").font(.system(size: 13, weight: .bold))
                         .lineLimit(1)
                     Text("网络连接控制台").font(.system(size: 10)).foregroundStyle(.secondary)
                 }

@@ -36,7 +36,7 @@ struct MainView: View {
         ZStack {
             GlassAtmosphere()
             HStack(spacing: 0) {
-                sidebar.frame(width: 201)
+                sidebar.frame(width: 184)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
                 VStack(spacing: 0) {
                     topBar
@@ -54,7 +54,7 @@ struct MainView: View {
                 }
             }
         }
-        .frame(minWidth: 980, minHeight: 590)
+        .frame(minWidth: 1015, minHeight: 620)
         .preferredColorScheme(nil)
         .fileImporter(isPresented: $importing,
                       allowedContentTypes: [.init(filenameExtension: "ovpn")!],
@@ -90,7 +90,7 @@ struct MainView: View {
             .padding(.leading, 16)
             .padding(.trailing, 8)
             .padding(.top, 42)
-            .padding(.bottom, 21)
+            .padding(.bottom, 24)
 
             ForEach(WorkspaceTab.allCases) { item in
                 Button { withAnimation(.easeInOut(duration: 0.16)) { tab = item } } label: {
@@ -103,7 +103,7 @@ struct MainView: View {
                     }
                     .foregroundStyle(tab == item ? Color.white : Color.primary)
                     .padding(.horizontal, 12)
-                    .frame(height: 34)
+                    .frame(height: 36)
                     .background {
                         if tab == item {
                             RoundedRectangle(cornerRadius: 9)
@@ -119,7 +119,7 @@ struct MainView: View {
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(tab == item ? .isSelected : [])
                 .padding(.horizontal, 10)
-                .padding(.bottom, 4)
+                .padding(.bottom, 5)
             }
             Spacer(minLength: 20)
             VStack(alignment: .leading, spacing: 8) {
@@ -146,9 +146,9 @@ struct MainView: View {
             .padding(.bottom, 14)
         }
         .background {
-            Rectangle().fill(.ultraThinMaterial).opacity(0.36)
+            Rectangle().fill(.regularMaterial).opacity(0.53)
         }
-        .background(Color.white.opacity(0.06))
+        .background(Color.white.opacity(0.09))
     }
 
     private var topBar: some View {
@@ -172,9 +172,9 @@ struct MainView: View {
         .padding(.leading, 24).padding(.trailing, 20)
         .frame(height: 45)
         .background {
-            Rectangle().fill(.ultraThinMaterial).opacity(0.32)
+            Rectangle().fill(.regularMaterial).opacity(0.46)
         }
-        .background(Color.white.opacity(0.05))
+        .background(Color.white.opacity(0.12))
     }
 }
 
@@ -216,8 +216,8 @@ struct VPNPanel<Content: View>: View {
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .glassCard(cornerRadius: 14)
+        .padding(15)
+        .glassCard(cornerRadius: 15)
     }
 }
 
@@ -261,12 +261,12 @@ private struct ConnectionOverview: View {
                             }
                         } label: {
                             ZStack {
-                                Circle().stroke(Color.blue.opacity(0.08), lineWidth: 16)
-                                    .frame(width: 135, height: 135)
-                                Circle().stroke(.white.opacity(0.9), lineWidth: 5)
-                                    .frame(width: 130, height: 130)
-                                Circle().stroke(Color.cyan.opacity(0.63), lineWidth: 2)
-                                    .blur(radius: 5).frame(width: 141, height: 141)
+                                Circle().fill(Color.cyan.opacity(0.12))
+                                    .frame(width: 150, height: 150)
+                                Circle().stroke(.white.opacity(0.93), lineWidth: 5)
+                                    .frame(width: 140, height: 140)
+                                Circle().stroke(Color.cyan.opacity(0.72), lineWidth: 4)
+                                    .blur(radius: 7).frame(width: 148, height: 148)
                                 Circle()
                                     .fill(LinearGradient(colors: model.connected ?
                                           [Color.green, Color.mint] :
@@ -274,13 +274,13 @@ private struct ConnectionOverview: View {
                                            Color(red: 0.09, green: 0.76, blue: 0.98)],
                                           startPoint: .topLeading,
                                           endPoint: .bottomTrailing))
-                                    .frame(width: 112, height: 112)
+                                    .frame(width: 125, height: 125)
                                     .shadow(color: .blue.opacity(0.48), radius: 20, y: 5)
                                 Image(systemName: "power")
                                     .font(.system(size: 39, weight: .light))
                                     .foregroundStyle(.white)
                             }
-                            .frame(width: 155, height: 155)
+                            .frame(width: 165, height: 165)
                         }
                         .buttonStyle(.plain)
                         .disabled(model.busy || model.connecting)
@@ -307,7 +307,7 @@ private struct ConnectionOverview: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 255)
+                    .frame(maxWidth: .infinity, minHeight: 270)
                     .padding(.horizontal, 15)
                     .glassCard(cornerRadius: 18)
 
@@ -341,7 +341,7 @@ private struct ConnectionOverview: View {
                                 .font(.system(size: 10)).foregroundStyle(.secondary)
                         }
                     }
-                    .frame(width: 288)
+                    .frame(width: 290)
                 }
                 HStack(spacing: 12) {
                     miniStatistic("累计接收", symbol: "arrow.down.circle.fill",
@@ -403,7 +403,7 @@ private struct ProfileLibrary: View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("配置文件").font(.system(size: 26, weight: .bold, design: .rounded))
+                    Text("配置文件").font(.system(size: 23, weight: .bold, design: .rounded))
                     Text("\(model.profiles.count) 份配置 · OpenVPN 配置库")
                         .font(.callout).foregroundStyle(.secondary)
                 }
@@ -443,7 +443,7 @@ private struct ProfileLibrary: View {
                                     .padding(9)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .background(model.selectedID == profile.id ?
-                                        GlassPalette.blue.opacity(0.17) : Color.white.opacity(0.17),
+                                        GlassPalette.blue.opacity(0.17) : Color.white.opacity(0.12),
                                         in: RoundedRectangle(cornerRadius: 12))
                                     .contentShape(Rectangle())
                                 }
@@ -453,7 +453,7 @@ private struct ProfileLibrary: View {
                     }
                 }
                 .padding(12)
-                .frame(width: 225)
+                .frame(width: 245)
                 .glassCard(cornerRadius: 17)
                 if let profile = model.selected {
                     ProfileDetail(profile: profile).id(profile.id)

@@ -894,9 +894,17 @@ private struct RoutingWorkspace: View {
 struct SystemSettingsPane: View {
     @EnvironmentObject private var model: AppModel
 
+    private var version: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+    }
+    private var build: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+    }
+    private var helperReady: Bool { model.helperStatus == "已启用" }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 11) {
                 WorkspaceHeading(title: "设置与维护",
                     subtitle: "", symbol: "gearshape")
 
@@ -909,21 +917,20 @@ struct SystemSettingsPane: View {
                             Task { await model.disableServices() }
                         }
                     } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: model.helperStatus == "已启用" ?
-                                  "checkmark.circle.fill" : "shield")
-                            Text(model.helperStatus)
+                        HStack(spacing: 8) {
+                            statePill(model.helperStatus,
+                                      success: helperReady)
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 9))
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.secondary)
                         }
-                        .foregroundStyle(model.helperStatus == "已启用" ?
-                                         Color.green : Color.secondary)
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
                 }
+
                 settingsRow("应用更新",
-                    subtitle: "当前版本：1.0.0 (Build 100) · 检查经过验证的更新",
+                    subtitle: "当前版本：\(version) (Build \(build))",
                     symbol: "arrow.triangle.2.circlepath") {
                     Menu {
                         Button("检查更新") {
@@ -936,16 +943,18 @@ struct SystemSettingsPane: View {
                         Button("查看发布说明…") { model.viewReleasePage() }
                             .disabled(model.availableReleasePage == nil)
                     } label: {
-                        HStack(spacing: 7) {
-                            Text("检查更新")
+                        HStack(spacing: 8) {
+                            statePill(model.availableInstaller == nil ?
+                                      "检查更新" : "可下载更新")
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 9))
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.secondary)
                         }
-                        .foregroundStyle(.secondary)
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
                 }
+
                 settingsRow("安全恢复",
                     subtitle: "遇到网络问题时，可尝试恢复残留的网络设置",
                     symbol: "cross.case.fill") {
@@ -956,14 +965,18 @@ struct SystemSettingsPane: View {
                     .controlSize(.regular)
                     .disabled(model.connected || model.connecting)
                 }
+
                 settingsRow("关于",
-                    subtitle: "VPN Navigator · 原生 macOS 网络配置工具",
+                    subtitle: "VPN Navigator · 版本 \(version) (Build \(build))",
                     symbol: "info.circle.fill") {
                     Menu {
-                        Text("Alpha · macOS 13+")
-                        Text("PF Kill Switch 与 IPv6 分流尚未实现")
+                        Text("macOS 13+")
+                        Text("PF Kill Switch 尚未启用")
+                        Text("IPv6 分流尚未实现")
                     } label: {
                         Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(width: 24, height: 30)
                             .foregroundStyle(.secondary)
                     }
                     .menuStyle(.borderlessButton)
@@ -977,13 +990,30 @@ struct SystemSettingsPane: View {
         }
     }
 
+    private func statePill(_ text: String, success: Bool = false) -> some View {
+        HStack(spacing: 5) {
+            if success {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 12))
+            }
+            Text(text)
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .foregroundStyle(success ? Color.green : Color.secondary)
+        .padding(.horizontal, 11)
+        .frame(height: 25)
+        .background(success ? Color.green.opacity(0.11) :
+                    GlassSurface.panel.opacity(0.45),
+                    in: Capsule())
+    }
+
     private func settingsRow<Actions: View>(
         _ title: String, subtitle: String, symbol: String,
         @ViewBuilder actions: () -> Actions
     ) -> some View {
         HStack(alignment: .center, spacing: 13) {
             GlassIcon(symbol: symbol, size: 46)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
                 Text(subtitle)
@@ -995,7 +1025,7 @@ struct SystemSettingsPane: View {
             actions()
         }
         .padding(.horizontal, 16)
-        .frame(minHeight: 86)
+        .frame(minHeight: 84)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(cornerRadius: 15)
     }

@@ -59,3 +59,40 @@ product MUST NOT invent those values on an unconnected device: its placeholders
 and warnings are intentionally different until verified live engine telemetry
 exists. A controlled same-wallpaper, same-scale hardware comparison is still
 needed to claim pixel-perfect parity.
+
+## October 16 afternoon — user's high-contrast wallpaper feedback (supersedes older glass alpha calibration)
+
+The user supplied an updated wallpaper-and-window screenshot. The face, rope
+and clothing were still highly legible through the window; the old native
+popover blur at 0.80/0.76 alpha did **not** sufficiently lower background
+contrast. Blur strength and opacity cannot be tuned as a single setting.
+
+Current implementation:
+
+- Native AppKit popover visual effect beneath the clear window: alpha **0.95**.
+- Native popover effect behind each card: alpha **0.94**.
+- Additional whole-window light blue-white mist: alpha **0.54** by default.
+- Additional local light panel mist: alpha **0.58** by default.
+- Sidebar and status tile have separately tuned subtle light tints.
+- Reduce Transparency remains honored on actual user sessions.
+- All tint layers are translucent SwiftUI colors over macOS wallpaper;
+  the application bundles **no background scenery**.
+- Optional screenshot-only `--vpnnav-mist=lighter|denser` presets allow
+  same-wallpaper A/B tests without changing user settings.
+
+Actual CI captures of the three presets were produced. The CI wallpaper is
+very pale, so RGB values vary only slightly between presets: do not treat
+those captures as proof of parity on the user's saturated character wallpaper.
+A new screenshot on that same Mac is needed to conclude the visual tuning.
+
+More code-level fidelity differences resolved:
+- Bottom-right protection panel is now the same height as receive/send panels.
+- Quick-connect controls are functional Menu selectors with complete
+  rounded, softly filled fields rather than stark system-default pickers.
+- Live receive/send totals appear in the current session card only if
+  available and connected; no invented geography/throughput.
+- The sidebar footer follows the reference's product identity hierarchy and
+  reads its version from the real app bundle.
+
+Older alpha measurements in this audit document describe previous revisions
+and should not be used as current tuning defaults.

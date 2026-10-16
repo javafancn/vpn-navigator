@@ -564,99 +564,160 @@ private struct ProfileLibrary: View {
 
 private struct RoutingWorkspace: View {
     @EnvironmentObject private var model: AppModel
+
+    private func title(for mode: RoutingMode) -> String {
+        switch mode {
+        case .original: return "Original"
+        case .fullVPN: return "Full VPN"
+        case .chinaDirect: return "中国 IPv4 直连"
+        }
+    }
+    private func subtitle(for mode: RoutingMode) -> String {
+        switch mode {
+        case .original: return "不修改 VPN，保留原始网络连接"
+        case .fullVPN: return "所有 IPv4 流量通过 VPN 连接"
+        case .chinaDirect: return "仅中国 IPv4 流量直连，其他流量走 VPN"
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 15) {
                 WorkspaceHeading(title: "路由与规则",
-                    subtitle: "选择网络策略，管理已验证的中国 IPv4 规则",
+                    subtitle: "管理 VPN 路由模式与中国 IPv4 规则",
                     symbol: "point.3.connected.trianglepath.dotted")
+
                 HStack(alignment: .top, spacing: 13) {
                     VPNPanel("路由模式", symbol: "arrow.triangle.branch") {
                         if let profile = model.selected {
-                            Text("所选配置 · \(profile.name)")
-                                .font(.system(size: 11)).foregroundStyle(.secondary)
-                            Picker("连接模式", selection: Binding(
-                                get: { profile.mode },
-                                set: { newMode in Task { await model.setMode(newMode) } }
-                            )) {
-                                Text("Original · 遵循配置文件").tag(RoutingMode.original)
-                                Text("Full VPN · 全局 IPv4").tag(RoutingMode.fullVPN)
-                                Text("中国 IPv4 直连").tag(RoutingMode.chinaDirect)
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(RoutingMode.allCases) { mode in
+                                    Button {
+                                        Task { await model.setMode(mode) }
+                                    } label: {
+                                        HStack(alignment: .center, spacing: 11) {
+                                            Image(systemName: profile.mode == mode ?
+                                                  "largecircle.fill.circle" : "circle")
+                                                .font(.system(size: 17))
+                                                .foregroundStyle(profile.mode == mode ?
+                                                                 GlassPalette.blue : Color.secondary)
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(title(for: mode))
+                                                    .font(.system(size: 12, weight: .semibold))
+                                                    .foregroundStyle(.primary)
+                                                Text(subtitle(for: mode))
+                                                    .font(.system(size: 10))
+                                                    .foregroundStyle(.secondary)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                            }
+                                            Spacer(minLength: 0)
+                                        }
+                                        .padding(11)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .background(
+                                            profile.mode == mode ?
+                                                GlassPalette.blue.opacity(0.13) :
+                                                Color.white.opacity(0.08),
+                                            in: RoundedRectangle(cornerRadius: 12))
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(model.connected || model.connecting || model.busy)
+                                }
                             }
-                            .labelsHidden()
-                            .pickerStyle(.radioGroup)
-                            .disabled(model.connected || model.connecting || model.busy)
-                            Divider()
-                            Text("原始模式遵循 .ovpn；全局模式将 IPv4 默认路由指向 VPN；中国直连模式对已识别中国 IPv4 网段使用物理网络。")
-                                .font(.system(size: 11)).foregroundStyle(.secondary)
-                            Text("连接时不可改动路由模式。")
-                                .font(.system(size: 10)).foregroundStyle(.secondary)
+                            .accessibilityElement(children: .contain)
+                            Text("所选配置：\(profile.name) · 连接期间不可改动路由模式")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         } else {
                             Label("请先导入并选择配置文件", systemImage: "info.circle")
-                                .font(.callout).foregroundStyle(.secondary)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .frame(maxWidth: .infinity)
 
-                    VStack(spacing: 13) {
-                        VPNPanel("中国 IPv4 规则", symbol: "globe.asia.australia") {
-                            HStack(spacing: 12) {
-                                Image(systemName: "globe.asia.australia.fill")
-                                    .font(.system(size: 26)).foregroundStyle(.blue)
-                                    .frame(width: 44, height: 44)
-                                    .background(Color.blue.opacity(0.09),
-                                                in: RoundedRectangle(cornerRadius: 12))
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(model.rules.map { "\($0.routes.count) 个网段" } ?? "尚未下载")
-                                        .font(.headline)
-                                    Text("本机经验证的 IPv4 分流数据")
-                                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                    VStack(spacing: 12) {
+                        VPNPanel("中国 IPv4 规则", symbol: "globe.asia.australia.fill") {
+                            HStack(spacing: 11) {
+                                GlassIcon(symbol: "globe.asia.australia.fill", size: 46)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(model.rules.map { "\($0.routes.count) 条规则" } ?? "未下载")
+                                        .font(.system(size: 19, weight: .bold, design: .rounded))
+                                    Text("已验证的中国 IPv4 网段")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.secondary)
                                 }
                                 Spacer()
+                            }
+                            Divider().opacity(0.3)
+                            HStack {
+                                Text("规则来源")
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text("chnroutes2").lineLimit(1)
                             }
                             HStack {
-                                Button("更新规则") { Task { await model.refreshRules() } }
-                                    .buttonStyle(.borderedProminent)
-                                    .disabled(model.busy)
+                                Text("规则版本")
+                                    .foregroundStyle(.secondary)
                                 Spacer()
-                                Text("异常更新将保留旧版")
-                                    .font(.system(size: 10)).foregroundStyle(.secondary)
-                            }
-                            if !model.ruleSnapshots.isEmpty {
-                                Divider()
-                                Text("历史快照").font(.system(size: 11, weight: .semibold))
-                                ForEach(model.ruleSnapshots.prefix(4)) { snapshot in
-                                    HStack {
-                                        Text(snapshot.savedAt, style: .date)
-                                        Text("\(snapshot.routeCount) 个网段")
-                                            .foregroundStyle(.secondary)
-                                        Spacer()
-                                        Button("恢复") {
-                                            Task { await model.restoreRuleSnapshot(snapshot.id) }
-                                        }.disabled(model.busy)
-                                    }.font(.system(size: 11))
+                                if let saved = model.ruleSnapshots.first?.savedAt {
+                                    Text(saved, format: .dateTime.year().month().day())
+                                } else {
+                                    Text("尚无快照")
                                 }
                             }
+                            HStack {
+                                Text("状态")
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(model.rules == nil ? "未下载" : "已缓存 · 已验证")
+                                    .foregroundStyle(model.rules == nil ?
+                                                     Color.secondary : Color.green)
+                            }
+                            .font(.system(size: 11))
+
+                            HStack(spacing: 8) {
+                                Button("更新规则") {
+                                    Task { await model.refreshRules() }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(model.busy)
+                                if let saved = model.ruleSnapshots.dropFirst().first {
+                                    Button("恢复旧版") {
+                                        Task { await model.restoreRuleSnapshot(saved.id) }
+                                    }
+                                    .disabled(model.busy)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .controlSize(.small)
                         }
-                        VPNPanel("IPv6 数据预览 · 未启用", symbol: "shield.lefthalf.filled") {
-                            HStack(spacing: 9) {
+
+                        VPNPanel("IPv6 规则（预览）", symbol: "shield.lefthalf.filled") {
+                            HStack(spacing: 6) {
                                 Text(model.ipv6Preview.map {
                                     "\($0.routes.count) 个 APNIC 注册前缀"
-                                } ?? "尚未下载预览")
+                                } ?? "未下载")
                                     .font(.system(size: 11))
-                                Spacer()
-                                Button("刷新") { Task { await model.updateIPv6Preview() } }
-                                    .disabled(model.busy)
+                                Spacer(minLength: 0)
+                                Button("刷新") {
+                                    Task { await model.updateIPv6Preview() }
+                                }
+                                .controlSize(.small)
+                                .disabled(model.busy)
                             }
-                            Text("仅显示注册数据，不安装 IPv6 路由或防火墙。")
-                                .font(.system(size: 10)).foregroundStyle(.secondary)
+                            Text("仅供查看，不修改系统 IPv6 路由")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .frame(maxWidth: .infinity)
                 }
             }
-            .padding(22)
-            .frame(maxWidth: 1050, alignment: .leading)
+            .padding(20)
+            .frame(maxWidth: 1100, alignment: .leading)
         }
     }
 }

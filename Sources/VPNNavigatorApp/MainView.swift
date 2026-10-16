@@ -167,7 +167,7 @@ struct MainView: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 14)
         }
-        .background(Color.white.opacity(0.20))
+        .background(Color(red: 0.85, green: 0.90, blue: 1.0).opacity(0.20))
         .overlay(alignment: .trailing) {
             Rectangle().fill(Color.white.opacity(0.36)).frame(width: 1)
         }

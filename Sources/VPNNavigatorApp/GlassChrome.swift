@@ -46,12 +46,12 @@ struct DesktopVisualEffect: NSViewRepresentable {
         view.state = .active
         // A fully opaque under-window material hides colorful wallpapers.
         // Compose only a fraction of the native blur over a CLEAR NSWindow.
-        view.alphaValue = 0.22
+        view.alphaValue = 0.32
         return view
     }
     func updateNSView(_ view: NativeWindowGlass, context: Context) {
         view.configureWindow()
-        view.alphaValue = 0.22
+        view.alphaValue = 0.32
     }
 }
 

@@ -72,11 +72,11 @@ private struct GlassCardModifier: ViewModifier {
                     .fill(reduceTransparency
                           ? Color(nsColor: .windowBackgroundColor)
                           : (appearance == .dark
-                             ? Color.black.opacity(0.26)
-                             : Color.white.opacity(0.33)))
+                             ? Color.black.opacity(0.20)
+                             : Color.white.opacity(0.18)))
                     .background {
                         if !reduceTransparency {
-                            shape.fill(.regularMaterial).opacity(0.70)
+                            shape.fill(.ultraThinMaterial).opacity(0.48)
                         }
                     }
             }

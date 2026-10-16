@@ -49,15 +49,15 @@ struct NetworkDiagnosticsView: View {
                                     .font(.system(size: 11, weight: selectedTab == tab ?
                                                    .semibold : .medium))
                                     .foregroundStyle(selectedTab == tab ?
-                                                     GlassPalette.blue : .secondary)
+                                                     Color.white : GlassPalette.ink.opacity(0.68))
                                     .frame(maxWidth: .infinity)
                                     .frame(height: 30)
                                     .background {
                                         if selectedTab == tab {
                                             RoundedRectangle(cornerRadius: 8)
-                                                .fill(GlassSurface.panel.opacity(0.82))
-                                                .shadow(color: .blue.opacity(0.12),
-                                                        radius: 5, y: 2)
+                                                .fill(GlassPalette.blue.gradient)
+                                                .shadow(color: GlassPalette.blue.opacity(0.20),
+                                                        radius: 6, y: 2)
                                         }
                                     }
                             }
@@ -210,7 +210,7 @@ struct NetworkDiagnosticsView: View {
                 }
             }
             .padding(.horizontal, GlassLayout.pageInset)
-            .padding(.top, 32)
+            .padding(.top, GlassLayout.pageTop)
             .padding(.bottom, 20)
             .frame(maxWidth: 1100, alignment: .leading)
         }
@@ -239,7 +239,7 @@ struct NetworkDiagnosticsView: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.trailing)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 9)
     }
 
     private func routeStep(_ title: String, value: String, index: Int) -> some View {

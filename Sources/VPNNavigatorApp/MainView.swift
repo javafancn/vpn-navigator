@@ -111,8 +111,8 @@ struct MainView: View {
             }
             .padding(.leading, 16)
             .padding(.trailing, 8)
-            .padding(.top, 38)
-            .padding(.bottom, 21)
+            .padding(.top, 53)
+            .padding(.bottom, 49)
 
             ForEach(WorkspaceTab.allCases) { item in
                 Button { withAnimation(.easeInOut(duration: 0.16)) { tab = item } } label: {
@@ -125,7 +125,7 @@ struct MainView: View {
                     }
                     .foregroundStyle(tab == item ? Color.white : GlassPalette.blue)
                     .padding(.horizontal, 12)
-                    .frame(height: 36)
+                    .frame(height: 40)
                     .background {
                         if tab == item {
                             RoundedRectangle(cornerRadius: 9)
@@ -141,7 +141,7 @@ struct MainView: View {
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(tab == item ? .isSelected : [])
                 .padding(.horizontal, 10)
-                .padding(.bottom, 5)
+                .padding(.bottom, 12)
             }
             Spacer(minLength: 20)
             VStack(alignment: .leading, spacing: 8) {
@@ -343,12 +343,18 @@ private struct ConnectionOverview: View {
                             .disabled(model.profiles.isEmpty)
                             .font(.system(size: 11))
 
-                            HStack(spacing: 8) {
-                                Text("路由模式").foregroundStyle(.secondary)
-                                Spacer(minLength: 2)
-                                Text(model.selected?.mode.rawValue ?? "—")
-                                    .lineLimit(1)
+                            Picker("路由模式", selection: Binding(
+                                get: { model.selected?.mode ?? .original },
+                                set: { value in Task { await model.setMode(value) } }
+                            )) {
+                                Text("Original").tag(RoutingMode.original)
+                                Text("Full VPN").tag(RoutingMode.fullVPN)
+                                Text("中国 IPv4 直连").tag(RoutingMode.chinaDirect)
                             }
+                            .pickerStyle(.menu)
+                            .controlSize(.small)
+                            .disabled(model.selected == nil ||
+                                      model.busy || model.connected || model.connecting)
                             HStack(spacing: 8) {
                                 Text("配置文件").foregroundStyle(.secondary)
                                 Spacer(minLength: 2)
@@ -867,7 +873,7 @@ struct SystemSettingsPane: View {
             actions()
         }
         .padding(.horizontal, 16)
-        .frame(minHeight: 75)
+        .frame(minHeight: 86)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(cornerRadius: 15)
     }

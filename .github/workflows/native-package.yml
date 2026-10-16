@@ -48,6 +48,9 @@ jobs:
           echo 'This ad-hoc signature is NOT an Apple Developer ID signature and is NOT notarized.'
       - name: Capture all five native workspaces
         run: |
+          # Ephemeral CI machine only: native AppKit materials also respect
+          # accessibility defaults, independently of the SwiftUI snapshot flag.
+          defaults write com.apple.universalaccess reduceTransparency -bool false || true
           # Test against a REAL macOS desktop image, not in-app scenery.
           # CI machines often start with a monochrome desktop which makes
           # transparent native material look opaque in screenshots.
@@ -98,6 +101,7 @@ jobs:
             WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift" 2> "$RUNNER_TEMP/$PAGE-bounds.txt")"
             cat "$RUNNER_TEMP/$PAGE-bounds.txt"
             screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-$PAGE.png"
+            screencapture -x "$RUNNER_TEMP/VPNNavigator-display-$PAGE.png"
             test -s "$RUNNER_TEMP/VPNNavigator-$PAGE.png"
           done
           killall VPNNavigatorApp 2>/dev/null || true
@@ -109,6 +113,7 @@ jobs:
             sleep 7
             WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift" 2> "$RUNNER_TEMP/$SCENE-bounds.txt")"
             screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-glass-$SCENE.png"
+            screencapture -x "$RUNNER_TEMP/VPNNavigator-composited-$SCENE.png"
             test -s "$RUNNER_TEMP/VPNNavigator-glass-$SCENE.png"
             killall VPNNavigatorApp 2>/dev/null || true
           done
@@ -125,6 +130,8 @@ jobs:
             ${{ runner.temp }}/*-bounds.txt
             ${{ runner.temp }}/VPNNavigator-glass-*.png
             ${{ runner.temp }}/VPNNavigator-wallpaper-*.png
+            ${{ runner.temp }}/VPNNavigator-display-*.png
+            ${{ runner.temp }}/VPNNavigator-composited-*.png
           if-no-files-found: error
           retention-days: 7
       - name: Package verified .app using macOS ditto

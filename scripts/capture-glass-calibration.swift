@@ -12,6 +12,8 @@ guard CommandLine.arguments.count == 3,
       let colours = modes[CommandLine.arguments[1]] else {
     fatalError("Usage: capture-glass-calibration.swift cool|warm OUTPUT_FOLDER")
 }
+print("Reduce Transparency: \(NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency)")
+print("Screen sizes: \(NSScreen.screens.map { $0.frame.size })")
 let name = CommandLine.arguments[1]
 let size = NSSize(width: 1600, height: 1000)
 let image = NSImage(size: size)

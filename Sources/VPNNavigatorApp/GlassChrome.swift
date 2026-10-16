@@ -10,6 +10,46 @@ enum GlassPalette {
     static let violet = Color(red: 0.67, green: 0.60, blue: 0.94)
 }
 
+// Screenshot-only material calibration. Each preset renders the *real* desktop
+// using native AppKit; no wallpaper or screenshot is bundled with the app.
+// Standard users get the tuned default, not a demonstration background.
+private enum GlassMaterialTuning {
+    static let preset: String = ProcessInfo.processInfo.arguments
+        .first(where: { $0.hasPrefix("--vpnnav-glass-preset=") })?
+        .split(separator: "=", maxSplits: 1).last.map(String.init) ?? "standard"
+
+    static var windowMaterial: NSVisualEffectView.Material {
+        switch preset {
+        case "popover": return .popover
+        case "sidebar": return .sidebar
+        case "hud": return .hudWindow
+        default: return .underWindowBackground
+        }
+    }
+    static var cardMaterial: NSVisualEffectView.Material {
+        switch preset {
+        case "popover": return .popover
+        case "sidebar": return .sidebar
+        case "hud": return .hudWindow
+        default: return .underWindowBackground
+        }
+    }
+    static var windowAlpha: CGFloat {
+        switch preset {
+        case "strong": return 0.92
+        case "popover", "sidebar", "hud": return 0.84
+        default: return 0.46
+        }
+    }
+    static var cardAlpha: CGFloat {
+        switch preset {
+        case "strong": return 0.90
+        case "popover", "sidebar", "hud": return 0.84
+        default: return 0.50
+        }
+    }
+}
+
 /// This is the actual macOS desktop backdrop, not an app-drawn landscape.
 /// The wallpaper belongs to the OS and changes as the user changes desktops.
 /// Avoid gradients, mountain artwork and any opaque full-window fill.
@@ -41,17 +81,18 @@ final class NativeWindowGlass: NSVisualEffectView {
 struct DesktopVisualEffect: NSViewRepresentable {
     func makeNSView(context: Context) -> NativeWindowGlass {
         let view = NativeWindowGlass()
-        view.material = .underWindowBackground
+        view.material = GlassMaterialTuning.windowMaterial
         view.blendingMode = .behindWindow
         view.state = .active
         // A fully opaque under-window material hides colorful wallpapers.
         // Compose only a fraction of the native blur over a CLEAR NSWindow.
-        view.alphaValue = 0.46
+        view.alphaValue = GlassMaterialTuning.windowAlpha
         return view
     }
     func updateNSView(_ view: NativeWindowGlass, context: Context) {
         view.configureWindow()
-        view.alphaValue = 0.46
+        view.material = GlassMaterialTuning.windowMaterial
+        view.alphaValue = GlassMaterialTuning.windowAlpha
     }
 }
 
@@ -61,15 +102,16 @@ struct DesktopVisualEffect: NSViewRepresentable {
 private struct NativeCardBlur: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
-        view.material = .underWindowBackground
+        view.material = GlassMaterialTuning.cardMaterial
         view.blendingMode = .behindWindow
         view.state = .active
-        view.alphaValue = 0.50
+        view.alphaValue = GlassMaterialTuning.cardAlpha
         return view
     }
 
     func updateNSView(_ view: NSVisualEffectView, context: Context) {
-        view.alphaValue = 0.50
+        view.material = GlassMaterialTuning.cardMaterial
+        view.alphaValue = GlassMaterialTuning.cardAlpha
     }
 }
 

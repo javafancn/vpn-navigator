@@ -46,12 +46,30 @@ struct DesktopVisualEffect: NSViewRepresentable {
         view.state = .active
         // A fully opaque under-window material hides colorful wallpapers.
         // Compose only a fraction of the native blur over a CLEAR NSWindow.
-        view.alphaValue = 0.32
+        view.alphaValue = 0.46
         return view
     }
     func updateNSView(_ view: NativeWindowGlass, context: Context) {
         view.configureWindow()
-        view.alphaValue = 0.32
+        view.alphaValue = 0.46
+    }
+}
+
+/// Per-card AppKit blur samples the same desktop as the transparent window.
+/// Unlike nesting opaque SwiftUI materials, a fractional native visual effect
+/// adds local diffusion without hiding the wallpaper with a solid gray surface.
+private struct NativeCardBlur: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .underWindowBackground
+        view.blendingMode = .behindWindow
+        view.state = .active
+        view.alphaValue = 0.34
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        view.alphaValue = 0.34
     }
 }
 
@@ -73,17 +91,15 @@ private struct GlassCardModifier: ViewModifier {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
             .background {
-                // The window's behind-window NSVisualEffectView has already
-                // blurred the wallpaper. An additional SwiftUI material here
-                // resolves to a solid gray on macOS 15 and masks the desktop.
-                // Translucent color gives a genuine frosted-glass surface
-                // while allowing the OS-provided wallpaper to show through.
-                shape
-                    .fill(opaqueFallback
-                          ? Color(nsColor: .windowBackgroundColor)
-                          : (appearance == .dark
-                             ? Color.black.opacity(0.28)
-                             : Color.white.opacity(0.46)))
+                if opaqueFallback {
+                    shape.fill(Color(nsColor: .windowBackgroundColor))
+                } else {
+                    NativeCardBlur()
+                        .clipShape(shape)
+                    shape.fill(appearance == .dark
+                               ? Color.black.opacity(0.22)
+                               : Color.white.opacity(0.36))
+                }
             }
             .overlay {
                 shape.strokeBorder(
@@ -116,10 +132,10 @@ struct GlassIcon: View {
             .frame(width: size, height: size)
             .background {
                 RoundedRectangle(cornerRadius: size * 0.27)
-                    .fill(.regularMaterial)
+                    .fill(Color.white.opacity(0.42))
                     .overlay {
                         RoundedRectangle(cornerRadius: size * 0.27)
-                            .fill(color.opacity(0.10))
+                            .fill(color.opacity(0.08))
                     }
             }
             .overlay(RoundedRectangle(cornerRadius: size * 0.27)

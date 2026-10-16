@@ -95,8 +95,8 @@ struct NetworkDiagnosticsView: View {
                         diagnosticRow("IPv6 路由", subtitle: "物理网络旁路检查",
                             value: ipv6Description,
                             symbol: "shield",
-                            color: health?.ipv6Safety == .physicalBypass ? .orange :
-                                  health == nil ? .secondary : .green)
+                            color: health == nil ? .secondary :
+                                  health?.ipv6Safety == .noDefaultRoute ? .green : .orange)
                     }
                     .frame(maxWidth: .infinity)
 

@@ -8,7 +8,7 @@ The workflow runs only on main when the operator enters RELEASE. It builds separ
 - Reviewed matching OpenVPN and OpenSSL source SHA256 values.
 - Optional creation/update of a **draft** release; default off.
 
-Formula metadata supplies source URLs and its hashes; release inputs independently pin the reviewed versions/hashes. Source compilation occurs before loading signing credentials. The engine targets macOS 13 and statically links source-built OpenSSL; actual source licenses and archives are bundled before signing.
+`Resources/Engine/sources.lock.json` pins official upstream archive URLs, versions and SHA256 values (OpenVPN 2.7.8 and OpenSSL 3.5.9); release inputs independently confirm the reviewed versions/hashes. Source compilation occurs before loading signing credentials. The engine targets macOS 13 and statically links source-built OpenSSL; actual source licenses and archives are bundled before signing.
 
 ## Environment secrets
 

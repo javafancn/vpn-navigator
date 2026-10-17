@@ -24,7 +24,9 @@ public enum ProfileMaterializer {
                 result.append(row)
                 continue
             }
-            let tokens = trim.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+            let tokens: [String]
+            do { tokens = try OpenVPNOptionLexer.tokens(trim) }
+            catch { throw MaterializeError.invalidPath(index + 1) }
             guard let directive = tokens.first else { result.append(row); continue }
             if directive == "auth-user-pass", tokens.count == 2 {
                 // Do not import cleartext credentials from external files.
@@ -32,7 +34,7 @@ public enum ProfileMaterializer {
                 result.append("auth-user-pass")
                 continue
             }
-            if external.contains(directive) && tokens.count == 2 {
+            if external.contains(directive) && (tokens.count == 2 || directive == "tls-auth" && tokens.count == 3) {
                 let relative = tokens[1].trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
                 guard !relative.hasPrefix("/"), !relative.contains("\0"),
                       !relative.contains("~") else { throw MaterializeError.invalidPath(index + 1) }
@@ -52,6 +54,10 @@ public enum ProfileMaterializer {
                     body = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 }
                 result += ["<\(directive)>", body, "</\(directive)>"]
+                if directive == "tls-auth", tokens.count == 3 {
+                    guard ["0", "1"].contains(tokens[2]) else { throw MaterializeError.invalidPath(index + 1) }
+                    result.append("key-direction \(tokens[2])")
+                }
             } else {
                 result.append(row)
             }
@@ -69,3 +75,4 @@ public enum MaterializeError: Error, LocalizedError {
         }
     }
 }
+

@@ -72,6 +72,9 @@ final class HelperClient {
                            username: username, password: password, preferences: preferences.json, reply: reply)
         }
     }
+    func submitChallenge(id: UUID, response: String) async -> String {
+        await ask { helper, reply in helper.submitChallenge(id: id.uuidString, response: response, reply: reply) }
+    }
     func diagnosticEvents() async -> [DiagnosticEvent] {
         let raw = await ask { helper, reply in helper.diagnosticEvents(reply: reply) }
         guard raw.utf8.count < 200_000, let data = raw.data(using: .utf8) else { return [] }

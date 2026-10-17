@@ -5,10 +5,13 @@ import VPNNavigatorCore
 /// Root-private Unix management interface. Never expose the management socket
 /// outside its root-owned 0700 runtime directory.
 final class ManagementSocket {
+    private let ioLock = NSRecursiveLock()
+    private var pendingChallenge: AuthenticationChallenge?
     private var descriptor: Int32 = -1
     private let queue = DispatchQueue(label: "VPNNavigator.Management")
     private var buffer = Data()
     private var credentials: (username: String, password: String)?
+    var onChallenge: ((AuthenticationChallenge) -> Void)?
     var onState: ((TunnelSnapshot) -> Void)?
     var onTraffic: ((TunnelTraffic) -> Void)?
     var onExit: (() -> Void)?
@@ -16,6 +19,7 @@ final class ManagementSocket {
     var onAuthenticationFailure: (() -> Void)?
 
     func setCredentials(username: String, password: String) {
+        ioLock.lock(); defer { ioLock.unlock() }
         credentials = (username, password)
     }
 
@@ -49,6 +53,7 @@ final class ManagementSocket {
     }
 
     func send(_ command: String) throws {
+        ioLock.lock(); defer { ioLock.unlock() }
         guard descriptor >= 0, !command.contains("\n"), !command.contains("\r") else {
             throw ManagementError.socket
         }
@@ -64,12 +69,26 @@ final class ManagementSocket {
     }
 
     func close() {
+        ioLock.lock(); defer { ioLock.unlock() }
+        pendingChallenge = nil
         if descriptor >= 0 {
             Darwin.shutdown(descriptor, SHUT_RDWR)
             Darwin.close(descriptor)
             descriptor = -1
         }
         credentials = nil
+    }
+
+    func respond(id: String, response: String) throws {
+        ioLock.lock(); defer { ioLock.unlock() }
+        guard let pending = pendingChallenge, pending.id.uuidString == id else { throw ChallengeResponseError.stale }
+        let command = try pending.responseCommand(response: response, accountPassword: credentials?.password ?? "")
+        if pending.kind == .staticOTP {
+            guard let credentials else { throw ChallengeResponseError.invalid }
+            try send("username \"Auth\" \"\(ManagementEscaping.escape(credentials.username))\"")
+        }
+        try send(command)
+        pendingChallenge = nil
     }
 
     private func readLoop() {
@@ -82,7 +101,7 @@ final class ManagementSocket {
             buffer.append(contentsOf: chunk.prefix(size))
             guard buffer.count < 1_048_576 else { break }
             while let newline = buffer.firstIndex(of: 10) {
-                let line = String(decoding: buffer[..<newline], as: UTF8.self)
+                let line = String(decoding: buffer[..<newline], as: UTF8.self).trimmingCharacters(in: .newlines)
                 buffer.removeSubrange(...newline)
                 if let snapshot = ManagementParser.parseState(line) {
                     onState?(snapshot)
@@ -93,22 +112,18 @@ final class ManagementSocket {
                     close()
                     break
                 } else if line.hasPrefix(">PASSWORD:Need ") {
-                    // Bare auth-user-pass supported; all other challenges (including
-                    // encrypted key / proxy auth) require an explicit future adapter.
-                    if ManagementParser.parsePasswordChallenge(line), let credentials {
+                    ioLock.lock()
+                    let saved = credentials
+                    ioLock.unlock()
+                    if let challenge = AuthenticationChallenge.parse(line) {
+                        ioLock.lock(); pendingChallenge = challenge; ioLock.unlock()
+                        onChallenge?(challenge)
+                    } else if line == ">PASSWORD:Need 'Auth' username/password", let saved {
                         do {
-                            try send("username \"Auth\" \"\(ManagementEscaping.escape(credentials.username))\"")
-                            try send("password \"Auth\" \"\(ManagementEscaping.escape(credentials.password))\"")
-                        } catch {
-                            onUnsupportedChallenge?()
-                            close()
-                            break
-                        }
-                    } else {
-                        onUnsupportedChallenge?()
-                        close()
-                        break
-                    }
+                            try send("username \"Auth\" \"\(ManagementEscaping.escape(saved.username))\"")
+                            try send("password \"Auth\" \"\(ManagementEscaping.escape(saved.password))\"")
+                        } catch { onUnsupportedChallenge?(); close(); break }
+                    } else { onUnsupportedChallenge?(); close(); break }
                 }
             }
         }
@@ -117,3 +132,4 @@ final class ManagementSocket {
     }
 }
 enum ManagementError: Error { case badPath, socket, unavailable }
+

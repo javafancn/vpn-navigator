@@ -91,6 +91,9 @@ struct MainView: View {
                 model.message = error.localizedDescription
             }
         }
+        .sheet(item: $model.authenticationChallenge) { challenge in
+            AuthenticationChallengeView(challenge: challenge).environmentObject(model)
+        }
         .sheet(isPresented: $model.showingSetup) { SetupAssistantView().environmentObject(model) }
         .sheet(isPresented: $model.showingPreferences) { ClientPreferencesView().environmentObject(model) }
         .sheet(isPresented: $model.showingDiagnostics) { DiagnosticHistoryView().environmentObject(model) }

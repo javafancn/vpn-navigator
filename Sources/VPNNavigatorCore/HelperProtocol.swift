@@ -7,6 +7,7 @@ import Foundation
     func connect(profile: String, profileID: String, mode: String, rules: String,
                  username: String, password: String, preferences: String,
                  reply: @escaping (String) -> Void)
+    func submitChallenge(id: String, response: String, reply: @escaping (String) -> Void)
     func diagnosticEvents(reply: @escaping (String) -> Void)
     func disconnect(reply: @escaping (String) -> Void)
     func connectionStatus(reply: @escaping (String) -> Void)

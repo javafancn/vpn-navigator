@@ -1,10 +1,41 @@
 import Foundation
+import Darwin
 import VPNNavigatorCore
+
+// Internal DNS-hook operation: fixed journal, typed tunnel, root only. It
+// cannot launch OpenVPN, accept a path or run an arbitrary command.
+if CommandLine.arguments.dropFirst().first == "--commit-dns" {
+    guard getuid() == 0, CommandLine.arguments.count == 3,
+          DNSRecoveryPolicy.validTunnel(CommandLine.arguments[2]) else { exit(1) }
+    do { try DNSRecoveryJournal().commit(tunnel: CommandLine.arguments[2]); exit(0) }
+    catch { exit(1) }
+}
+#if DEBUG
+if CommandLine.arguments.dropFirst().first == "--self-test-dns-journal" {
+    do { try DNSJournalSelfTest.run(); print("DNS journal ownership and conflict checks passed."); exit(0) }
+    catch { fputs("DNS journal self-test failed.\n", stderr); exit(1) }
+}
+#endif
 
 final class HelperService: NSObject, VPNNavigatorHelperAPI {
     private let engine = ManagedTunnel()
     // All tunnel actions and state transitions use one serial queue.
     private var queue: DispatchQueue { engine.queue }
+    private var networkMonitor: NetworkChangeMonitor?
+    private var terminationSignal: DispatchSourceSignal?
+    override init() {
+        super.init()
+        networkMonitor = NetworkChangeMonitor { [weak self] in
+            self?.queue.async { [weak self] in self?.engine.verifyPhysicalNetwork() }
+        }
+        signal(SIGTERM, SIG_IGN)
+        let termination = DispatchSource.makeSignalSource(signal: SIGTERM, queue: queue)
+        termination.setEventHandler { [weak self] in
+            self?.engine.stop()
+            exit(0)
+        }
+        terminationSignal = termination; termination.resume()
+    }
 
     func health(reply: @escaping (String) -> Void) {
         reply("VPN Navigator Helper (signed)")
@@ -26,6 +57,12 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
                                       preferences: try SessionPreferences.decoded(preferences))
                 reply("Connecting. Await tunnel state and route validation.")
             } catch { reply("ERROR: \(error.localizedDescription)") }
+        }
+    }
+    func submitChallenge(id: String, response: String, reply: @escaping (String) -> Void) {
+        queue.async {
+            do { try self.engine.submitChallenge(id: id, response: response); reply("Accepted") }
+            catch { reply("ERROR: 认证请求已失效或响应无效，请重试连接。") }
         }
     }
     func diagnosticEvents(reply: @escaping (String) -> Void) {
@@ -57,7 +94,7 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
                 message: self.engine.message,
                 activeProfileID: self.engine.activeProfileID,
                 receivedBytes: self.engine.traffic?.receivedBytes,
-                sentBytes: self.engine.traffic?.sentBytes)
+                sentBytes: self.engine.traffic?.sentBytes, challenge: self.engine.challenge)
             guard let bytes = try? JSONEncoder().encode(report),
                   let output = String(data: bytes, encoding: .utf8) else {
                 reply("ERROR: Cannot serialize tunnel status")

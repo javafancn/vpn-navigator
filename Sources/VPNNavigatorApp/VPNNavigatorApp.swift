@@ -17,6 +17,7 @@ final class AppModel: ObservableObject {
     @Published var rules: RuleSet?
     @Published var ipv6Preview: IPv6RuleSet?
     @Published var ruleSnapshots: [RuleSnapshot] = []
+    @Published var authenticationChallenge: AuthenticationChallenge?
     @Published var showingSetup = false
     @Published var showingPreferences = false
     @Published var showingDiagnostics = false
@@ -364,6 +365,7 @@ final class AppModel: ObservableObject {
             if let report = await helper.sessionReport() {
                 connectionStatus = report.statusText
                 activeProfileID = report.activeProfileID
+                authenticationChallenge = report.challenge
                 traffic = report.traffic
                 if report.state == .connected, let value = report.traffic {
                     receiveTrend.record(cumulativeBytes: value.receivedBytes)
@@ -382,6 +384,7 @@ final class AppModel: ObservableObject {
         } else {
             connectionStatus = "disconnected: Privileged helper not enabled"
             activeProfileID = nil
+            authenticationChallenge = nil
             traffic = nil
             receiveTrend.reset()
             sendTrend.reset()
@@ -458,6 +461,11 @@ final class AppModel: ObservableObject {
         if response.hasPrefix("ERROR:") { message = response }
         localEvents.append(.stopped)
         await refreshConnectionStatus()
+    }
+    func respondToChallenge(_ challenge: AuthenticationChallenge, value: String) async {
+        let response = await helper.submitChallenge(id: challenge.id, response: value)
+        if response == "Accepted" { authenticationChallenge = nil }
+        else { message = response }
     }
     func refreshDiagnostics() async {
         let remote = helper.installationStatus == .enabled ? await helper.diagnosticEvents() : []

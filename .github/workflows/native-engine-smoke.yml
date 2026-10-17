@@ -51,7 +51,12 @@ jobs:
           if env dev=utun4 script_type=dns-up dns_search_domain_1='a;malicious'               /bin/bash "$hook" --check-dns-vars; then
             echo 'Unsafe inherited DNS variable was accepted' >&2; exit 1
           fi
+      - name: Test DNS ownership journal on a synthetic service
+        run: |
+          swift build --product VPNNavigatorHelper
+          sudo "$(swift build --show-bin-path)/VPNNavigatorHelper" --self-test-dns-journal
       - name: Report
         run: |
           echo 'Engine smoke test passed on macOS runner.'
           echo 'This bundle is unsigned and cannot register the privileged VPN helper.'
+

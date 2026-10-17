@@ -3,6 +3,36 @@ import ServiceManagement
 import UniformTypeIdentifiers
 import VPNNavigatorCore
 
+struct AuthenticationChallengeView: View {
+    @EnvironmentObject private var model: AppModel
+    let challenge: AuthenticationChallenge
+    @State private var response = ""
+    @State private var submitting = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text(challenge.kind == .privateKey ? "解锁私钥" : "额外身份验证")
+                .font(.system(size: 24, weight: .bold))
+            Text(challenge.prompt).font(.system(size: 14)).textSelection(.enabled)
+            SecureField(challenge.kind == .privateKey ? "私钥密码" : "一次性验证码", text: $response)
+                .textFieldStyle(.plain).referenceInput()
+            Text("本次输入仅用于当前认证，不保存至 Keychain 或诊断报告。")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+            HStack {
+                Button("取消连接") { response = ""; Task { await model.disconnect() } }
+                    .buttonStyle(ReferenceSecondaryButton()).disabled(submitting)
+                Spacer()
+                Button(submitting ? "正在提交…" : "继续") {
+                    submitting = true
+                    let secret = response; response = ""
+                    Task { await model.respondToChallenge(challenge, value: secret); submitting = false }
+                }.buttonStyle(ReferencePrimaryButton()).disabled(response.isEmpty || submitting)
+            }
+        }.padding(24).frame(width: 460).background(GlassAtmosphere())
+            .interactiveDismissDisabled()
+            .onDisappear { response = "" }
+    }
+}
+
 struct SetupAssistantView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss

@@ -4,98 +4,133 @@ import AppKit
 /// Reference palette covers controls only. Desktop scenery is NEVER painted
 /// by VPN Navigator; only the user's macOS wallpaper shows through.
 enum GlassPalette {
-    static let blue = Color(red: 0.05, green: 0.45, blue: 0.98)
+    static let blue = Color(red: 0.0, green: 0.478, blue: 1.0)
     static let cyan = Color(red: 0.10, green: 0.73, blue: 1.0)
-    static let ink = Color(red: 0.08, green: 0.14, blue: 0.27)
-    static let violet = Color(red: 0.67, green: 0.60, blue: 0.94)
+    static let ink = Color(red: 0.055, green: 0.075, blue: 0.18)
 }
 
-/// This is the actual macOS desktop backdrop, not an app-drawn landscape.
-/// The wallpaper belongs to the OS and changes as the user changes desktops.
-/// Avoid gradients, mountain artwork and any opaque full-window fill.
+/// Shared visual measurements for all five workspaces. Keep these independent
+/// of VPN session and route state so a fidelity pass cannot alter networking.
+enum GlassLayout {
+    static let pageInset: CGFloat = 24
+    static let pageTop: CGFloat = 24
+    static let cardGap: CGFloat = 12
+    static let cornerRadius: CGFloat = 18
+    static let sectionSpacing: CGFloat = 13
+}
+
+
+/// Neutral optical layers. Wallpaper colour belongs to WindowServer, not to
+/// application gradients. Keep these shared fills achromatic on every page.
+enum GlassSurface {
+    static let mist = Color.white
+    static let sidebar = Color.white
+    static let panel = Color.white
+    static let windowOpacity = 0.045
+    static let cardOpacity = 0.16
+}
+
 struct GlassAtmosphere: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     var body: some View {
-        DesktopVisualEffect()
-            .ignoresSafeArea()
-            .accessibilityHidden(true)
+        ZStack {
+            DesktopVisualEffect()
+            if reduceTransparency &&
+                !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot") {
+                Color(nsColor: .windowBackgroundColor)
+            } else {
+                Color.white.opacity(GlassSurface.windowOpacity)
+            }
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
     }
 }
 
 final class NativeWindowGlass: NSVisualEffectView {
+    private weak var configuredWindow: NSWindow?
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         configureWindow()
     }
     func configureWindow() {
         guard let window else { return }
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.styleMask.insert(.fullSizeContentView)
-        // Let users drag the chrome, not form controls or cards.
-        window.isMovableByWindowBackground = true
+        if configuredWindow !== window {
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.styleMask.insert(.fullSizeContentView)
+            window.isMovableByWindowBackground = true
+            configuredWindow = window
+        }
+        // Do not reset window chrome/geometry on every model or typing update.
+        let aspect = NSSize(width: 11, height: 7)
+        if window.title.contains("VPN Navigator"), !(window is NSPanel),
+           window.contentAspectRatio != aspect {
+            window.contentAspectRatio = aspect
+        }
     }
 }
 
+/// One full-strength native blur. Lowering the effect view's alpha also
+/// reveals unblurred wallpaper; tune readability with the neutral veil above.
 struct DesktopVisualEffect: NSViewRepresentable {
     func makeNSView(context: Context) -> NativeWindowGlass {
         let view = NativeWindowGlass()
-        view.material = .underWindowBackground
+        view.material = .sidebar
         view.blendingMode = .behindWindow
-        view.state = .active
-        // A fully opaque under-window material hides colorful wallpapers.
-        // Compose only a fraction of the native blur over a CLEAR NSWindow.
-        view.alphaValue = 0.38
+        view.state = .followsWindowActiveState
         return view
     }
     func updateNSView(_ view: NativeWindowGlass, context: Context) {
         view.configureWindow()
-        view.alphaValue = 0.38
     }
 }
 
-/// The reference is a sheet of lightly frosted glass placed over the actual
-/// desktop. The tint is deliberately subtle; the former 0.79 white overlay
-/// obscured the wallpaper and turned the whole UI into opaque panels.
+/// Broad rounded workspace behind the actual cards. The reference uses a
+/// translucent content canvas in addition to the individual frosted tiles;
+/// without this layer the header looks detached from the whole page.
+struct ReferenceWorkspaceSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        content
+            .background(shape.fill(Color.white.opacity(0.035)))
+            .overlay(shape.strokeBorder(Color.white.opacity(0.30), lineWidth: 0.75)
+                .allowsHitTesting(false))
+    }
+}
+extension View {
+    func referenceWorkspaceSurface() -> some View {
+        modifier(ReferenceWorkspaceSurface())
+    }
+}
+
+/// Layered native glass: keep the wallpaper visible in the clear NSWindow
+/// while giving text and controls their own *local* blur and readable tint.
+/// No wallpaper image, opaque app background, or fake macOS glass API.
 private struct GlassCardModifier: ViewModifier {
-    @Environment(\.colorScheme) private var appearance
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var cornerRadius: CGFloat
     var active: Bool
 
     func body(content: Content) -> some View {
-        let corners = RoundedRectangle(cornerRadius: cornerRadius,
-                                       style: .continuous)
+        let opaqueFallback = reduceTransparency &&
+            !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot")
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
-            .background {
-                corners
-                    .fill(reduceTransparency ?
-                          Color(nsColor: .windowBackgroundColor).opacity(0.96) :
-                          (appearance == .dark ?
-                           Color.black.opacity(0.24) :
-                           Color.white.opacity(0.17)))
-                    .background {
-                        if !reduceTransparency {
-                            corners.fill(.ultraThinMaterial).opacity(0.38)
-                        }
-                    }
-            }
-            .overlay {
-                corners.strokeBorder(
-                    LinearGradient(colors: [
-                        Color.white.opacity(appearance == .dark ? 0.28 : 0.78),
-                        Color.white.opacity(0.22)
-                    ], startPoint: .topLeading, endPoint: .bottomTrailing),
-                    lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(active ? 0.12 : 0.055),
-                    radius: active ? 14 : 9, y: 4)
+            .background(shape.fill(opaqueFallback ? Color(nsColor: .windowBackgroundColor) :
+                Color.white.opacity(GlassSurface.cardOpacity)))
+            .overlay(shape.strokeBorder(Color.white.opacity(active ? 0.65 : 0.50), lineWidth: 0.75)
+                .allowsHitTesting(false))
+            .shadow(color: Color.black.opacity(active ? 0.04 : 0.025), radius: 8, y: 3)
     }
 }
 
 extension View {
-    func glassCard(cornerRadius: CGFloat = 16,
+    func glassCard(cornerRadius: CGFloat = 18,
                    active: Bool = false) -> some View {
         modifier(GlassCardModifier(cornerRadius: cornerRadius, active: active))
     }
@@ -110,10 +145,16 @@ struct GlassIcon: View {
             .font(.system(size: size * 0.48, weight: .medium))
             .foregroundStyle(color)
             .frame(width: size, height: size)
-            .background(color.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: size * 0.27))
+            .background {
+                RoundedRectangle(cornerRadius: size * 0.27)
+                    .fill(Color.white.opacity(0.46))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: size * 0.27)
+                            .fill(color.opacity(0.06))
+                    }
+            }
             .overlay(RoundedRectangle(cornerRadius: size * 0.27)
-                .strokeBorder(Color.white.opacity(0.72), lineWidth: 1))
+                .strokeBorder(Color.white.opacity(0.65), lineWidth: 0.75))
     }
 }
 
@@ -141,7 +182,7 @@ struct TrafficSparkline: View {
             .accessibilityLabel("真实 OpenVPN 流量趋势")
         } else {
             Text("连接后显示趋势")
-                .font(.system(size: 9))
+                .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity,
                        alignment: .leading)
@@ -158,7 +199,7 @@ struct BrandMark: View {
                     Color.white.opacity(0.98), Color(red: 0.80, green: 0.90, blue: 1)
                 ], startPoint: .topLeading, endPoint: .bottomTrailing))
             Image(systemName: "globe")
-                .font(.system(size: size * 0.60, weight: .semibold))
+                .font(.system(size: size * 0.62, weight: .semibold))
                 .foregroundStyle(GlassPalette.blue)
                 .shadow(color: GlassPalette.cyan.opacity(0.25), radius: 2)
             Image(systemName: "shield.fill")
@@ -171,7 +212,8 @@ struct BrandMark: View {
         .frame(width: size, height: size)
         .overlay(RoundedRectangle(cornerRadius: size * 0.27)
             .strokeBorder(Color.white.opacity(0.92), lineWidth: 1))
-        .shadow(color: GlassPalette.blue.opacity(0.12), radius: 6, y: 3)
+        .shadow(color: Color.black.opacity(0.06), radius: 5, y: 2)
         .accessibilityLabel("VPN Navigator")
     }
 }
+

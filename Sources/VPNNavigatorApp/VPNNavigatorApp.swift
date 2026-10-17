@@ -46,6 +46,27 @@ final class AppModel: ObservableObject {
         store = ProfileStore(root: root.appendingPathComponent("Profiles"))
         updater = RuleUpdater(folder: root.appendingPathComponent("Rules"))
         ipv6Updater = APNICIPv6PreviewStore(root: root.appendingPathComponent("Rules"))
+        // CI-only in-memory composition fixture for checking the populated
+        // inspector against the design. Never written to ProfileStore, never
+        // launches OpenVPN and never marks the session as connected.
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot") {
+            let names = [
+                ("dy", "dy.ovpn", true),
+                ("工作网络", "work.ovpn", false),
+                ("家庭网络", "home.ovpn", false),
+                ("新加坡节点", "sg.ovpn", false),
+                ("美国节点", "us.ovpn", false),
+                ("日本节点", "jp.ovpn", false)
+            ]
+            profiles = names.map { name, file, favorite in
+                VPNProfile(name: name, sourceFilename: file,
+                    relativePath: "ui-snapshot-only",
+                    group: "个人", isFavorite: favorite)
+            }
+            selectedID = profiles.first?.id
+            connectionStatus = "disconnected: UI composition fixture, no tunnel"
+            return
+        }
         Task { await load() }
         Task {
             while !Task.isCancelled {
@@ -122,6 +143,9 @@ final class AppModel: ObservableObject {
     }
 
     func revisions(for profile: VPNProfile) async -> [ProfileRevision] {
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot") {
+            return []
+        }
         do { return try await store.revisions(for: profile) }
         catch { message = "Cannot read profile history: \(error.localizedDescription)"; return [] }
     }
@@ -401,10 +425,10 @@ struct VPNNavigatorApp: App {
     var body: some Scene {
         WindowGroup("VPN Navigator") {
             MainView().environmentObject(model)
-                .frame(minWidth: 980, minHeight: 590)
+                .frame(minWidth: 1100, minHeight: 700)
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 1015, height: 620)
+        .defaultSize(width: 1100, height: 700)
         MenuBarExtra("VPN Navigator", systemImage: "network") {
             GlassMenuBarView().environmentObject(model)
         }
@@ -415,3 +439,4 @@ struct VPNNavigatorApp: App {
         }
     }
 }
+

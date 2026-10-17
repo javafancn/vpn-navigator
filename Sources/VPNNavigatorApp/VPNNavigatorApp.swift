@@ -425,10 +425,10 @@ struct VPNNavigatorApp: App {
     var body: some Scene {
         WindowGroup("VPN Navigator") {
             MainView().environmentObject(model)
-                .frame(minWidth: 980, minHeight: 590)
+                .frame(minWidth: 1100, minHeight: 700)
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 1015, height: 670)
+        .defaultSize(width: 1100, height: 700)
         MenuBarExtra("VPN Navigator", systemImage: "network") {
             GlassMenuBarView().environmentObject(model)
         }
@@ -439,3 +439,4 @@ struct VPNNavigatorApp: App {
         }
     }
 }
+

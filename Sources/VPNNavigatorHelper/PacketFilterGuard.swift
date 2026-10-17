@@ -23,6 +23,9 @@ final class PacketFilterGuard {
         try prepareDirectory()
         try save(.init(token: nil, enabled: false, resetsStates: resetExistingStates))
         try load(rules)
+        // Persist the enable intent before the child runs. If it exits after
+        // enabling but before a usable receipt, retain ambiguous recovery evidence.
+        try save(.init(token: nil, enabled: true, resetsStates: resetExistingStates))
         let response = try enableWithReceipt()
         guard let token = LeakGuardPolicy.enableToken(response) else {
             // Own rules remain fail-closed. An unknown enable reference is not

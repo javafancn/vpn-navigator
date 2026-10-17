@@ -17,6 +17,11 @@ final class AppModel: ObservableObject {
     @Published var rules: RuleSet?
     @Published var ipv6Preview: IPv6RuleSet?
     @Published var ruleSnapshots: [RuleSnapshot] = []
+    @Published var firewallActive = false
+    @Published var firewallRecoveryRequired = false
+    @Published var killSwitch = UserDefaults.standard.bool(forKey: "killSwitch") {
+        didSet { UserDefaults.standard.set(killSwitch, forKey: "killSwitch") }
+    }
     @Published var authenticationChallenge: AuthenticationChallenge?
     @Published var showingSetup = false
     @Published var showingPreferences = false
@@ -106,10 +111,10 @@ final class AppModel: ObservableObject {
     var connected: Bool { sessionState == .connected }
     var connecting: Bool { [.connecting, .authenticating, .reconnecting].contains(sessionState) }
     var stopping: Bool { sessionState == .stopping }
-    var canQuit: Bool { !connected && !connecting && !stopping && activeProfileID == nil }
+    var canQuit: Bool { !connected && !connecting && !stopping && activeProfileID == nil && !firewallRecoveryRequired }
     var sessionPreferences: SessionPreferences {
         .init(connectionTimeout: connectionTimeout == 0 ? 60 : connectionTimeout,
-              reconnectOriginal: reconnectOriginal)
+              reconnectOriginal: reconnectOriginal, killSwitch: killSwitch)
     }
 
     func load() async {
@@ -366,6 +371,8 @@ final class AppModel: ObservableObject {
                 connectionStatus = report.statusText
                 activeProfileID = report.activeProfileID
                 authenticationChallenge = report.challenge
+                firewallActive = report.firewallActive
+                firewallRecoveryRequired = report.firewallRecoveryRequired
                 traffic = report.traffic
                 if report.state == .connected, let value = report.traffic {
                     receiveTrend.record(cumulativeBytes: value.receivedBytes)

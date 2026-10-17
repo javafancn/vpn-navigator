@@ -4,10 +4,12 @@ import Foundation
 /// authorize a managed reconnect without a validated traffic guard.
 public struct SessionPreferences: Codable, Equatable, Sendable {
     public var connectionTimeout: Int
+    public var killSwitch: Bool
     public var reconnectOriginal: Bool
-    public init(connectionTimeout: Int = 60, reconnectOriginal: Bool = true) {
+    public init(connectionTimeout: Int = 60, reconnectOriginal: Bool = true, killSwitch: Bool = false) {
         self.connectionTimeout = min(180, max(20, connectionTimeout))
         self.reconnectOriginal = reconnectOriginal
+        self.killSwitch = killSwitch
     }
     public static func decoded(_ text: String) throws -> Self {
         guard text.utf8.count <= 1024, let data = text.data(using: .utf8) else {

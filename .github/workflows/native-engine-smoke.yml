@@ -9,6 +9,9 @@ on:
       - 'scripts/vendor-openvpn.py'
       - 'Resources/Engine/macos-dns-updown.sh'
       - '.github/workflows/native-engine-smoke.yml'
+      - 'Sources/VPNNavigatorHelper/**'
+      - 'Sources/VPNNavigatorCore/LeakGuardPolicy.swift'
+      - 'scripts/test-pf-loopback.py'
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -55,6 +58,9 @@ jobs:
         run: |
           swift build --product VPNNavigatorHelper
           sudo "$(swift build --show-bin-path)/VPNNavigatorHelper" --self-test-dns-journal
+      - name: Test actual PF blocking on one loopback port
+        run: |
+          python3 scripts/test-pf-loopback.py "$(swift build --show-bin-path)/VPNNavigatorHelper"
       - name: Report
         run: |
           echo 'Engine smoke test passed on macOS runner.'

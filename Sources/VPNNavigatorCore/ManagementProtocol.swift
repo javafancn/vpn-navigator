@@ -23,16 +23,20 @@ public struct SessionReport: Codable, Equatable, Sendable {
     public let activeProfileID: UUID?
     public let receivedBytes: UInt64?
     public let sentBytes: UInt64?
+    public let firewallActive: Bool
+    public let firewallRecoveryRequired: Bool
     public let challenge: AuthenticationChallenge?
 
     public init(state: TunnelState, message: String, activeProfileID: UUID?,
-                receivedBytes: UInt64?, sentBytes: UInt64?, challenge: AuthenticationChallenge? = nil) {
+                receivedBytes: UInt64?, sentBytes: UInt64?, challenge: AuthenticationChallenge? = nil, firewallActive: Bool = false, firewallRecoveryRequired: Bool = false) {
         self.state = state
         self.message = message
         self.activeProfileID = activeProfileID
         self.receivedBytes = receivedBytes
         self.sentBytes = sentBytes
         self.challenge = challenge
+        self.firewallActive = firewallActive
+        self.firewallRecoveryRequired = firewallRecoveryRequired
     }
 
     public var statusText: String { "\(state.rawValue): \(message)" }

@@ -6,7 +6,7 @@ final class AuthenticationChallengeTests: XCTestCase {
         let challenge = try XCTUnwrap(AuthenticationChallenge.parse(">PASSWORD:Need 'Auth' username/password SC:1,Token PIN"))
         XCTAssertEqual(challenge.kind, .staticOTP)
         XCTAssertEqual(try challenge.responseCommand(response: "8675309", accountPassword: "bar"),
-                       "password \"Auth\" \"SCRV1:Zm9v:ODY3NTMwOQ==\"")
+                       "password \"Auth\" \"SCRV1:YmFy:ODY3NTMwOQ==\"")
         XCTAssertThrowsError(try challenge.responseCommand(response: "123\npassword Auth evil", accountPassword: "bar"))
         XCTAssertThrowsError(try challenge.responseCommand(response: "123", accountPassword: ""))
     }

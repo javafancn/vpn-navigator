@@ -11,6 +11,17 @@ if CommandLine.arguments.dropFirst().first == "--commit-dns" {
     catch { exit(1) }
 }
 #if DEBUG
+if CommandLine.arguments.dropFirst().first == "--self-test-pf-install" {
+    guard getuid() == 0, CommandLine.arguments.count == 3,
+          let port = UInt16(CommandLine.arguments[2]), port > 1024 else { exit(1) }
+    let rules = "block drop out quick on lo0 inet proto tcp from any to 127.0.0.1 port \(port)\n"
+    do { try PacketFilterGuard().activate(rules, sourceAddresses: []); exit(0) }
+    catch { fputs("PF loopback guard installation failed.\n", stderr); exit(1) }
+}
+if CommandLine.arguments.dropFirst().first == "--self-test-pf-release" {
+    guard getuid() == 0 else { exit(1) }
+    do { try PacketFilterGuard().release(); exit(0) } catch { exit(1) }
+}
 if CommandLine.arguments.dropFirst().first == "--self-test-dns-journal" {
     do { try DNSJournalSelfTest.run(); print("DNS journal ownership and conflict checks passed."); exit(0) }
     catch { fputs("DNS journal self-test failed.\n", stderr); exit(1) }
@@ -73,7 +84,7 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
     }
     func disconnect(reply: @escaping (String) -> Void) {
         queue.async {
-            self.engine.stop()
+            self.engine.stop(releaseProtection: true)
             if self.engine.state == .disconnected {
                 reply("Disconnected")
             } else {
@@ -94,7 +105,8 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
                 message: self.engine.message,
                 activeProfileID: self.engine.activeProfileID,
                 receivedBytes: self.engine.traffic?.receivedBytes,
-                sentBytes: self.engine.traffic?.sentBytes, challenge: self.engine.challenge)
+                sentBytes: self.engine.traffic?.sentBytes, challenge: self.engine.challenge,
+                firewallActive: self.engine.firewallActive, firewallRecoveryRequired: self.engine.firewallRecoveryRequired)
             guard let bytes = try? JSONEncoder().encode(report),
                   let output = String(data: bytes, encoding: .utf8) else {
                 reply("ERROR: Cannot serialize tunnel status")

@@ -32,6 +32,7 @@ private final class LoopbackProbeServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "VPNNavigator.ProbeSelfTest")
     private var clients: [NWConnection] = []
+    private var replied = false
     init() throws {
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
@@ -39,14 +40,13 @@ private final class LoopbackProbeServer: @unchecked Sendable {
     }
     func listen() async throws -> UInt16 {
         try await withCheckedThrowingContinuation { continuation in
-            var replied = false
             listener.stateUpdateHandler = { [weak self] state in
-                guard !replied else { return }
+                guard let self, !self.replied else { return }
                 switch state {
                 case .ready:
-                    guard let port = self?.listener.port else { return }
-                    replied = true; continuation.resume(returning: port.rawValue)
-                case .failed(let error): replied = true; continuation.resume(throwing: error)
+                    guard let port = self.listener.port else { return }
+                    self.replied = true; continuation.resume(returning: port.rawValue)
+                case .failed(let error): self.replied = true; continuation.resume(throwing: error)
                 default: break
                 }
             }

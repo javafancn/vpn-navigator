@@ -252,7 +252,7 @@ private struct ConnectionOverview: View {
 
     private var hasError: Bool { model.connectionStatus.hasPrefix("failed:") }
     private var statusTitle: String {
-        model.connected ? "已连接" : model.stopping ? "正在断开" : model.connecting ? "正在连接" : hasError ? "连接需检查" : "未连接"
+        model.connected ? "已连接" : model.firewallRecoveryRequired && !model.connecting ? "网络保护待处理" : model.stopping ? "正在断开" : model.connecting ? "正在连接" : hasError ? "连接需检查" : "未连接"
     }
     private func bytes(_ value: UInt64?) -> String {
         guard let value else { return "— MB" }
@@ -272,7 +272,7 @@ private struct ConnectionOverview: View {
                             return
                         }
                         Task {
-                            if model.connected || model.connecting { await model.disconnect() }
+                            if model.connected || model.connecting || model.firewallRecoveryRequired { await model.disconnect() }
                             else { await model.connectSelected() }
                         }
                     } label: { ReferencePowerOrb() }
@@ -282,7 +282,7 @@ private struct ConnectionOverview: View {
                     Text(statusTitle)
                         .font(.system(size: 28, weight: .semibold))
                         .foregroundStyle(model.connected ? Color.green : hasError ? Color.orange : GlassPalette.blue)
-                    Text(model.connected ? "安全连接已建立" : model.connecting ? "点击上方按钮取消连接" : "点击上方按钮开始连接")
+                    Text(model.connected ? "安全连接已建立" : model.connecting ? "点击上方按钮取消连接" : model.firewallRecoveryRequired ? "点击上方按钮解除断线保护" : "点击上方按钮开始连接")
                         .font(.system(size: 16))
                         .foregroundStyle(model.connected ? Color.green : GlassPalette.ink.opacity(0.6))
                     if model.connected && model.activeProfileID != model.selectedID && model.selectedID != nil {
@@ -390,9 +390,9 @@ private struct ConnectionOverview: View {
                         .background(Color.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 15))
                     VStack(alignment: .leading, spacing: 10) {
                         Text("连接保护").font(.system(size: 18, weight: .semibold))
-                        Label("受管连接异常时安全断开", systemImage: "checkmark.circle.fill")
+                        Label(model.firewallActive ? "PF 断线保护已接入" : "受管连接异常时停止会话", systemImage: model.firewallActive ? "checkmark.circle.fill" : "info.circle")
                             .font(.system(size: 12)).foregroundStyle(.green)
-                        Text("PF Kill Switch 尚未启用，不能保证零泄漏。")
+                        Text(model.firewallActive ? "实验性保护，完整真机防泄漏验收待完成。" : "可在连接偏好中启用实验性断线保护。")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -893,7 +893,7 @@ struct SystemSettingsPane: View {
                     symbol: "info.circle.fill") {
                     Menu {
                         Text("macOS 13+")
-                        Text("PF Kill Switch 尚未启用")
+                        Text("PF 断线保护为实验性功能")
                         Text("IPv6 分流尚未实现")
                     } label: {
                         Image(systemName: "chevron.right")
@@ -1305,7 +1305,7 @@ struct ProfileDetail: View {
             }
             .pickerStyle(.radioGroup)
             .disabled(model.busy || model.connected || model.connecting)
-            Text("中国 IPv4 直连需要已经下载的网段规则；IPv6 分流与 Kill Switch 尚未实现。")
+            Text("中国 IPv4 直连需要已经下载的网段规则；IPv6 地区分流未提供；断线保护可在连接偏好中启用。")
                 .font(.system(size: 14)).foregroundStyle(.secondary)
         }
         .padding(17)

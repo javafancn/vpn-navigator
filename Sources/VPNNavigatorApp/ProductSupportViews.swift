@@ -75,7 +75,7 @@ struct SetupAssistantView: View {
                         .buttonStyle(ReferenceSecondaryButton()).padding(.trailing, 14)
                 }
             }.glassCard(cornerRadius: 16)
-            Label("国内直连需要先下载或导入 IPv4 规则；IPv6 分流与 PF 断线保护仍需完成发布验收。", systemImage: "info.circle")
+            Label("国内直连需要先下载或导入 IPv4 规则；IPv6 地区分流仍未提供，实验性断线保护需完成发布验收。", systemImage: "info.circle")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
@@ -123,6 +123,10 @@ struct ClientPreferencesView: View {
                 }
                 Toggle("Original 模式断线后自动重连", isOn: $model.reconnectOriginal)
                 Text("全局 VPN 和国内直连遇到重连事件时停止会话，防止在未验证的网络路径上继续运行。")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                Divider().opacity(0.25)
+                Toggle("断线保护（实验性，全局 VPN / 国内直连）", isOn: $model.killSwitch)
+                Text("启用时会检查 PF 环境、重置现有网络连接并阻断物理 IPv6。意外断线后保护会保留，需手动断开或恢复网络。完整真机防泄漏验收尚待完成。")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 Divider().opacity(0.25)
                 Toggle("登录时启动 VPN Navigator", isOn: $launchAtLogin)

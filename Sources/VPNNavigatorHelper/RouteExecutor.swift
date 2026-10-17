@@ -143,7 +143,7 @@ final class RouteExecutor {
     @discardableResult
     static func command(_ executable: String, _ arguments: [String]) throws -> String {
         let allowlisted: Set<String> = [
-            "/sbin/route", "/usr/sbin/netstat", "/sbin/ifconfig"
+            "/sbin/route", "/usr/sbin/netstat", "/sbin/ifconfig", "/usr/bin/dscacheutil"
         ]
         guard allowlisted.contains(executable) else {
             throw RouteExecutionError.disallowedExecutable
@@ -202,3 +202,4 @@ enum RouteExecutionError: Error, LocalizedError {
         }
     }
 }
+

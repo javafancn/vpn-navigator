@@ -14,6 +14,7 @@ final class AppModel: ObservableObject {
             }
         }
     }
+    @Published var rulesUpdatedAt: Date?
     @Published var rules: RuleSet?
     @Published var ipv6Preview: IPv6RuleSet?
     @Published var ruleSnapshots: [RuleSnapshot] = []
@@ -125,8 +126,13 @@ final class AppModel: ObservableObject {
             profileSizes = sizes
             if selectedID == nil { selectedID = profiles.first?.id }
             rules = try await updater.cached()
+            if rules == nil, let seed = Bundle.main.url(forResource: "china-ipv4", withExtension: "txt", subdirectory: "Rules") {
+                rules = try await updater.bootstrap(seed)
+            }
+            rulesUpdatedAt = try await updater.lastUpdated()
             ipv6Preview = try await ipv6Updater.cached()
             ruleSnapshots = try await updater.snapshots()
+            rulesUpdatedAt = try await updater.lastUpdated()
         } catch { message = error.localizedDescription }
     }
     func importFile(_ url: URL) async {
@@ -236,6 +242,7 @@ final class AppModel: ObservableObject {
             try await updater.commit(candidate)
             rules = candidate
             ruleSnapshots = try await updater.snapshots()
+            rulesUpdatedAt = try await updater.lastUpdated()
             message = "Validated and cached \(candidate.routes.count) IPv4 networks."
         } catch { message = "Update failed; old rules preserved. \(error.localizedDescription)" }
     }
@@ -340,6 +347,7 @@ final class AppModel: ObservableObject {
             try await updater.commit(restored)
             rules = restored
             ruleSnapshots = try await updater.snapshots()
+            rulesUpdatedAt = try await updater.lastUpdated()
             message = "Previous China IPv4 rules restored."
         } catch {
             message = "Rule rollback refused: \(error.localizedDescription)"
@@ -509,6 +517,7 @@ final class AppModel: ObservableObject {
             }
             try await updater.commit(candidate)
             rules = candidate; ruleSnapshots = try await updater.snapshots()
+            rulesUpdatedAt = try await updater.lastUpdated()
             message = "已校验并导入 \(candidate.routes.count) 条 IPv4 规则。"
         } catch { message = "规则导入失败，原规则已保留：\(error.localizedDescription)" }
     }

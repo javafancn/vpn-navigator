@@ -1,11 +1,15 @@
 import Foundation
 import Network
+import VPNNavigatorCore
 import Darwin
 
 /// Explicit CI entry point. Uses only loopback and the system localhost
 /// resolver; does not invoke the root helper or change system networking.
 enum NetworkProbeSelfTest {
     static func run() async throws {
+        guard let seed = Bundle.main.url(forResource: "china-ipv4", withExtension: "txt", subdirectory: "Rules") else { throw ProbeError.commandFailed }
+        let rules = try VPNNavigatorCore.RuleSet(text: String(contentsOf: seed))
+        guard rules.routes.count >= 100 else { throw ProbeError.commandFailed }
         let server = try LoopbackProbeServer()
         let port = try await server.listen()
         defer { server.close() }

@@ -678,10 +678,10 @@ private struct RoutingWorkspace: View {
                         HStack(alignment: .top, spacing: 16) {
                             GlassIcon(symbol: "globe.asia.australia", size: 67)
                             VStack(alignment: .leading, spacing: 16) {
-                                ruleDetail("规则版本", model.ruleSnapshots.first.map { $0.savedAt.formatted(.dateTime.year().month().day()) } ?? "未下载")
+                                ruleDetail("规则版本", model.rulesUpdatedAt.map { $0.formatted(.dateTime.year().month().day()) } ?? "未下载")
                                 ruleDetail("规则来源", "chnroutes2")
                                 ruleDetail("规则数量", model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
-                                ruleDetail("最后更新", model.ruleSnapshots.first.map { $0.savedAt.formatted(.dateTime.month().day().hour().minute()) } ?? "尚无快照")
+                                ruleDetail("最后更新", model.rulesUpdatedAt.map { $0.formatted(.dateTime.month().day().hour().minute()) } ?? "尚无缓存")
                             }
                         }
                         Spacer(minLength: 0)

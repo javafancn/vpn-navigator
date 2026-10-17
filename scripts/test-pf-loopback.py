@@ -22,7 +22,7 @@ def main():
     root = pf("-sr")
     initialized = not root
     if root and root not in ('anchor "com.apple/*" all', 'anchor "com.apple/*"'):
-        raise SystemExit("Runner has a non-stock PF ruleset; fixture refuses to alter it.")
+        raise SystemExit(f"Runner PF root rules need inspection; fixture refuses to alter them: {root!r}")
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
     listener.listen()

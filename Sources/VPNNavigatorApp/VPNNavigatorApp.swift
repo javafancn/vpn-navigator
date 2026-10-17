@@ -1,6 +1,7 @@
 import SwiftUI
 import VPNNavigatorCore
 import ServiceManagement
+import Darwin
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -59,6 +60,7 @@ final class AppModel: ObservableObject {
         store = ProfileStore(root: root.appendingPathComponent("Profiles"))
         updater = RuleUpdater(folder: root.appendingPathComponent("Rules"))
         ipv6Updater = APNICIPv6PreviewStore(root: root.appendingPathComponent("Rules"))
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") { return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -514,6 +516,20 @@ final class AppModel: ObservableObject {
 struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
     @StateObject private var model = AppModel()
+    init() {
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") {
+            Task {
+                do {
+                    try await NetworkProbeSelfTest.run()
+                    print("Loopback TCP, DNS, ping, traceroute, timeout and cancellation passed.")
+                    Darwin.exit(0)
+                } catch {
+                    print("Network probe self-test failed: \(error.localizedDescription)")
+                    Darwin.exit(1)
+                }
+            }
+        }
+    }
     var body: some Scene {
         Window("VPN Navigator", id: "main") {
             MainView().environmentObject(model)

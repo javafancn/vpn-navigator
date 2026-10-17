@@ -19,6 +19,13 @@ jobs:
         env:
           VPNNAV_BUILD_UNIVERSAL: "1"
         run: zsh scripts/build-app.sh
+      - name: Exercise real network diagnostics on loopback
+        run: |
+          # Python timeout is available on the runner and does not depend on brew.
+          python3 - <<'PYTEST'
+          import subprocess
+          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-network-self-test'], check=True, timeout=40)
+          PYTEST
       - name: Verify development bundle
         run: |
           test -x 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp'

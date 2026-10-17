@@ -1,0 +1,125 @@
+name: Signed macOS release (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type RELEASE to build a signed installer'
+        required: true
+        type: string
+      source_sha256:
+        description: 'SHA-256 of matching official OpenVPN 2.7.x source tar.gz'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  signed-release:
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE'
+    runs-on: macos-15
+    environment: macos-release
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check release materials
+        env:
+          EXPECTED_SHA: ${{ inputs.source_sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "Invalid SHA-256"; exit 1; }
+          test -s LICENSES/THIRD_PARTY_NOTICES.txt || {
+            echo "A reviewed LICENSES/THIRD_PARTY_NOTICES.txt is required"; exit 1
+          }
+          swift test
+          plutil -lint Resources/Info.plist Resources/LaunchDaemons/*.plist Resources/LaunchAgents/*.plist
+
+      - name: Set up temporary signing keychain
+        env:
+          APP_P12: ${{ secrets.APP_SIGNING_P12_BASE64 }}
+          APP_PASSWORD: ${{ secrets.APP_SIGNING_P12_PASSWORD }}
+          INSTALLER_P12: ${{ secrets.INSTALLER_SIGNING_P12_BASE64 }}
+          INSTALLER_PASSWORD: ${{ secrets.INSTALLER_SIGNING_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.TEMP_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${APP_P12:?missing APP_SIGNING_P12_BASE64}"
+          : "${INSTALLER_P12:?missing INSTALLER_SIGNING_P12_BASE64}"
+          : "${KEYCHAIN_PASSWORD:?missing TEMP_KEYCHAIN_PASSWORD}"
+          KEYCHAIN="$RUNNER_TEMP/vpn-navigator-release.keychain-db"
+          echo "VN_SIGN_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN"
+          printf '%s' "$APP_P12" | base64 -D > "$RUNNER_TEMP/app.p12"
+          printf '%s' "$INSTALLER_P12" | base64 -D > "$RUNNER_TEMP/installer.p12"
+          security import "$RUNNER_TEMP/app.p12" -k "$KEYCHAIN" -P "$APP_PASSWORD" -T /usr/bin/codesign
+          security import "$RUNNER_TEMP/installer.p12" -k "$KEYCHAIN" -P "$INSTALLER_PASSWORD" -T /usr/bin/productbuild -T /usr/bin/pkgbuild
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          rm -f "$RUNNER_TEMP/app.p12" "$RUNNER_TEMP/installer.p12"
+
+      - name: Install reviewed OpenVPN engine and matching source
+        env:
+          EXPECTED_SHA: ${{ inputs.source_sha256 }}
+        run: |
+          set -euo pipefail
+          brew install openvpn
+          ENGINE="$(brew --prefix openvpn)/sbin/openvpn"
+          VERSION="$("$ENGINE" --version | head -n 1 | awk '{print $2}')"
+          [[ "$VERSION" =~ ^2\.7\.[0-9]+$ ]] || {
+            echo "This release workflow requires a reviewed OpenVPN 2.7.x engine"; exit 1
+          }
+          SOURCE="$RUNNER_TEMP/openvpn-source.tar.gz"
+          curl --fail --location --retry 3 \
+            "https://swupdate.openvpn.org/community/releases/openvpn-$VERSION.tar.gz" \
+            --output "$SOURCE"
+          echo "$EXPECTED_SHA  $SOURCE" | shasum -a 256 --check
+          tar -tzf "$SOURCE" >/dev/null
+          echo "VN_OPENVPN_BIN=$ENGINE" >> "$GITHUB_ENV"
+          echo "VN_OPENVPN_SOURCE=$SOURCE" >> "$GITHUB_ENV"
+
+      - name: Configure notarization credentials
+        env:
+          NOTARY_KEY_BASE64: ${{ secrets.NOTARY_API_KEY_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          : "${NOTARY_KEY_BASE64:?missing NOTARY_API_KEY_BASE64}"
+          printf '%s' "$NOTARY_KEY_BASE64" | base64 -D > "$RUNNER_TEMP/AuthKey.p8"
+          xcrun notarytool store-credentials "vpn-navigator-release" \
+            --key "$RUNNER_TEMP/AuthKey.p8" \
+            --key-id "$NOTARY_KEY_ID" \
+            --issuer "$NOTARY_ISSUER"
+          rm -f "$RUNNER_TEMP/AuthKey.p8"
+
+      - name: Sign and notarize app
+        env:
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+          OPENVPN_SOURCE_SHA256: ${{ inputs.source_sha256 }}
+        run: |
+          set -euo pipefail
+          export OPENVPN_BIN="$VN_OPENVPN_BIN"
+          export OPENVPN_SOURCE_ARCHIVE="$VN_OPENVPN_SOURCE"
+          export THIRD_PARTY_NOTICES="$PWD/LICENSES/THIRD_PARTY_NOTICES.txt"
+          zsh scripts/build-app.sh
+          NOTARY_KEYCHAIN_PROFILE="vpn-navigator-release" zsh scripts/notarize.sh app
+
+      - name: Sign and notarize installer
+        env:
+          DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
+        run: |
+          set -euo pipefail
+          zsh scripts/build-pkg.sh
+          NOTARY_KEYCHAIN_PROFILE="vpn-navigator-release" zsh scripts/notarize.sh pkg
+          zsh scripts/release-audit.sh
+          spctl --assess --type execute --verbose=2 'dist/VPN Navigator.app'
+          spctl --assess --type install --verbose=2 'dist/VPN-Navigator-0.1.0.pkg'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VPNNavigator-signed-notarized-review-only
+          path: dist/VPN-Navigator-0.1.0.pkg
+          if-no-files-found: error
+          retention-days: 14

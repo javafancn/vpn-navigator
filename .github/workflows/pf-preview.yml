@@ -1,0 +1,32 @@
+name: PF preview syntax checks
+on:
+  push:
+    branches: [feat/engine-management-and-routes]
+  pull_request:
+    paths:
+      - 'Sources/VPNNavigatorCore/FirewallRulePreview.swift'
+      - 'Sources/VPNNavigatorPFPreview/**'
+      - '.github/workflows/pf-preview.yml'
+      - 'Package.swift'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-only:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and emit candidate rules
+        run: |
+          swift run VPNNavigatorPFPreview > "$RUNNER_TEMP/pf-vpn-navigator-preview.conf"
+          test -s "$RUNNER_TEMP/pf-vpn-navigator-preview.conf"
+          grep -q 'block drop out quick on en0 inet6' "$RUNNER_TEMP/pf-vpn-navigator-preview.conf"
+      - name: PF syntax check (never load/enable firewall)
+        run: |
+          sudo /sbin/pfctl -vnf "$RUNNER_TEMP/pf-vpn-navigator-preview.conf"
+          echo 'Candidate anchor syntax parsed; no PF changes made.'

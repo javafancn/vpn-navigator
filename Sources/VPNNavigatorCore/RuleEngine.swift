@@ -3,6 +3,8 @@ import Foundation
 public struct RuleSet: Sendable {
     public let routes: [IPv4CIDR]
     public init(text: String) throws {
+        // Also enforced on data received over XPC, not only HTTP downloads.
+        guard text.utf8.count <= 2_000_000 else { throw RuleError.tooLarge }
         var result = Set<IPv4CIDR>()
         for row in text.components(separatedBy: .newlines) {
             let line = row.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -12,19 +14,26 @@ public struct RuleSet: Sendable {
             // Refuse default-route and private/special prefixes from a third-party GeoIP feed.
             guard route.prefix >= 8, !Self.isSpecial(route) else { throw CIDRError.invalid(line) }
             result.insert(route)
+            guard result.count <= 30_000 else { throw RuleError.tooLarge }
         }
         guard !result.isEmpty else { throw RuleError.empty }
         routes = result.sorted()
     }
+    /// Exclude destinations reserved for LAN, diagnostics, multicast, shared
+    /// address space, or documentation, including *broader CIDRs that overlap*
+    /// a reserved range (for example 192.0.0.0/8 overlaps 192.168.0.0/16).
+    /// This feed must never replace connected or special-purpose routes.
+    private static let reserved: [IPv4CIDR] = [
+        "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10",
+        "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12",
+        "192.0.0.0/24", "192.0.2.0/24", "192.88.99.0/24",
+        "192.168.0.0/16", "198.18.0.0/15",
+        "198.51.100.0/24", "203.0.113.0/24",
+        "224.0.0.0/4", "240.0.0.0/4"
+    ].compactMap { try? IPv4CIDR($0) }
+
     private static func isSpecial(_ cidr: IPv4CIDR) -> Bool {
-        let first = cidr.network >> 24
-        if first == 0 || first == 10 || first == 127 || first >= 224 { return true }
-        let second = (cidr.network >> 16) & 255
-        if first == 169 && second == 254 { return true }
-        if first == 172 && (16...31).contains(second) { return true }
-        if first == 192 && second == 168 { return true }
-        if first == 100 && (64...127).contains(second) { return true }
-        return false
+        reserved.contains { $0.overlaps(cidr) }
     }
     public func contains(ip: String) -> Bool {
         guard let address = IPv4CIDR.parseAddress(ip) else { return false }
@@ -36,10 +45,11 @@ public struct RuleSet: Sendable {
     }
 }
 public enum RuleError: Error, LocalizedError {
-    case empty, tooLarge
+    case empty, tooLarge, suspiciousChange
     public var errorDescription: String? {
         switch self { case .empty: return "Rules file was empty"
-        case .tooLarge: return "Rules file exceeds the safe limit" }
+        case .tooLarge: return "Rules file exceeds the safe limit"
+        case .suspiciousChange: return "The IP feed changed unexpectedly; the previous validated version was preserved" }
     }
 }
 

@@ -1,0 +1,12 @@
+chnroutes2 route dataset attribution
+
+Source: https://github.com/misakaio/chnroutes2
+Maintainer: Misaka Network contributors / upstream feed providers
+Dataset license as stated in upstream README: CC BY-SA 2.0
+License text: https://creativecommons.org/licenses/by-sa/2.0/
+
+VPN Navigator downloads this independent dataset at runtime. VPN Navigator
+does not claim copyright over it. Country-level routing can be approximate,
+and a BGP-origin-derived list does not establish country jurisdiction.
+Before redistribution, confirm attribution, share-alike and license notice
+obligations for any cached or bundled modified datasets.

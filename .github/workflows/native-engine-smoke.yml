@@ -63,6 +63,7 @@ jobs:
           fi
       - name: Build reviewed-format sources for the declared minimum macOS
         run: |
+          python3 -m unittest discover -s scripts/tests -p 'test_*.py'
           python3 scripts/fetch-engine-sources.py "$RUNNER_TEMP/engine-sources"
       - uses: actions/cache@v4
         id: source-engine-cache

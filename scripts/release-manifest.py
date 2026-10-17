@@ -12,12 +12,13 @@ import sys
 
 def minimum_versions(path):
     output = subprocess.check_output(["otool", "-l", str(path)], text=True)
-    versions, relevant = [], False
+    versions, command = [], None
     for line in output.splitlines():
         fields = line.split()
         if fields[:1] == ["cmd"]:
-            relevant = fields[1] in {"LC_BUILD_VERSION", "LC_VERSION_MIN_MACOSX"}
-        if relevant and len(fields) == 2 and fields[0] in {"minos", "version"}:
+            command = fields[1] if len(fields) == 2 else None
+        if len(fields) == 2 and ((command == "LC_BUILD_VERSION" and fields[0] == "minos") or
+                                 (command == "LC_VERSION_MIN_MACOSX" and fields[0] == "version")):
             versions.append(fields[1])
     if not versions:
         raise RuntimeError(f"Missing macOS deployment metadata: {path.name}")

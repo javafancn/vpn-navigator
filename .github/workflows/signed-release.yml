@@ -53,6 +53,7 @@ jobs:
           [[ "$EXPECTED_VPN_SHA" =~ ^[0-9a-fA-F]{64}$ ]]
           [[ "$EXPECTED_SSL_SHA" =~ ^[0-9a-fA-F]{64}$ ]]
           swift test
+          python3 -m unittest discover -s scripts/tests -p 'test_*.py'
           python3 scripts/fetch-engine-sources.py "$RUNNER_TEMP/engine-sources"
           python3 - <<'PY'
           import json, os

@@ -1,18 +1,66 @@
 import Foundation
+import Darwin
 import VPNNavigatorCore
+
+// Internal DNS-hook operation: fixed journal, typed tunnel, root only. It
+// cannot launch OpenVPN, accept a path or run an arbitrary command.
+if CommandLine.arguments.dropFirst().first == "--commit-dns" {
+    guard getuid() == 0, CommandLine.arguments.count == 3,
+          DNSRecoveryPolicy.validTunnel(CommandLine.arguments[2]) else { exit(1) }
+    do { try DNSRecoveryJournal().commit(tunnel: CommandLine.arguments[2]); exit(0) }
+    catch { exit(1) }
+}
+#if DEBUG
+if CommandLine.arguments.dropFirst().first == "--self-test-route-ordering" {
+    do { try RouteExecutionSelfTest.run(); print("Route rollback ordering and cancellation checks passed."); exit(0) }
+    catch { fputs("Route ordering self-test failed.\n", stderr); exit(1) }
+}
+if CommandLine.arguments.dropFirst().first == "--self-test-pf-install" {
+    guard getuid() == 0, CommandLine.arguments.count == 3,
+          let port = UInt16(CommandLine.arguments[2]), port > 1024 else { exit(1) }
+    let rules = "block drop out quick on lo0 inet proto tcp from any to 127.0.0.1 port \(port)\n"
+    do { try PacketFilterGuard().activate(rules, resetExistingStates: false); exit(0) }
+    catch { fputs("PF loopback guard installation failed.\n", stderr); exit(1) }
+}
+if CommandLine.arguments.dropFirst().first == "--self-test-pf-release" {
+    guard getuid() == 0 else { exit(1) }
+    do { try PacketFilterGuard().release(); exit(0) } catch { exit(1) }
+}
+if CommandLine.arguments.dropFirst().first == "--self-test-dns-journal" {
+    do { try DNSJournalSelfTest.run(); print("DNS journal ownership and conflict checks passed."); exit(0) }
+    catch { fputs("DNS journal self-test failed.\n", stderr); exit(1) }
+}
+#endif
 
 final class HelperService: NSObject, VPNNavigatorHelperAPI {
     private let engine = ManagedTunnel()
     // All tunnel actions and state transitions use one serial queue.
     private var queue: DispatchQueue { engine.queue }
+    private var networkMonitor: NetworkChangeMonitor?
+    private var terminationSignal: DispatchSourceSignal?
+    override init() {
+        super.init()
+        networkMonitor = NetworkChangeMonitor { [weak self] in
+            self?.queue.async { [weak self] in self?.engine.verifyPhysicalNetwork() }
+        }
+        signal(SIGTERM, SIG_IGN)
+        let termination = DispatchSource.makeSignalSource(signal: SIGTERM, queue: queue)
+        termination.setEventHandler { [weak self] in
+            self?.engine.stop()
+            exit(0)
+        }
+        terminationSignal = termination; termination.resume()
+    }
 
     func health(reply: @escaping (String) -> Void) {
         reply("VPN Navigator Helper (signed)")
     }
     func connect(profile: String, profileID: String, mode: String, rules: String,
-                 username: String, password: String,
+                 username: String, password: String, preferences: String, attemptID: String,
                  reply: @escaping (String) -> Void) {
+        let generation = engine.cancellation.snapshot()
         queue.async {
+            guard let requestID = UUID(uuidString: attemptID) else { reply("ERROR: Invalid connection attempt"); return }
             guard let profileUUID = UUID(uuidString: profileID) else {
                 reply("ERROR: Invalid profile identifier"); return
             }
@@ -22,14 +70,28 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
             do {
                 try self.engine.start(profile: profile, profileID: profileUUID,
                                       mode: requested, ruleText: rules,
-                                      username: username, password: password)
+                                      username: username, password: password,
+                                      preferences: try SessionPreferences.decoded(preferences), attemptID: requestID, cancellationGeneration: generation)
                 reply("Connecting. Await tunnel state and route validation.")
             } catch { reply("ERROR: \(error.localizedDescription)") }
         }
     }
-    func disconnect(reply: @escaping (String) -> Void) {
+    func submitChallenge(id: String, response: String, reply: @escaping (String) -> Void) {
         queue.async {
-            self.engine.stop()
+            do { try self.engine.submitChallenge(id: id, response: response); reply("Accepted") }
+            catch { reply("ERROR: 认证请求已失效或响应无效，请重试连接。") }
+        }
+    }
+    func diagnosticEvents(reply: @escaping (String) -> Void) {
+        queue.async {
+            let data = (try? JSONEncoder().encode(self.engine.diagnosticEvents)) ?? Data()
+            reply(String(decoding: data, as: UTF8.self))
+        }
+    }
+    func disconnect(cancelAttemptID: String, reply: @escaping (String) -> Void) {
+        engine.cancellation.cancel(UUID(uuidString: cancelAttemptID))
+        queue.async {
+            self.engine.stop(releaseProtection: true)
             if self.engine.state == .disconnected {
                 reply("Disconnected")
             } else {
@@ -50,7 +112,8 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
                 message: self.engine.message,
                 activeProfileID: self.engine.activeProfileID,
                 receivedBytes: self.engine.traffic?.receivedBytes,
-                sentBytes: self.engine.traffic?.sentBytes)
+                sentBytes: self.engine.traffic?.sentBytes, challenge: self.engine.challenge,
+                firewallActive: self.engine.firewallActive, firewallRecoveryRequired: self.engine.firewallRecoveryRequired, attemptID: self.engine.activeAttemptID)
             guard let bytes = try? JSONEncoder().encode(report),
                   let output = String(data: bytes, encoding: .utf8) else {
                 reply("ERROR: Cannot serialize tunnel status")
@@ -103,3 +166,4 @@ let delegate = HelperDelegate()
 listener.delegate = delegate
 listener.resume()
 RunLoop.current.run()
+

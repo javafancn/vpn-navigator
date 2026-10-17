@@ -25,6 +25,7 @@ chmod 755 "$APP/Contents/Resources/macos-dns-updown.sh"
 mkdir -p "$APP/Contents/Resources/LICENSES"
 cp LICENSES/OpenVPN-DNS-BSD-2-Clause.txt "$APP/Contents/Resources/LICENSES/"
 cp LICENSES/CHNROUTES2_NOTICE.txt "$APP/Contents/Resources/LICENSES/"
+cp -R Resources/Rules "$APP/Contents/Resources/Rules"
 cp Resources/LaunchDaemons/*.plist "$APP/Contents/Library/LaunchDaemons/"
 cp Resources/LaunchAgents/*.plist "$APP/Contents/Library/LaunchAgents/"
 
@@ -56,6 +57,11 @@ if [[ -n "${DEVELOPER_ID_APPLICATION:-}" ]]; then
   }
   mkdir -p "$APP/Contents/Resources/Sources"
   cp "$OPENVPN_SOURCE_ARCHIVE" "$APP/Contents/Resources/Sources/OpenVPN-source.tar.gz"
+  if [[ -n "${OPENSSL_SOURCE_ARCHIVE:-}" ]]; then
+    : "${OPENSSL_SOURCE_SHA256:?Set verified OpenSSL source SHA256}"
+    printf '%s  %s\n' "$OPENSSL_SOURCE_SHA256" "$OPENSSL_SOURCE_ARCHIVE" | shasum -a 256 --check
+    cp "$OPENSSL_SOURCE_ARCHIVE" "$APP/Contents/Resources/Sources/OpenSSL-source.tar.gz"
+  fi
   cp "$THIRD_PARTY_NOTICES" "$APP/Contents/Resources/LICENSES/THIRD_PARTY_NOTICES.txt"
   [[ -s "$APP/Contents/Resources/Sources/OpenVPN-source.tar.gz" &&
      -s "$APP/Contents/Resources/LICENSES/THIRD_PARTY_NOTICES.txt" ]] || exit 1
@@ -82,3 +88,4 @@ else
 fi
 
 echo "Created: $APP"
+

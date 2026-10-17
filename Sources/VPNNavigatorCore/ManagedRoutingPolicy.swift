@@ -22,7 +22,8 @@ public enum ManagedRoutingPolicy {
             }
             guard !insideInlineBlock,
                   !trimmed.isEmpty, !trimmed.hasPrefix("#"), !trimmed.hasPrefix(";") else { continue }
-            guard let directive = trimmed.split(whereSeparator: { $0.isWhitespace }).first else { continue }
+            let tokens = try OpenVPNOptionLexer.tokens(trimmed)
+            guard let directive = tokens.first else { continue }
             if blockedClientOptions.contains(String(directive)) {
                 throw ManagedRoutingPolicyError.conflictingDirective(
                     line: offset + 1, option: String(directive))
@@ -63,3 +64,4 @@ public enum ManagedRoutingPolicyError: Error, Equatable, LocalizedError {
         }
     }
 }
+

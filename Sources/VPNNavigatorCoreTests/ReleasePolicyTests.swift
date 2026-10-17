@@ -2,6 +2,13 @@ import XCTest
 @testable import VPNNavigatorCore
 
 final class ReleasePolicyTests: XCTestCase {
+    func testUpdaterDoesNotSelectTheOtherArchitecture() {
+        XCTAssertTrue(ReleaseAssetPolicy.supportsArchitecture("VPN-Navigator-0.1.0-arm64.pkg", architecture: "arm64"))
+        XCTAssertFalse(ReleaseAssetPolicy.supportsArchitecture("VPN-Navigator-0.1.0-arm64.pkg", architecture: "x86_64"))
+        XCTAssertTrue(ReleaseAssetPolicy.supportsArchitecture("VPN-Navigator-0.1.0-x86_64.pkg", architecture: "x86_64"))
+        XCTAssertFalse(ReleaseAssetPolicy.supportsArchitecture("VPN-Navigator-0.1.0-x86_64.pkg", architecture: "arm64"))
+        XCTAssertTrue(ReleaseAssetPolicy.supportsArchitecture("VPN-Navigator-0.1.0-Universal.pkg", architecture: "arm64"))
+    }
     func testStableVersionsAndSorting() throws {
         XCTAssertEqual(ReleaseVersion("v1.2.3"), ReleaseVersion("1.2.3"))
         XCTAssertTrue(try XCTUnwrap(ReleaseVersion("1.3.0")) > XCTUnwrap(ReleaseVersion("1.2.9")))
@@ -22,3 +29,4 @@ final class ReleasePolicyTests: XCTestCase {
             "https://github.com/javafancn/vpn-navigator/releases/tag/v1.0.0")!))
     }
 }
+

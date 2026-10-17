@@ -8,3 +8,8 @@
 *.pfx
 *.mobileconfig
 DerivedData/
+
+
+__pycache__/
+
+*.py[cod]

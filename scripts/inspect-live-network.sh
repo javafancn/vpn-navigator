@@ -12,3 +12,4 @@ echo "== IPv6 route =="
 echo "== Local DNS resolver summary =="
 /usr/sbin/scutil --dns | /usr/bin/grep -E '^resolver|nameserver|if_index|flags' | /usr/bin/head -n 80 || true
 echo "Read-only diagnostics complete. Avoid sharing private DNS output."
+

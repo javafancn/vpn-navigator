@@ -6,13 +6,14 @@ import VPNNavigatorCore
 /// AppModel; no reference throughput or geographic names are substituted.
 struct GlassMenuBarView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.openWindow) private var openWindow
 
     private func bytes(_ value: UInt64?) -> String {
         guard let value else { return "—" }
         return ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .file)
     }
     private var connectionToggle: Binding<Bool> {
-        Binding(get: { model.connected }, set: { enabled in
+        Binding(get: { model.connected || model.connecting }, set: { enabled in
             Task {
                 if enabled { await model.connectSelected() }
                 else { await model.disconnect() }
@@ -27,7 +28,7 @@ struct GlassMenuBarView: View {
                 Spacer(minLength: 0)
                 Toggle("VPN 连接", isOn: connectionToggle)
                     .toggleStyle(.switch).labelsHidden().tint(GlassPalette.blue)
-                    .disabled(model.busy || model.connecting || (!model.connected && model.selected == nil))
+                    .disabled(model.stopping || (model.busy && !model.connecting && !model.connected && !model.firewallRecoveryRequired) || (!model.connected && model.selected == nil))
             }
             VStack(alignment: .leading, spacing: 14) {
                 Label(model.connected ? "已连接" : model.connecting ? "正在连接" : "未连接", systemImage: model.connected ? "checkmark.circle.fill" : "circle.dotted")
@@ -52,18 +53,15 @@ struct GlassMenuBarView: View {
             .glassCard(cornerRadius: 15)
             VStack(spacing: 0) {
                 Button {
+                    openWindow(id: "main")
                     NSApp.activate(ignoringOtherApps: true)
-                    NSApp.windows.first(where: { $0.title.contains("VPN Navigator") && !$0.isKind(of: NSPanel.self) })?.makeKeyAndOrderFront(nil)
                 } label: { menuRow("打开主窗口", symbol: "macwindow") }
                 .buttonStyle(ReferenceQuietButton())
                 Divider().opacity(0.2)
                 Button {
-                    Task {
-                        if model.connected { await model.disconnect() }
-                        if !model.connected && !model.connecting { NSApp.terminate(nil) }
-                    }
+                    NSApp.terminate(nil)
                 } label: { menuRow("退出", symbol: "power") }
-                .buttonStyle(ReferenceQuietButton()).disabled(model.connecting || model.busy)
+                .buttonStyle(ReferenceQuietButton()).disabled(model.stopping)
             }
             .padding(.horizontal, 12).glassCard(cornerRadius: 15)
         }

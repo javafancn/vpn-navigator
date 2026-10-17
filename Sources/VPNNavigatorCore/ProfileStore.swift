@@ -51,6 +51,10 @@ public actor ProfileStore {
         profiles[idx] = profile
         try save(profiles)
     }
+    public func fileSize(for profile: VPNProfile) throws -> Int {
+        guard profile.relativePath == "\(profile.id.uuidString).ovpn" else { throw StoreError.invalidFile }
+        return (try FileManager.default.attributesOfItem(atPath: root.appendingPathComponent(profile.relativePath).path)[.size] as? NSNumber)?.intValue ?? 0
+    }
     public func original(for profile: VPNProfile) throws -> String {
         // Never allow untrusted persisted paths to escape the store.
         guard profile.relativePath == "\(profile.id.uuidString).ovpn" else { throw StoreError.invalidFile }
@@ -150,3 +154,4 @@ public actor ProfileStore {
     }
 }
 public enum StoreError: Error { case invalidFile, notFound }
+

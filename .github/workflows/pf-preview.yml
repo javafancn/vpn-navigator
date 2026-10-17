@@ -1,10 +1,11 @@
 name: PF preview syntax checks
 on:
   push:
-    branches: [feat/engine-management-and-routes]
+    branches: [main]
   pull_request:
     paths:
       - 'Sources/VPNNavigatorCore/FirewallRulePreview.swift'
+      - 'Sources/VPNNavigatorCore/LeakGuardPolicy.swift'
       - 'Sources/VPNNavigatorPFPreview/**'
       - '.github/workflows/pf-preview.yml'
       - 'Package.swift'
@@ -24,9 +25,13 @@ jobs:
       - name: Build and emit candidate rules
         run: |
           swift run VPNNavigatorPFPreview > "$RUNNER_TEMP/pf-vpn-navigator-preview.conf"
+          swift run VPNNavigatorPFPreview --strict > "$RUNNER_TEMP/pf-vpn-navigator-strict.conf"
           test -s "$RUNNER_TEMP/pf-vpn-navigator-preview.conf"
+          grep -q 'if-bound' "$RUNNER_TEMP/pf-vpn-navigator-strict.conf"
           grep -q 'block drop out quick on en0 inet6' "$RUNNER_TEMP/pf-vpn-navigator-preview.conf"
       - name: PF syntax check (never load/enable firewall)
         run: |
           sudo /sbin/pfctl -vnf "$RUNNER_TEMP/pf-vpn-navigator-preview.conf"
+          sudo /sbin/pfctl -vnf "$RUNNER_TEMP/pf-vpn-navigator-strict.conf"
           echo 'Candidate anchor syntax parsed; no PF changes made.'
+

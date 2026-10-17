@@ -10,8 +10,13 @@ if [[ -e /var/run/vpn-navigator/routes.journal ]]; then
   echo "VPN Navigator has an unresolved routing journal. Do not upgrade until network recovery is verified." >&2
   exit 1
 fi
+if [[ -e /var/run/vpn-navigator/dns.journal || -e /var/run/vpn-navigator/pf-guard.json ]]; then
+  echo "VPN Navigator has unresolved DNS or firewall protection. Use Safe Network Recovery before upgrading." >&2
+  exit 1
+fi
 if [[ -e /var/run/vpn-navigator/active.ovpn ]]; then
   echo "VPN Navigator VPN session has not fully shut down. Disconnect before upgrade." >&2
   exit 1
 fi
 exit 0
+

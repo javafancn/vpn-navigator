@@ -1,5 +1,6 @@
 import SwiftUI
 import VPNNavigatorCore
+import UniformTypeIdentifiers
 
 // One native macOS workspace with clear separation between available
 // features and previews. Uses system materials on macOS 13+ without
@@ -90,6 +91,14 @@ struct MainView: View {
                 model.message = error.localizedDescription
             }
         }
+        .sheet(isPresented: $model.showingAccountCredentials) { AccountCredentialsView().environmentObject(model) }
+        .sheet(item: $model.authenticationChallenge) { challenge in
+            AuthenticationChallengeView(challenge: challenge).environmentObject(model)
+        }
+        .sheet(isPresented: $model.showingMaintenance) { MaintenanceAssistantView().environmentObject(model) }
+        .sheet(isPresented: $model.showingSetup) { SetupAssistantView().environmentObject(model) }
+        .sheet(isPresented: $model.showingPreferences) { ClientPreferencesView().environmentObject(model) }
+        .sheet(isPresented: $model.showingDiagnostics) { DiagnosticHistoryView().environmentObject(model) }
         .alert("VPN Navigator", isPresented: Binding(
             get: { model.message != nil },
             set: { if !$0 { model.message = nil } }
@@ -245,7 +254,7 @@ private struct ConnectionOverview: View {
 
     private var hasError: Bool { model.connectionStatus.hasPrefix("failed:") }
     private var statusTitle: String {
-        model.connected ? "已连接" : model.connecting ? "正在连接" : hasError ? "连接需检查" : "未连接"
+        model.connected ? "已连接" : model.firewallRecoveryRequired && !model.connecting ? "网络保护待处理" : model.stopping ? "正在断开" : model.connecting ? "正在连接" : hasError ? "连接需检查" : "未连接"
     }
     private func bytes(_ value: UInt64?) -> String {
         guard let value else { return "— MB" }
@@ -265,17 +274,17 @@ private struct ConnectionOverview: View {
                             return
                         }
                         Task {
-                            if model.connected { await model.disconnect() }
+                            if model.connected || model.connecting || model.firewallRecoveryRequired { await model.disconnect() }
                             else { await model.connectSelected() }
                         }
                     } label: { ReferencePowerOrb() }
                     .buttonStyle(ReferenceQuietButton(cornerRadius: 110, hoverOpacity: 0.04))
-                    .disabled(model.busy || model.connecting)
-                    .accessibilityLabel(model.connected ? "断开 VPN" : "连接 VPN")
+                    .disabled(model.stopping || (model.busy && !model.connecting && !model.connected && !model.firewallRecoveryRequired))
+                    .accessibilityLabel(model.connected ? "断开 VPN" : model.connecting ? "取消连接" : "连接 VPN")
                     Text(statusTitle)
                         .font(.system(size: 28, weight: .semibold))
                         .foregroundStyle(model.connected ? Color.green : hasError ? Color.orange : GlassPalette.blue)
-                    Text(model.connected ? "安全连接已建立" : model.connecting ? "正在建立安全连接…" : "点击上方按钮开始连接")
+                    Text(model.connected ? "安全连接已建立" : model.connecting ? "点击上方按钮取消连接" : model.firewallRecoveryRequired ? "点击上方按钮解除断线保护" : "点击上方按钮开始连接")
                         .font(.system(size: 16))
                         .foregroundStyle(model.connected ? Color.green : GlassPalette.ink.opacity(0.6))
                     if model.connected && model.activeProfileID != model.selectedID && model.selectedID != nil {
@@ -383,9 +392,9 @@ private struct ConnectionOverview: View {
                         .background(Color.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 15))
                     VStack(alignment: .leading, spacing: 10) {
                         Text("连接保护").font(.system(size: 18, weight: .semibold))
-                        Label("受管连接异常时安全断开", systemImage: "checkmark.circle.fill")
+                        Label(model.firewallActive ? "PF 断线保护已接入" : "受管连接异常时停止会话", systemImage: model.firewallActive ? "checkmark.circle.fill" : "info.circle")
                             .font(.system(size: 12)).foregroundStyle(.green)
-                        Text("PF Kill Switch 尚未启用，不能保证零泄漏。")
+                        Text(model.firewallActive ? "实验性保护，完整真机防泄漏验收待完成。" : "可在连接偏好中启用实验性断线保护。")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -622,6 +631,7 @@ private struct ProfileLibrary: View {
 private struct RoutingWorkspace: View {
     @EnvironmentObject private var model: AppModel
     @State private var snapshotToRestore: RuleSnapshot?
+    @State private var importingRules = false
 
     private func title(for mode: RoutingMode) -> String {
         switch mode {
@@ -670,10 +680,10 @@ private struct RoutingWorkspace: View {
                         HStack(alignment: .top, spacing: 16) {
                             GlassIcon(symbol: "globe.asia.australia", size: 67)
                             VStack(alignment: .leading, spacing: 16) {
-                                ruleDetail("规则版本", model.ruleSnapshots.first.map { $0.savedAt.formatted(.dateTime.year().month().day()) } ?? "未下载")
+                                ruleDetail("规则版本", model.rulesUpdatedAt.map { $0.formatted(.dateTime.year().month().day()) } ?? "未下载")
                                 ruleDetail("规则来源", "chnroutes2")
                                 ruleDetail("规则数量", model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
-                                ruleDetail("最后更新", model.ruleSnapshots.first.map { $0.savedAt.formatted(.dateTime.month().day().hour().minute()) } ?? "尚无快照")
+                                ruleDetail("最后更新", model.rulesUpdatedAt.map { $0.formatted(.dateTime.month().day().hour().minute()) } ?? "尚无缓存")
                             }
                         }
                         Spacer(minLength: 0)
@@ -683,13 +693,15 @@ private struct RoutingWorkspace: View {
                             }
                             .buttonStyle(ReferencePrimaryButton()).disabled(model.busy)
                             Menu {
+                                Button("导入规则文件…") { importingRules = true }
+                                Divider()
                                 ForEach(model.ruleSnapshots) { saved in
                                     Button(saved.savedAt.formatted(.dateTime.year().month().day().hour().minute())) { snapshotToRestore = saved }
                                 }
-                            } label: { Text("历史版本").frame(maxWidth: .infinity) }
+                            } label: { Text("历史与导入").frame(maxWidth: .infinity) }
                             .menuIndicator(.hidden)
                             .buttonStyle(ReferenceSecondaryButton())
-                            .disabled(model.ruleSnapshots.isEmpty || model.busy)
+                            .disabled(model.busy)
                         }
                     }
                     .padding(20)
@@ -725,6 +737,9 @@ private struct RoutingWorkspace: View {
         .padding(.horizontal, GlassLayout.pageInset)
         .padding(.top, GlassLayout.pageTop)
         .padding(.bottom, 20)
+        .fileImporter(isPresented: $importingRules, allowedContentTypes: [.plainText]) { result in
+            if case .success(let url) = result { Task { await model.importRules(url) } }
+        }
         .confirmationDialog("恢复旧版 IPv4 规则？", isPresented: Binding(
             get: { snapshotToRestore != nil }, set: { if !$0 { snapshotToRestore = nil } }
         )) {
@@ -880,7 +895,7 @@ struct SystemSettingsPane: View {
                     symbol: "info.circle.fill") {
                     Menu {
                         Text("macOS 13+")
-                        Text("PF Kill Switch 尚未启用")
+                        Text("PF 断线保护为实验性功能")
                         Text("IPv6 分流尚未实现")
                     } label: {
                         Image(systemName: "chevron.right")
@@ -893,6 +908,22 @@ struct SystemSettingsPane: View {
                 }
                 }
                 .glassCard(cornerRadius: 16)
+
+                settingsSection("使用与排查")
+                VStack(spacing: 0) {
+                    settingsRow("连接偏好", subtitle: "连接超时、重连与登录启动", symbol: "slider.horizontal.3") {
+                        Button("设置…") { model.showingPreferences = true }.buttonStyle(ReferenceSecondaryButton())
+                    }
+                    settingsRow("诊断报告", subtitle: "查看脱敏会话事件并导出支持报告", symbol: "doc.text.magnifyingglass") {
+                        Button("查看…") { model.showingDiagnostics = true }.buttonStyle(ReferenceSecondaryButton())
+                    }
+                    settingsRow("升级与卸载", subtitle: "准备安装更新或安全移除应用", symbol: "shippingbox") {
+                        Button("准备…") { model.showingMaintenance = true }.buttonStyle(ReferenceSecondaryButton())
+                    }
+                    settingsRow("安装检查", subtitle: "检查引擎、后台助手和配置是否就绪", symbol: "checklist") {
+                        Button("打开…") { model.showingSetup = true }.buttonStyle(ReferenceSecondaryButton())
+                    }
+                }.glassCard(cornerRadius: 16)
 
                 Label("系统操作可能需要管理员授权。", systemImage: "lock.shield")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
@@ -1227,7 +1258,7 @@ struct ProfileDetail: View {
                         Text("无编辑记录")
                     }
                 }
-                LabeledContent("文件大小", value: "未读取")
+                LabeledContent("文件大小", value: model.profileSizes[profile.id].map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) } ?? "—")
                 LabeledContent("配置类型", value: "OpenVPN")
             }
             .font(.system(size: 13))
@@ -1255,6 +1286,7 @@ struct ProfileDetail: View {
                 }
             }
             .buttonStyle(ReferencePrimaryButton())
+            .disabled(model.connected || model.connecting || model.stopping)
             LabeledContent("源文件", value: profile.sourceFilename)
             LabeledContent("保存位置", value: "本机私有配置仓库")
             Text("只有断开连接后才能更改或恢复配置。")
@@ -1278,7 +1310,7 @@ struct ProfileDetail: View {
             }
             .pickerStyle(.radioGroup)
             .disabled(model.busy || model.connected || model.connecting)
-            Text("中国 IPv4 直连需要已经下载的网段规则；IPv6 分流与 Kill Switch 尚未实现。")
+            Text("中国 IPv4 直连需要已经下载的网段规则；IPv6 地区分流未提供；断线保护可在连接偏好中启用。")
                 .font(.system(size: 14)).foregroundStyle(.secondary)
         }
         .padding(17)

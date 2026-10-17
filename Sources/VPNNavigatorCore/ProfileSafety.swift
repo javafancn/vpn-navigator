@@ -12,7 +12,7 @@ public enum ProfileSafety {
         "explicit-exit-notify", "push-peer-info", "connect-retry", "connect-timeout",
         "keepalive", "ping", "ping-restart", "tun-mtu", "mssfix", "sndbuf",
         "rcvbuf", "float", "verify-x509-name", "auth-retry", "tls-timeout",
-        "remote-random-hostname", "topology", "pull", "allow-compression",
+        "remote-random-hostname", "topology", "pull", "allow-compression", "static-challenge",
         "redirect-gateway", "route", "route-ipv6", "dhcp-option", "dns"
     ]
     private static let inlineTags: Set<String> = [
@@ -51,18 +51,25 @@ public enum ProfileSafety {
                 continue
             }
             // Remove comments only after validating the directive itself.
-            let tokens = line.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+            let tokens: [String]
+            do { tokens = try OpenVPNOptionLexer.tokens(line) }
+            catch { throw ProfileValidationError.invalidLine(offset + 1) }
             guard let cmd = tokens.first, !cmd.hasPrefix("--"), allowed.contains(cmd) else {
                 throw ProfileValidationError.unsupported(offset + 1, line)
             }
             switch cmd {
             case "remote":
-                guard tokens.count == 2 || tokens.count == 3,
+                guard (2...4).contains(tokens.count),
                       let host = tokens.dropFirst().first, isSafeHost(host) else {
                     throw ProfileValidationError.invalidLine(offset + 1)
                 }
-                if tokens.count == 3 {
+                if tokens.count >= 3 {
                     guard let port = UInt16(tokens[2]), port > 0 else {
+                        throw ProfileValidationError.invalidLine(offset + 1)
+                    }
+                }
+                if tokens.count == 4 {
+                    guard ["udp", "udp4", "udp6", "tcp", "tcp4", "tcp6", "tcp-client", "tcp4-client", "tcp6-client"].contains(tokens[3]) else {
                         throw ProfileValidationError.invalidLine(offset + 1)
                     }
                 }
@@ -70,6 +77,8 @@ public enum ProfileSafety {
             case "auth-user-pass":
                 guard tokens.count == 1 else { throw ProfileValidationError.unsupported(offset + 1, line) }
                 requestsCredentials = true
+            case "dev-type":
+                guard tokens == ["dev-type", "tun"] else { throw ProfileValidationError.unsupported(offset + 1, line) }
             case "dev":
                 guard tokens.count == 2, tokens[1] == "tun" || tokens[1].hasPrefix("utun") else {
                     throw ProfileValidationError.unsupported(offset + 1, line)
@@ -128,3 +137,4 @@ public enum ProfileValidationError: Error, Equatable, LocalizedError {
         }
     }
 }
+

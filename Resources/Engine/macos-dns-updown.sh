@@ -110,7 +110,10 @@ trap "/bin/rm -f ${lockfile}" EXIT
 itf_dns_key="State:/Network/Service/openvpn-${dev}/DNS"
 
 function primary_dns_key {
-    local uuid=$(echo "show State:/Network/Global/IPv4" | /usr/sbin/scutil | grep "PrimaryService" | cut -d: -f2 | xargs)
+    # The helper pins the service before OpenVPN starts. A Wi-Fi switch must
+    # never make a down-hook restore this tunnel's DNS onto another service.
+    local uuid="${VPNNAV_PRIMARY_SERVICE_UUID:-}"
+    [[ "$uuid" =~ ^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$ ]] || return 1
     echo "Setup:/Network/Service/${uuid}/DNS"
 }
 
@@ -285,6 +288,7 @@ function match_domains_string {
 }
 
 function set_dns {
+    primary_dns_key >/dev/null || { echo "missing pinned DNS service" >&2; exit 1; }
     local n="$(find_compat_profile)"
     local addresses="$(addresses_string $n)"
     local search_domains="$(search_domains_string $n)"
@@ -321,6 +325,7 @@ function set_dns {
 }
 
 function unset_dns {
+    primary_dns_key >/dev/null || { echo "missing pinned DNS service" >&2; exit 1; }
     local n="$(find_compat_profile)"
     local match_domains="$(match_domains_string $n)"
 
@@ -352,6 +357,10 @@ function unset_dns {
 
 if [ "$script_type" = "dns-up" ]; then
     set_dns
+    # Record precisely the DNS values this trusted hook just applied. If the
+    # helper crashed before CONNECTED, ownership is still available for recovery.
+    "${BASH_SOURCE[0]%/*}/VPNNavigatorHelper" --commit-dns "$dev" || exit 1
 else
     unset_dns
 fi
+

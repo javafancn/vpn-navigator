@@ -12,6 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify plists and scripts
         run: |
+          echo "VPNNAV_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)" >> "$GITHUB_ENV"
           plutil -lint Resources/Info.plist Resources/LaunchDaemons/*.plist Resources/LaunchAgents/*.plist
           zsh -n scripts/build-app.sh scripts/build-pkg.sh scripts/notarize.sh scripts/release-audit.sh scripts/pkg-scripts/preinstall scripts/live-route-assert.sh
           python3 -m py_compile scripts/vendor-openvpn.py
@@ -19,6 +20,13 @@ jobs:
         env:
           VPNNAV_BUILD_UNIVERSAL: "1"
         run: zsh scripts/build-app.sh
+      - name: Exercise real network diagnostics on loopback
+        run: |
+          # Python timeout is available on the runner and does not depend on brew.
+          python3 - <<'PYTEST'
+          import subprocess
+          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-network-self-test'], check=True, timeout=40)
+          PYTEST
       - name: Verify development bundle
         run: |
           test -x 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp'
@@ -137,16 +145,16 @@ jobs:
       - name: Package verified .app using macOS ditto
         run: |
           APP='dist/VPN Navigator.app'
-          OUT="$RUNNER_TEMP/VPN-Navigator-0.1.0-macOS-Universal-UI-Test.zip"
+          OUT="$RUNNER_TEMP/VPN-Navigator-$VPNNAV_VERSION-macOS-Universal-UI-Test.zip"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT"
           unzip -t "$OUT"
-          (cd "$RUNNER_TEMP" && shasum -a 256 "$(basename "$OUT")" | tee VPN-Navigator-0.1.0-macOS-Universal-UI-Test.sha256)
+          (cd "$RUNNER_TEMP" && shasum -a 256 "$(basename "$OUT")" | tee VPN-Navigator-$VPNNAV_VERSION-macOS-Universal-UI-Test.sha256)
           ls -lh "$OUT"
       - uses: actions/upload-artifact@v4
         with:
-          name: VPNNavigator-0.1.0-macOS-Universal-UI-Test
+          name: VPNNavigator-${{ env.VPNNAV_VERSION }}-macOS-Universal-UI-Test
           path: |
-            ${{ runner.temp }}/VPN-Navigator-0.1.0-macOS-Universal-UI-Test.zip
-            ${{ runner.temp }}/VPN-Navigator-0.1.0-macOS-Universal-UI-Test.sha256
+            ${{ runner.temp }}/VPN-Navigator-${{ env.VPNNAV_VERSION }}-macOS-Universal-UI-Test.zip
+            ${{ runner.temp }}/VPN-Navigator-${{ env.VPNNAV_VERSION }}-macOS-Universal-UI-Test.sha256
           if-no-files-found: error
 

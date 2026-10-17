@@ -60,15 +60,40 @@ public actor RuleUpdater {
         guard FileManager.default.fileExists(atPath: file.path) else { return nil }
         return try RuleSet(text: String(contentsOf: file, encoding: .utf8))
     }
+    public func localCandidate(_ url: URL) throws -> RuleSet {
+        let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard ((attrs[.size] as? NSNumber)?.intValue ?? Int.max) < 2_000_000 else { throw RuleError.tooLarge }
+        let value = try RuleSet(text: String(contentsOf: url, encoding: .utf8))
+        guard value.routes.count >= 100 else { throw RuleError.empty }
+        if let previous = try cached() { try Self.validateChange(previous: previous, next: value) }
+        return value
+    }
+    public func bootstrap(_ url: URL) throws -> RuleSet {
+        if let existing = try cached() { return existing }
+        let candidate = try localCandidate(url)
+        try commit(candidate)
+        return candidate
+    }
+    public func lastUpdated() throws -> Date? {
+        let file = folder.appendingPathComponent("china-ipv4.txt")
+        guard FileManager.default.fileExists(atPath: file.path) else { return nil }
+        return try file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+    }
     public func fetchCandidate() async throws -> RuleSet {
-        let (data, response) = try await URLSession.shared.data(from: Self.source)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw RuleError.empty }
-        guard data.count > 1000, data.count < 2_000_000,
-              let content = String(data: data, encoding: .utf8) else { throw RuleError.tooLarge }
-        let validated = try RuleSet(text: content)
-        guard validated.routes.count >= 100 else { throw RuleError.empty }
-        if let previous = try cached() { try Self.validateChange(previous: previous, next: validated) }
-        return validated
+        let sources = [Self.source, URL(string: "https://api.github.com/repos/misakaio/chnroutes2/contents/chnroutes.txt?ref=master")!]
+        var failure: Error = RuleError.empty
+        for source in sources {
+            do {
+                let data = try await RuleFeedRequest.fetch(source)
+                guard data.count > 1000, let text = String(data: data, encoding: .utf8) else { throw RuleError.empty }
+                let validated = try RuleSet(text: text)
+                guard validated.routes.count >= 100 else { throw RuleError.empty }
+                if let previous = try cached() { try Self.validateChange(previous: previous, next: validated) }
+                return validated
+            } catch is CancellationError { throw CancellationError() }
+            catch { failure = error }
+        }
+        throw failure
     }
     public func commit(_ value: RuleSet) throws {
         if let previous = try cached() {
@@ -106,3 +131,4 @@ public actor RuleUpdater {
         return candidate
     }
 }
+

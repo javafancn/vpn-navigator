@@ -21,16 +21,24 @@ public struct SessionReport: Codable, Equatable, Sendable {
     public let state: TunnelState
     public let message: String
     public let activeProfileID: UUID?
+    public let attemptID: UUID?
     public let receivedBytes: UInt64?
     public let sentBytes: UInt64?
+    public let firewallActive: Bool
+    public let firewallRecoveryRequired: Bool
+    public let challenge: AuthenticationChallenge?
 
     public init(state: TunnelState, message: String, activeProfileID: UUID?,
-                receivedBytes: UInt64?, sentBytes: UInt64?) {
+                receivedBytes: UInt64?, sentBytes: UInt64?, challenge: AuthenticationChallenge? = nil, firewallActive: Bool = false, firewallRecoveryRequired: Bool = false, attemptID: UUID? = nil) {
         self.state = state
         self.message = message
         self.activeProfileID = activeProfileID
+        self.attemptID = attemptID
         self.receivedBytes = receivedBytes
         self.sentBytes = sentBytes
+        self.challenge = challenge
+        self.firewallActive = firewallActive
+        self.firewallRecoveryRequired = firewallRecoveryRequired
     }
 
     public var statusText: String { "\(state.rawValue): \(message)" }
@@ -99,3 +107,4 @@ public enum ManagementEscaping {
              .replacingOccurrences(of: "\"", with: "\\\"")
     }
 }
+

@@ -1,7 +1,7 @@
 name: Standalone OpenVPN engine smoke test
 on:
   push:
-    branches: [feat/engine-management-and-routes]
+    branches: [main]
   workflow_dispatch:
   pull_request:
     paths:
@@ -9,13 +9,25 @@ on:
       - 'scripts/vendor-openvpn.py'
       - 'Resources/Engine/macos-dns-updown.sh'
       - '.github/workflows/native-engine-smoke.yml'
+      - 'Sources/VPNNavigatorHelper/**'
+      - 'Sources/VPNNavigatorCore/LeakGuardPolicy.swift'
+      - 'scripts/test-pf-loopback.py'
+      - 'scripts/build-openvpn-engine.sh'
+      - 'scripts/fetch-engine-sources.py'
+      - 'Resources/Engine/sources.lock.json'
+      - 'scripts/tests/**'
+      - 'scripts/release-manifest.py'
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   vendor-engine:
-    runs-on: macos-15
-    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Install OpenVPN CLI on build runner only
@@ -51,7 +63,33 @@ jobs:
           if env dev=utun4 script_type=dns-up dns_search_domain_1='a;malicious'               /bin/bash "$hook" --check-dns-vars; then
             echo 'Unsafe inherited DNS variable was accepted' >&2; exit 1
           fi
+      - name: Build reviewed-format sources for the declared minimum macOS
+        run: |
+          python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+          python3 scripts/fetch-engine-sources.py "$RUNNER_TEMP/engine-sources"
+      - uses: actions/cache@v4
+        id: source-engine-cache
+        with:
+          path: ${{ runner.temp }}/engine-prefix
+          key: source-engine-${{ runner.arch }}-${{ env.OPENVPN_SOURCE_SHA256 }}-${{ env.OPENSSL_SOURCE_SHA256 }}-${{ hashFiles('scripts/build-openvpn-engine.sh') }}
+      - name: Compile static-OpenSSL engine and verify minimum OS
+        env:
+          ENGINE_CACHE_HIT: ${{ steps.source-engine-cache.outputs.cache-hit }}
+        run: |
+          if [[ "$ENGINE_CACHE_HIT" != true ]]; then
+            ENGINE_OUTPUT_DIR="$RUNNER_TEMP/engine-prefix" bash scripts/build-openvpn-engine.sh
+          fi
+          OPENVPN_BIN="$RUNNER_TEMP/engine-prefix/sbin/openvpn" zsh scripts/build-app.sh
+          python3 scripts/release-manifest.py 'dist/VPN Navigator.app' "$RUNNER_TEMP/source-engine-manifest.json"
+      - name: Test DNS ownership journal on a synthetic service
+        run: |
+          swift build --product VPNNavigatorHelper
+          sudo "$(swift build --show-bin-path)/VPNNavigatorHelper" --self-test-dns-journal
+      - name: Test actual PF blocking on one loopback port
+        run: |
+          python3 scripts/test-pf-loopback.py "$(swift build --show-bin-path)/VPNNavigatorHelper"
       - name: Report
         run: |
           echo 'Engine smoke test passed on macOS runner.'
           echo 'This bundle is unsigned and cannot register the privileged VPN helper.'
+

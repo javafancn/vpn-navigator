@@ -5,11 +5,44 @@ import VPNNavigatorCore
 /// Root-owned, single-session OpenVPN process. The caller has already passed code-signing verification.
 final class ManagedTunnel {
     let queue = DispatchQueue(label: "VPNNavigator.ManagedTunnel")
+    let cancellation = SessionCancellation()
+    private(set) var activeAttemptID: UUID?
+    private var cancellationGeneration: UInt64 = 0
+    private var cancellationRequested: Bool {
+        activeAttemptID.map { cancellation.isCancelled($0, generation: cancellationGeneration) } ?? false
+    }
+    private struct ReconnectContext {
+        let profile: String
+        let profileID: UUID
+        let attemptID: UUID
+        let mode: RoutingMode
+        let username: String
+        let password: String
+    }
+    private var reconnectContext: ReconnectContext?
+    private var retryBudget = ReconnectBudget()
+    private var retryWork: DispatchWorkItem?
+    private var attemptExpiresAt: UInt64?
+    private var attemptExpired: Bool { attemptExpiresAt.map { DispatchTime.now().uptimeNanoseconds >= $0 } ?? false }
+    private var attemptTimer: DispatchSourceTimer?
+    private var preferences = SessionPreferences()
+    private var outputPipe: Pipe?
+    private var outputBuffer = Data()
+    private let eventStore = DiagnosticEventStore(file: URL(fileURLWithPath: "/var/run/vpn-navigator/events.json"))
+    var diagnosticEvents: [DiagnosticEvent] { eventStore.events() }
     private var networkWatchdog: DispatchSourceTimer?
     private let workdir = URL(fileURLWithPath: "/var/run/vpn-navigator", isDirectory: true)
     private var process: Process?
     private var management: ManagementSocket?
+    private(set) var challenge: AuthenticationChallenge?
     private var routing: RouteExecutor?
+    private let dnsRecovery = DNSRecoveryJournal()
+    private let packetGuard = PacketFilterGuard()
+    private var guardPolicy: LeakGuardPolicy?
+    private var releaseProtectionOnExit = false
+    private var protectionTeardownBlocked = false
+    var firewallActive: Bool { packetGuard.active }
+    var firewallRecoveryRequired: Bool { packetGuard.requiresRecovery }
     private var activeMode: RoutingMode = .original
     private(set) var activeProfileID: UUID?
     private var rules: RuleSet?
@@ -36,6 +69,15 @@ final class ManagedTunnel {
             message = "Unverified previous OpenVPN session; do not automatically reclaim routes."
             return
         }
+        if packetGuard.requiresRecovery {
+            state = .failed; message = "断线保护有未完成的恢复记录，请执行安全网络恢复。"
+            return
+        }
+        if dnsRecovery.exists {
+            state = .failed
+            message = "上次 DNS 事务尚未恢复，请执行安全网络恢复。"
+            return
+        }
         let leftover = workdir.appendingPathComponent("routes.journal")
         if FileManager.default.fileExists(atPath: leftover.path) {
             _ = RouteExecutor(journal: leftover)
@@ -51,7 +93,10 @@ final class ManagedTunnel {
     var activeSplitRoutes: Bool { activeMode == .chinaDirect && routing != nil }
 
     func start(profile text: String, profileID: UUID, mode: RoutingMode, ruleText: String,
-               username: String, password: String) throws {
+               username: String, password: String, preferences: SessionPreferences = .init(), reusingGuard: Bool = false, attemptID: UUID = UUID(), cancellationGeneration: UInt64? = nil) throws {
+        let expiresAt = DispatchTime.now().uptimeNanoseconds + UInt64(preferences.connectionTimeout) * 1_000_000_000
+        let capturedGeneration = cancellationGeneration ?? cancellation.snapshot()
+        guard !cancellation.isCancelled(attemptID, generation: capturedGeneration) else { throw CancellationError() }
         guard getuid() == 0 else { throw TunnelError.needRoot }
         guard !FileManager.default.fileExists(atPath: workdir.appendingPathComponent("active.ovpn").path),
               !FileManager.default.fileExists(atPath: orphanRecordFile.path) else {
@@ -60,12 +105,27 @@ final class ManagedTunnel {
         guard !FileManager.default.fileExists(atPath: workdir.appendingPathComponent("routes.journal").path) else {
             throw TunnelError.unresolvedRoutes
         }
+        if reusingGuard {
+            guard packetGuard.active, preferences.killSwitch, preferences.reconnectManaged else { throw LeakGuardError.unresolved }
+            try packetGuard.verify()
+        } else {
+            guard !packetGuard.requiresRecovery else { throw LeakGuardError.unresolved }
+            retryBudget = ReconnectBudget()
+            reconnectContext = nil
+        }
+        releaseProtectionOnExit = false
+        protectionTeardownBlocked = false
+        guard !dnsRecovery.exists else { throw DNSJournalError.conflict }
         guard process == nil else { throw TunnelError.alreadyRunning }
-        let validated = try ProfileSafety.validate(text)
+        self.activeAttemptID = attemptID
+        self.cancellationGeneration = capturedGeneration
+        self.preferences = preferences
+        attemptExpiresAt = expiresAt
+        var validated = try ProfileSafety.validate(text)
         try ManagedRoutingPolicy.validate(validated, mode: mode)
         // IPv4-only routing cannot protect IPv6. Refuse a non-original split or
         // full-VPN mode while native IPv6 has a non-tunnel path (fail closed).
-        if mode != .original { try checkIPv6Bypass() }
+        if mode != .original && !preferences.killSwitch { try checkIPv6Bypass() }
         if mode == .chinaDirect {
             rules = try RuleSet(text: ruleText)
             guard let rules, rules.routes.count >= 100 else { throw TunnelError.missingRules }
@@ -87,7 +147,30 @@ final class ManagedTunnel {
                !FileManager.default.fileExists(
                    atPath: workdir.appendingPathComponent("routes.journal").path) {
                 try? FileManager.default.removeItem(at: configFile)
+                try? dnsRecovery.restore()
             }
+        }
+        if mode != .original && preferences.killSwitch {
+            let endpoint = try GuardEndpoint.parse(validated.text)
+            let numeric: String
+            if let raw = IPv4CIDR.parseAddress(endpoint.host) { numeric = IPv4CIDR.parseAddressString(raw) }
+            else {
+                let answer = try RouteExecutor.command("/usr/bin/dscacheutil", ["-q", "host", "-a", "name", endpoint.host])
+                guard let resolved = Self.parseValue("ip_address:", in: answer), IPv4CIDR.parseAddress(resolved) != nil else { throw LeakGuardError.invalid }
+                numeric = resolved
+            }
+            let path = try RouteExecutor.command("/sbin/route", ["-n", "get", numeric])
+            guard let physical = Self.parseValue("interface:", in: path), LeakGuardPolicy.validPhysical(physical) else { throw TunnelError.noPhysicalGateway }
+            let table = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
+            let local = LocalIPv4Networks.parse(netstat: table, physicalInterface: physical)
+            let policy = try LeakGuardPolicy(physical: physical, endpoint: numeric, port: endpoint.port,
+                transport: endpoint.transport, local: local, country: mode == .chinaDirect ? rules?.routes ?? [] : [])
+            validated = try ProfileSafety.validate(endpoint.pinnedProfile(validated.text, address: numeric))
+            try ensureAttempt()
+            if reusingGuard { try packetGuard.replaceRules(policy.rules(tunnel: nil), resetExistingStates: true) }
+            else { try packetGuard.activate(policy.rules(tunnel: nil)) }
+            guardPolicy = policy
+            reconnectContext = ReconnectContext(profile: validated.text, profileID: profileID, attemptID: attemptID, mode: mode, username: username, password: password)
         }
         try validated.text.write(to: configFile, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configFile.path)
@@ -104,12 +187,39 @@ final class ManagedTunnel {
         task.executableURL = URL(fileURLWithPath: binary)
         task.arguments = options
         task.currentDirectoryURL = workdir
-        task.standardOutput = FileHandle.nullDevice
-        task.standardError = FileHandle.nullDevice
+        try ensureAttempt()
+        try dnsRecovery.begin()
+        var environment = ProcessInfo.processInfo.environment
+        environment["VPNNAV_PRIMARY_SERVICE_UUID"] = dnsRecovery.primaryService
+        environment["OPENSSL_CONF"] = "/dev/null"
+        task.environment = environment
+        let output = Pipe()
+        outputPipe = output
+        outputBuffer.removeAll(keepingCapacity: false)
+        task.standardOutput = output
+        task.standardError = output
+        output.fileHandleForReading.readabilityHandler = { [weak self, weak task] handle in
+            let bytes = handle.availableData
+            guard !bytes.isEmpty else { handle.readabilityHandler = nil; return }
+            self?.queue.async { [weak self, weak task] in
+                guard let self, let task, self.process === task else { return }
+                self.consumeLog(bytes)
+            }
+        }
         task.terminationHandler = { [weak self, weak task] _ in
             self?.queue.async { [weak self] in
                 guard let self, let task, self.process === task else { return }
-                self.stopRoutesAndReset()
+                if self.state != .stopping && self.state != .failed,
+                   self.scheduleGuardedReconnect() { return }
+                if self.state != .stopping && self.state != .failed {
+                    self.eventStore.append(.unexpectedExit)
+                    self.lastError = "OpenVPN 意外退出，请查看诊断报告。"
+                }
+                let failure = self.lastError
+                self.stop()
+                if self.state == .disconnected, let failure {
+                    self.state = .failed; self.lastError = failure; self.message = failure
+                }
             }
         }
         activeMode = mode
@@ -120,7 +230,10 @@ final class ManagedTunnel {
         state = .connecting
         message = "OpenVPN is starting"
         do {
+            try ensureAttempt()
             try task.run()
+            eventStore.append(.starting)
+            startAttemptDeadline()
             let record = try OrphanProcessRecord(pid: task.processIdentifier)
             try JSONEncoder().encode(record).write(to: orphanRecordFile, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600],
@@ -129,11 +242,20 @@ final class ManagedTunnel {
             if validated.requestsCredentials {
                 socket.setCredentials(username: username, password: password)
             }
+            socket.onChallenge = { [weak self, weak socket] challenge in
+                self?.queue.async { [weak self] in
+                    guard let self, self.management === socket else { return }
+                    self.challenge = challenge
+                    self.state = .authenticating
+                    self.message = "需要额外认证，请在主窗口输入。"
+                }
+            }
             socket.onAuthenticationFailure = { [weak self, weak socket] in
                 self?.queue.async { [weak self] in
                     guard let self, self.management === socket else { return }
                     self.stop()
-                    self.lastError = "VPN authentication failed. Check the credentials."
+                    self.eventStore.append(.authentication)
+                    self.lastError = DiagnosticCode.authentication.summary
                     self.state = .failed
                     self.message = self.lastError ?? "Authentication failed"
                 }
@@ -169,6 +291,7 @@ final class ManagedTunnel {
             // OpenVPN creates the socket asynchronously. Bounded retry only.
             var success = false
             for _ in 0..<50 {
+                try ensureAttempt()
                 if (try? socket.open(path: managementPath)) != nil { success = true; break }
                 Thread.sleep(forTimeInterval: 0.1)
             }
@@ -178,6 +301,84 @@ final class ManagedTunnel {
             throw error
         }
     }
+    @discardableResult
+    private func scheduleGuardedReconnect() -> Bool {
+        guard let context = reconnectContext,
+              let delay = retryBudget.nextDelay(guardVerified: packetGuard.active, optedIn: preferences.reconnectManaged) else { return false }
+        do { try packetGuard.verify() } catch { return false }
+        // Keep PF installed while the old child exits, DNS is restored and
+        // owned routes roll back. Only a new root-owned start may reuse it.
+        stop(preservingReconnectContext: true)
+        guard process == nil, !dnsRecovery.exists,
+              !FileManager.default.fileExists(atPath: workdir.appendingPathComponent("routes.journal").path),
+              packetGuard.active else { return false }
+        state = .reconnecting
+        message = "断线保护保留，\(delay) 秒后尝试重连（\(retryBudget.attempts)/3）"
+        activeProfileID = context.profileID
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.state == .reconnecting, self.reconnectContext != nil else { return }
+            self.retryWork = nil
+            let ruleText = (self.rules?.routes ?? []).map(\.description).joined(separator: "\n")
+            do {
+                try self.start(profile: context.profile, profileID: context.profileID,
+                    mode: context.mode, ruleText: ruleText, username: context.username,
+                    password: context.password, preferences: self.preferences, reusingGuard: true, attemptID: context.attemptID)
+            } catch {
+                self.state = .failed; self.lastError = error.localizedDescription
+                self.message = "安全重连未成功，保护保留：" + error.localizedDescription
+            }
+        }
+        retryWork = work
+        queue.asyncAfter(deadline: .now() + .seconds(delay), execute: work)
+        return true
+    }
+
+    func submitChallenge(id: String, response: String) throws {
+        guard challenge?.id.uuidString == id, state == .authenticating, let management else { throw ChallengeResponseError.stale }
+        try management.respond(id: id, response: response)
+        challenge = nil
+    }
+
+    private func ensureAttempt() throws {
+        guard !cancellationRequested else { throw CancellationError() }
+        if attemptExpired { eventStore.append(.timeout); throw TunnelError.connectionTimedOut }
+    }
+    private func completeAttempt() {
+        attemptExpiresAt = nil
+        attemptTimer?.cancel(); attemptTimer = nil
+    }
+
+    private func startAttemptDeadline() {
+        // One total deadline per attempt. Repeated RECONNECTING messages must
+        // not postpone it indefinitely.
+        guard attemptTimer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        let now = DispatchTime.now().uptimeNanoseconds
+        let remaining = attemptExpiresAt.map { $0 > now ? $0 - now : 0 } ?? UInt64(preferences.connectionTimeout) * 1_000_000_000
+        timer.schedule(deadline: .now() + .nanoseconds(Int(remaining)))
+        timer.setEventHandler { [weak self] in
+            guard let self, self.state != .connected else { return }
+            self.eventStore.append(.timeout)
+            self.stop()
+            self.lastError = DiagnosticCode.timeout.summary
+            self.state = .failed
+            self.message = DiagnosticCode.timeout.summary
+        }
+        attemptTimer = timer; timer.resume()
+    }
+
+    private func consumeLog(_ data: Data) {
+        // Bound even a hostile/very verbose engine line. Raw data is transient
+        // and discarded; only predefined failure categories are persisted.
+        outputBuffer.append(data.prefix(32_768))
+        if outputBuffer.count > 65_536 { outputBuffer.removeAll(); return }
+        while let end = outputBuffer.firstIndex(of: 10) {
+            let line = String(decoding: outputBuffer[..<end], as: UTF8.self)
+            outputBuffer.removeSubrange(...end)
+            if let code = OpenVPNLogClassifier.classify(line) { eventStore.append(code) }
+        }
+    }
+
     private func checkIPv6Bypass() throws {
         // The IPv6 policy must never treat a failed command as absence of
         // IPv6. In dual-stack networks a physical IPv6 default bypasses
@@ -203,10 +404,11 @@ final class ManagedTunnel {
             return
         }
         if snapshot.state == .reconnecting,
-           TunnelReconnectPolicy.action(for: activeMode) == .stopAndRestoreOnlyAfterExit {
+           (TunnelReconnectPolicy.action(for: activeMode) == .stopAndRestoreOnlyAfterExit || !preferences.reconnectOriginal) {
+            if scheduleGuardedReconnect() { return }
             // Releasing route ownership while OpenVPN is still reconnecting
-            // silently creates a path back to the physical network. A managed
-            // reconnect requires a proven PF kill switch that does not exist yet.
+            // silently creates a path back to the physical network. Guarded
+            // retries require a verified active owner and explicit opt-in.
             stop()
             lastError = "OpenVPN lost its connection. Managed VPN stopped instead of reconnecting with unprotected routing."
             state = .failed
@@ -215,6 +417,27 @@ final class ManagedTunnel {
         }
         state = snapshot.state
         message = snapshot.message
+        if snapshot.state == .connected {
+            do {
+                guard let localIP = snapshot.localTunnelIPv4,
+                      let tunnel = Self.findTunnel(containing: localIP,
+                        in: try RouteExecutor.command("/sbin/ifconfig", ["-a"])) else { throw DNSJournalError.unavailable }
+                try dnsRecovery.confirm(tunnel: tunnel)
+                if let guardPolicy { try packetGuard.replaceRules(guardPolicy.rules(tunnel: tunnel)) }
+            } catch {
+                stop(); lastError = error.localizedDescription
+                state = .failed; message = error.localizedDescription
+                return
+            }
+            attemptTimer?.cancel(); attemptTimer = nil
+            if activeMode == .original {
+                do { try ensureAttempt(); completeAttempt(); eventStore.append(.connected) }
+                catch { stop(); lastError = error.localizedDescription; state = .failed; message = error.localizedDescription }
+            }
+        } else if snapshot.state == .reconnecting {
+            if attemptExpiresAt == nil { attemptExpiresAt = DispatchTime.now().uptimeNanoseconds + UInt64(preferences.connectionTimeout) * 1_000_000_000 }
+            startAttemptDeadline()
+        }
         if snapshot.state == .connected && activeMode == .chinaDirect {
             state = .connecting
             message = "Applying and validating China IPv4 routes"
@@ -239,8 +462,10 @@ final class ManagedTunnel {
                 protectedPhysicalInterface = physical
                 fullVPNEndpointIPv4 = remote
                 fullVPNGateway = gateway
+                try ensureAttempt(); completeAttempt()
                 state = .connected
                 message = "Connected · global VPN route verified"
+                eventStore.append(.connected)
                 startNetworkWatchdog()
             } catch {
                 let reason = "Full VPN routing is not active: \(error.localizedDescription)"
@@ -277,7 +502,7 @@ final class ManagedTunnel {
             let plan = try RoutePlanner.build(serverIPv4: remote, physicalGateway: gateway,
                                               vpnInterface: utun, localPrefixes: localPrefixes,
                                               china: rules)
-            let executor = RouteExecutor(journal: workdir.appendingPathComponent("routes.journal"))
+            let executor = RouteExecutor(journal: workdir.appendingPathComponent("routes.journal"), shouldCancel: { [weak self] in self?.cancellationRequested == true || self?.attemptExpired == true })
             // Own the executor *before* mutating routes. If installation or
             // verification fails, stop() must still find the rollback journal.
             routing = executor
@@ -287,8 +512,10 @@ final class ManagedTunnel {
             protectedLocalNetworks = localPrefixes
             protectedPhysicalInterface = physicalInterface
             protectedVPNInterface = utun
+            try ensureAttempt(); completeAttempt()
             state = .connected
             message = "Connected · China IPv4 split routing enabled"
+            eventStore.append(.connected)
             startNetworkWatchdog()
         } catch {
             let failure = "Routing failed; VPN stopped for safety: \(error.localizedDescription)"
@@ -346,10 +573,11 @@ final class ManagedTunnel {
         timer.resume()
     }
 
-    private func verifyPhysicalNetwork() {
+    func verifyPhysicalNetwork() {
         guard state == .connected, activeMode != .original else { return }
         do {
-            try checkIPv6Bypass()
+            if packetGuard.active { try packetGuard.verify() }
+            else { try checkIPv6Bypass() }
             if activeMode == .fullVPN {
                 guard let expectedTunnel = protectedVPNInterface,
                       let remote = fullVPNEndpointIPv4,
@@ -384,6 +612,8 @@ final class ManagedTunnel {
             guard let rules else { throw TunnelError.missingRules }
             try verifySplitRoutes(plan: plan, country: rules)
         } catch {
+            eventStore.append(.networkChanged)
+            if scheduleGuardedReconnect() { return }
             let failure = "Network route/IPv6 protection changed; VPN disconnected: \(error.localizedDescription)"
             stop()
             lastError = failure
@@ -393,6 +623,7 @@ final class ManagedTunnel {
     }
 
     func retryRouteRecovery() -> String {
+        eventStore.append(.recovery)
         guard process == nil else {
             return "ERROR: Disconnect the current VPN before recovering routes."
         }
@@ -427,11 +658,15 @@ final class ManagedTunnel {
                 return "ERROR: Cannot clear verified stale process markers: \(error.localizedDescription)"
             }
         }
+        do { try dnsRecovery.restore() }
+        catch { state = .failed; message = error.localizedDescription; return "ERROR: " + message }
         let journal = workdir.appendingPathComponent("routes.journal")
         guard FileManager.default.fileExists(atPath: journal.path) else {
+            do { try packetGuard.release(); guardPolicy = nil; reconnectContext = nil }
+            catch { state = .failed; message = error.localizedDescription; return "ERROR: " + message }
             lastError = nil
             state = .disconnected
-            message = "Verified previous OpenVPN process is gone and no orphaned routes remain."
+            message = "已核验旧进程退出，DNS、路由与本应用断线保护已恢复。"
             return message
         }
         _ = RouteExecutor(journal: journal)
@@ -440,9 +675,11 @@ final class ManagedTunnel {
             message = "Route recovery is incomplete; some routes could not be safely verified."
             return "ERROR: \(message)"
         }
+        do { try packetGuard.release(); guardPolicy = nil; reconnectContext = nil }
+        catch { state = .failed; message = error.localizedDescription; return "ERROR: " + message }
         lastError = nil
         state = .disconnected
-        message = "Routes safely recovered."
+        message = "DNS、路由与本应用断线保护已安全恢复。"
         return message
     }
     func changeRules(_ text: String) throws {
@@ -475,6 +712,12 @@ final class ManagedTunnel {
         let removals = oldSet.subtracting(nextSet).sorted { $0.prefix < $1.prefix }
 
         do {
+            if let current = guardPolicy {
+                let policy = try LeakGuardPolicy(physical: current.physical, endpoint: current.endpoint, port: current.port,
+                    transport: current.transport, local: protectedLocalNetworks, country: next.routes)
+                try packetGuard.replaceRules(policy.rules(tunnel: vpnInterface), resetExistingStates: !removals.isEmpty)
+                guardPolicy = policy
+            }
             try executor.refreshDirectRoutes(added: additions, removed: removals)
             try verifySplitRoutes(plan: updated, country: next)
             activePlan = updated
@@ -492,7 +735,18 @@ final class ManagedTunnel {
             throw error
         }
     }
-    func stop() {
+    func stop(releaseProtection: Bool = false, preservingReconnectContext: Bool = false) {
+        releaseProtectionOnExit = releaseProtectionOnExit || releaseProtection
+        retryWork?.cancel(); retryWork = nil
+        if !preservingReconnectContext { reconnectContext = nil }
+        if packetGuard.active, let policy = guardPolicy {
+            do {
+                try packetGuard.replaceRules(policy.rules(tunnel: nil))
+                protectionTeardownBlocked = false
+            } catch { protectionTeardownBlocked = true }
+        }
+        attemptTimer?.cancel(); attemptTimer = nil
+        attemptExpiresAt = nil
         // A restarted helper has no Process identity for an orphaned child.
         // A plain Disconnect must never erase the very evidence that prevents
         // route rollback and a competing tunnel. Recovery checks PID absence.
@@ -508,6 +762,7 @@ final class ManagedTunnel {
         lastError = nil
         state = .stopping
         message = "Stopping OpenVPN before restoring network routes"
+        challenge = nil
         management?.close()
         management = nil
 
@@ -546,12 +801,27 @@ final class ManagedTunnel {
             message = "OpenVPN exit or ownership is unverified; preserving routes and session evidence."
             return
         }
+        if protectionTeardownBlocked && !releaseProtectionOnExit {
+            process = nil; activeProfileID = nil; traffic = nil
+            state = .failed
+            message = "断线保护无法核验，DNS 与路由恢复记录已保留。请执行安全网络恢复。"
+            return
+        }
         // Natural child exit may reach here before the management socket's
         // EOF callback. Disable its stale callbacks and stop the watchdog.
         networkWatchdog?.cancel()
         networkWatchdog = nil
+        challenge = nil
         management?.close()
         management = nil
+        attemptTimer?.cancel(); attemptTimer = nil
+        outputPipe?.fileHandleForReading.readabilityHandler = nil
+        try? outputPipe?.fileHandleForReading.close()
+        outputPipe = nil
+        outputBuffer.removeAll(keepingCapacity: false)
+        eventStore.append(.stopped)
+        do { try dnsRecovery.restore() }
+        catch { lastError = error.localizedDescription; eventStore.append(.dns) }
         routing?.rollback()
         routing = nil
         activePlan = nil
@@ -565,10 +835,15 @@ final class ManagedTunnel {
         traffic = nil
         let unresolved = FileManager.default.fileExists(
             atPath: workdir.appendingPathComponent("routes.journal").path)
-        state = unresolved || lastError != nil ? .failed : .disconnected
+        if releaseProtectionOnExit && !unresolved && !dnsRecovery.exists {
+            do { try packetGuard.release(); guardPolicy = nil; reconnectContext = nil }
+            catch { lastError = error.localizedDescription }
+        }
+        let protectionPending = packetGuard.requiresRecovery
+        state = unresolved || dnsRecovery.exists || protectionPending || lastError != nil ? .failed : .disconnected
         message = unresolved ?
             "OpenVPN exited, but some routes still require manual recovery." :
-            (lastError ?? "Disconnected")
+            (lastError ?? (protectionPending ? "VPN 已停止，断线保护保留。点击断开或安全恢复以解除。" : "Disconnected"))
         // The active profile is only cleared once the child is known to have
         // stopped. A persistent route journal independently blocks reconnect.
         for name in ["active.ovpn", "management.sock", "auth.txt", "openvpn-child.json"] {
@@ -578,7 +853,7 @@ final class ManagedTunnel {
 }
 enum TunnelError: Error, LocalizedError {
     case needRoot, alreadyRunning, missingRules, badCredential, engineMissing,
-         managementUnavailable, noPhysicalGateway, noTunnelInterface, noActiveRoutePlan, ipv6Unsafe, unresolvedRoutes, routeVerificationFailed, orphanedSession
+         managementUnavailable, connectionTimedOut, noPhysicalGateway, noTunnelInterface, noActiveRoutePlan, ipv6Unsafe, unresolvedRoutes, routeVerificationFailed, orphanedSession
 
     var errorDescription: String? {
         switch self {
@@ -588,6 +863,7 @@ enum TunnelError: Error, LocalizedError {
         case .alreadyRunning: return "Another VPN session is active."
         case .missingRules: return "A valid China IPv4 rules snapshot is required."
         case .badCredential: return "Username/password is missing or invalid."
+        case .connectionTimedOut: return DiagnosticCode.timeout.summary
         case .managementUnavailable: return "OpenVPN management socket is unavailable."
         case .noPhysicalGateway: return "Cannot identify the local physical gateway."
         case .noTunnelInterface: return "Cannot verify the OpenVPN utun interface."
@@ -598,3 +874,4 @@ enum TunnelError: Error, LocalizedError {
         }
     }
 }
+

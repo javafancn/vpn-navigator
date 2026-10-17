@@ -27,6 +27,15 @@ public struct ReleaseVersion: Comparable, Equatable, Sendable, CustomStringConve
 }
 
 public enum ReleaseAssetPolicy {
+    public static func supportsArchitecture(_ filename: String, architecture: String) -> Bool {
+        guard ["arm64", "x86_64"].contains(architecture), filename.lowercased().hasSuffix(".pkg") else { return false }
+        let name = filename.lowercased()
+        if name.contains("universal") { return true }
+        if name.contains("arm64") { return architecture == "arm64" }
+        if name.contains("x86_64") || name.contains("x64") { return architecture == "x86_64" }
+        // Older releases used one installer name without an architecture suffix.
+        return !name.contains("intel") && !name.contains("aarch64")
+    }
     public static func isApprovedReleasePage(_ url: URL) -> Bool {
         url.scheme == "https" && url.host == "github.com" &&
         url.path.hasPrefix("/javafancn/vpn-navigator/releases/tag/")
@@ -37,3 +46,4 @@ public enum ReleaseAssetPolicy {
         url.pathExtension.lowercased() == "pkg"
     }
 }
+

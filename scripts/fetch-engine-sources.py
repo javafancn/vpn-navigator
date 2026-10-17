@@ -8,9 +8,11 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import urllib.request
+import urllib.error
 import urllib.parse
 
 
@@ -28,17 +30,34 @@ def main():
         if parsed.scheme != "https" or parsed.hostname not in {"swupdate.openvpn.org", "swupdate.openvpn.net", "build.openvpn.net", "github.com", "www.openssl.org", "openssl-library.org"}:
             raise SystemExit("Formula source does not use an approved upstream HTTPS host")
         path = destination / (key.lower() + "-source.tar.gz")
-        digest = hashlib.sha256()
-        count = 0
-        with urllib.request.urlopen(url, timeout=30) as response, path.open("wb") as target:
-            while chunk := response.read(128 * 1024):
-                count += len(chunk)
-                if count > 100_000_000:
-                    raise SystemExit("Source archive exceeds size limit")
-                target.write(chunk)
-                digest.update(chunk)
-        if digest.hexdigest().lower() != expected.lower():
-            raise SystemExit("Upstream archive does not match formula SHA256")
+        candidates = [url]
+        version = formula["versions"]["stable"]
+        if key == "OPENVPN" and re.fullmatch(r"2\.7\.[0-9]+", version):
+            # Official release assets have the same reviewed archive digest.
+            # GitHub runners may receive a CDN/WAF 403 from swupdate.openvpn.net.
+            candidates.insert(0, f"https://github.com/OpenVPN/openvpn/releases/download/v{version}/openvpn-{version}.tar.gz")
+            candidates.append(f"https://build.openvpn.net/downloads/releases/openvpn-{version}.tar.gz")
+        for candidate in dict.fromkeys(candidates):
+            digest = hashlib.sha256()
+            count = 0
+            try:
+                request = urllib.request.Request(candidate, headers={"User-Agent": "VPNNavigator-SourceBuilder/0.2"})
+                print(f"Fetching {key} source from {urllib.parse.urlparse(candidate).hostname}", flush=True)
+                with urllib.request.urlopen(request, timeout=30) as response, path.open("wb") as target:
+                    while chunk := response.read(128 * 1024):
+                        count += len(chunk)
+                        if count > 100_000_000:
+                            raise SystemExit("Source archive exceeds size limit")
+                        target.write(chunk)
+                        digest.update(chunk)
+            except (urllib.error.URLError, TimeoutError):
+                path.unlink(missing_ok=True)
+                continue
+            if digest.hexdigest().lower() != expected.lower():
+                raise SystemExit("Upstream archive does not match formula SHA256")
+            break
+        else:
+            raise SystemExit(f"Unable to fetch verified {key} sources from official upstreams")
         output[key + "_SOURCE_ARCHIVE"] = str(path)
         output[key + "_SOURCE_SHA256"] = digest.hexdigest()
         output[key + "_SOURCE_VERSION"] = formula["versions"]["stable"]

@@ -68,7 +68,7 @@ public struct FirewallRulePreview: Sendable {
         case .chinaDirect(let entries):
             // Reject a catch-all or a non-public direct-route prefix.
             // A preview must not quietly turn into unrestricted physical egress.
-            guard !entries.isEmpty else { return false }
+            guard !entries.isEmpty, entries.allSatisfy({ $0.prefix >= 8 }) else { return false }
             return (try? RuleSet(text: entries.map(\.description).joined(separator: "\n"))) != nil
         }
     }
@@ -83,3 +83,4 @@ public struct FirewallRulePreview: Sendable {
 public enum FirewallPreviewError: Error {
     case invalidInput
 }
+

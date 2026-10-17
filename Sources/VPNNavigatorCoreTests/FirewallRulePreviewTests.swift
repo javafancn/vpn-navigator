@@ -45,6 +45,22 @@ final class FirewallRulePreviewTests: XCTestCase {
             localNetworks: [try IPv4CIDR("192.168.1.0/24")]))
     }
 
+    func testBroadDirectExceptionsAreRejected() throws {
+        let local = try IPv4CIDR("192.168.1.0/24")
+        for broad in ["0.0.0.0/0", "0.0.0.0/1", "128.0.0.0/1", "0.0.0.0/7"] {
+            let route = try IPv4CIDR(broad)
+            XCTAssertThrowsError(try FirewallRulePreview(
+                physicalInterface: "en0", tunnelInterface: "utun4",
+                endpointIPv4: "8.8.8.8", endpointPort: 1194, transport: .udp,
+                policy: .chinaDirect([route]), localNetworks: [local]), broad)
+            XCTAssertThrowsError(try FirewallRulePreview(
+                physicalInterface: "en0", tunnelInterface: "utun4",
+                endpointIPv4: "8.8.8.8", endpointPort: 1194, transport: .udp,
+                policy: .fullVPN, localNetworks: [route]), broad)
+        }
+        XCTAssertThrowsError(try preview(.chinaDirect([])))
+    }
+
     func testUntrustedInterfaceInputCannotInjectPF() {
         XCTAssertThrowsError(try FirewallRulePreview(
             physicalInterface: "en0; block all", tunnelInterface: "utun4",
@@ -56,3 +72,4 @@ final class FirewallRulePreviewTests: XCTestCase {
             policy: .fullVPN, localNetworks: []))
     }
 }
+

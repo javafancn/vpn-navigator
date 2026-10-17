@@ -19,14 +19,14 @@ public struct LeakGuardPolicy: Sendable {
     }
     public func rules(tunnel: String?) throws -> String {
         if let tunnel, !DNSRecoveryPolicy.validTunnel(tunnel) { throw LeakGuardError.invalid }
-        let tunnelRule = tunnel.map { "pass out quick on \($0) inet from any to any keep state\n" } ?? ""
+        let tunnelRule = tunnel.map { "pass out quick on \($0) inet from any to any keep state (if-bound)\n" } ?? ""
         return """
         # VPN Navigator owned anchor. Never load this as the host main ruleset.
         table <vpnnav_direct4> const { \(direct.map(\.description).joined(separator: ", ")) }
-        pass out quick on lo0 all
-        \(tunnelRule)pass out quick on \(physical) inet proto \(transport.rawValue) from any to \(endpoint) port \(port) keep state
-        pass out quick on \(physical) inet proto udp from any port 68 to 255.255.255.255 port 67 keep state
-        pass out quick on \(physical) inet from any to <vpnnav_direct4> keep state
+        pass out quick on lo0 all no state
+        \(tunnelRule)pass out quick on \(physical) inet proto \(transport.rawValue) from any to \(endpoint) port \(port) keep state (if-bound)
+        pass out quick on \(physical) inet proto udp from any port 68 to 255.255.255.255 port 67 keep state (if-bound)
+        pass out quick on \(physical) inet from any to <vpnnav_direct4> keep state (if-bound)
         block drop out quick inet from any to any
         block drop out quick inet6 from any to any
         """

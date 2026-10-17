@@ -1,122 +1,58 @@
-# Native app packaging and background services
+# Build, install and update VPN Navigator 0.2
 
-Requires macOS 13+, Xcode/Command Line Tools, a Developer ID signing identity for root helper registration, and a redistributable, reviewed OpenVPN 2.x CLI build.
-
-## Build and test
-```shell
-swift test
-./scripts/build-app.sh
-open "dist/VPN Navigator.app"
-```
-
-This creates a native .app without invoking Homebrew on end-user machines. An unsigned developer build shows the UI but **cannot install the privileged helper**.
-
-## Bring your own audited OpenVPN binary
-
-Provide a properly packaged OpenVPN 2.x CLI executable and audit its library dependencies before signing:
-
-```shell
-OPENVPN_BIN=/path/to/portable/openvpn \
-DEVELOPER_ID_APPLICATION="Developer ID Application: ..." \
-./scripts/build-app.sh
-```
-
-The build script **rejects typical Homebrew-linked binaries**; it does not yet automatically vendor all required TLS/crypto dynamic libraries. Bundling/distributing OpenVPN 2.x requires GPL compliance and reproducible source notices. Do not release the bundle without dependency audit.
-
-## Background services
-- LaunchDaemon: `com.javafancn.vpn-navigator.helper`, registered by macOS SMAppService after user approval.
-- LaunchAgent: `com.javafancn.vpn-navigator.rules`, runs every 86400 seconds and at login. The user must explicitly register it via the app.
-- Only signed clients with the app's signing Team ID and approved bundle identifiers can access the root daemon.
-- No shell execution of imported .ovpn directives is allowed; unsupported profiles are rejected.
-
-## Notarize
-Once a properly signed app is produced:
-
-```shell
-NOTARY_KEYCHAIN_PROFILE=your-keychain-profile ./scripts/notarize.sh
-```
-
-Always test install, reconnect, shutdown, sleep/wake, uninstallation, emergency cleanup and both DNS/IPv6 behavior on a disposable test Mac before shipping.
-
-**Known blockers**: external certificate-file profiles are not supported by the strict privileged validator yet; signed distributable OpenVPN CLI binary isn't included; system-route hot update and crash recovery need real macOS integration tests. Not a production release.
-
-## Engine packaging (maintainer Mac)
-
-Install a verified OpenVPN 2.7.x formula on the **build machine only**, then:
-
-```bash
-brew install openvpn
-OPENVPN_BIN="$(brew --prefix openvpn)/sbin/openvpn" \
-DEVELOPER_ID_APPLICATION="Developer ID Application: ..." \
-zsh scripts/build-app.sh
-DEVELOPER_ID_INSTALLER="Developer ID Installer: ..." \
-zsh scripts/build-pkg.sh
-zsh scripts/release-audit.sh
-```
-
-`vendor-openvpn.py` recursively copies third-party Mach-O libraries into
-`Contents/Frameworks`, rewrites their load paths, runs `openvpn --version`,
-and records source paths/checksums in an engine-dependency manifest. Do not
-assume the manifest grants any redistribution license. Provide all required
-third-party notices, GPL OpenVPN source corresponding to the binary, and
-reproducible build instructions with any published installer. Do not release
-unsigned files or an unsigned UI-only CI artifact as a working VPN.
-
-`release-audit.sh` checks binaries, identity, Team ID, libraries and plists;
-it **cannot** substitute for physical macOS networking, entitlement and
-notarization testing.
-
-## Required license materials for signed distribution
-
-The build intentionally refuses to sign a distributable binary without
-`OPENVPN_SOURCE_ARCHIVE` (matching the *actual* OpenVPN binary),
-`OPENVPN_SOURCE_SHA256`, and a reviewed `THIRD_PARTY_NOTICES` file.
-The source archive and notices ship inside the signed app bundle; this is
-one part of license compliance, **not** a legal certification. Ensure build
-scripts and source for all GPL-covered modifications are also supplied.
+## UI development
 
 ```sh
-OPENVPN_BIN=/path/to/openvpn \
-OPENVPN_SOURCE_ARCHIVE=/path/to/matching-source.tar.gz \
-OPENVPN_SOURCE_SHA256="$(shasum -a 256 /path/to/matching-source.tar.gz | cut -d' ' -f1)" \
-THIRD_PARTY_NOTICES=/path/to/reviewed-notices.txt \
-DEVELOPER_ID_APPLICATION="Developer ID Application: ..." \
+swift test
 zsh scripts/build-app.sh
 ```
 
-See the required two-step notarization order below. Do not ship a PKG with an unstapled app.
+Without OPENVPN_BIN this produces UI-only preview software. Real privileged operations deliberately require Developer ID identity and a protected `/Applications/VPN Navigator.app` installed through its signed PKG.
 
-## Correct notarization order for a root-owned VPN installer
+## Source-built engine
 
-```shell
-# After signing the .app using build-app.sh
-NOTARY_KEYCHAIN_PROFILE=notary-profile zsh scripts/notarize.sh app
-DEVELOPER_ID_INSTALLER="Developer ID Installer: ..." zsh scripts/build-pkg.sh
-NOTARY_KEYCHAIN_PROFILE=notary-profile zsh scripts/notarize.sh pkg
+On a macOS build machine, fetch the official source archives described by the Homebrew formula metadata. This does not require Homebrew on an end-user Mac.
+
+```sh
+python3 scripts/fetch-engine-sources.py /absolute/engine-sources
+```
+
+The JSON output file records exact archive paths, versions and verified SHA256. Set OPENVPN_SOURCE_ARCHIVE, OPENVPN_SOURCE_SHA256, OPENSSL_SOURCE_ARCHIVE and OPENSSL_SOURCE_SHA256 from that file, then:
+
+```sh
+ENGINE_OUTPUT_DIR=/absolute/engine-prefix bash scripts/build-openvpn-engine.sh
+```
+
+The script builds OpenSSL statically and OpenVPN natively for macOS 13, disables compression and unsupported PKCS11/PAM dependencies, and collects actual upstream license texts under `engine-prefix/share/vpn-navigator/THIRD_PARTY_NOTICES.txt`. Review the notices, source provenance and compile flags before distributing.
+
+## Signed app and installer
+
+Set the source paths/hashes above, OPENVPN_BIN to the source-built `sbin/openvpn`, THIRD_PARTY_NOTICES to the generated notices, and your Developer ID identities:
+
+```sh
+DEVELOPER_ID_APPLICATION='Developer ID Application: …' zsh scripts/build-app.sh
+NOTARY_KEYCHAIN_PROFILE=your-profile zsh scripts/notarize.sh app
+DEVELOPER_ID_INSTALLER='Developer ID Installer: …' zsh scripts/build-pkg.sh
+NOTARY_KEYCHAIN_PROFILE=your-profile zsh scripts/notarize.sh pkg
 zsh scripts/release-audit.sh
 ```
 
-The packaging script refuses to copy an unnotarized app into the PKG.
-Both app and installer must retain valid signatures and notarization tickets.
-Production release remains gated on docs/QA.md results.
+Both source archives and notices are embedded before signing. The installer name derives from Info.plist and the actual build architecture, e.g. `VPN-Navigator-0.2.0-arm64.pkg`. Produce separate arm64 and x86_64 installers. The release manifest rejects missing slices or a bundled binary whose minimum macOS exceeds the application's declared minimum; a green UI-only build is insufficient.
 
-## Safe upgrades and removal
+See SIGNED_RELEASE_WORKFLOW.md for the manual two-architecture workflow. It can attach signed/notarized packages, hashes and manifests to a draft, and never automatically publishes a production release.
 
-Disconnect the active VPN, verify restoration of the local routes and DNS,
-then choose "Disable Background Services" in Settings. PKG preinstall blocks
-replacement if the root helper is still running or a routing journal/session
-file remains. This intentionally requires user intervention rather than
-killing root VPN services from an installer script.
+## First use
 
-To uninstall: disconnect, unregister the LaunchAgent and LaunchDaemon from
-the app, then remove the signed app. Leave user profiles in Application Support
-unless the user explicitly chooses to delete them. Validate routing recovery
-before deleting any old journal.
+1. Install the signed PKG into Applications and launch the app.
+2. Complete the built-in check for app identity, bundled engine, location, helper approval and profiles.
+3. Import .ovpn; nearby certificate files are materialized into a self-contained runtime copy.
+4. Enter credentials when requested. Optional Keychain storage applies only to account credentials; private-key and OTP answers are not saved.
+5. Select a routing policy. A validated initial China IPv4 snapshot is bundled for offline use; online update and local import remain available.
 
-## Manual verified update experience
+## Protection and maintenance
 
-The signed app can check the latest GitHub Release, compare stable versions,
-download an official PKG, verify that its Developer ID Installer Team matches
-the running application's Developer ID Team, and request a Gatekeeper
-installation assessment. Only after these checks does it offer the file to
-macOS Installer. Automatic privileged installation is intentionally forbidden.
+Experimental PF protection is an explicit opt-in for managed IPv4 modes. It rejects incompatible host layouts and resets existing connections during protection changes. Original mode follows the validated original profile. Complete the real-server tests before claiming protection guarantees.
+
+Use Settings → Upgrade and Uninstall Preparation to disconnect, recover network ownership and unregister the application's background services. Keep profiles by default; deleting them is an explicit irreversible checkbox. Upgrade opens a verified same-team PKG in macOS Installer. Removal is completed in Finder; the application does not run an arbitrary root deletion command.
+
+The PKG preinstall guard rejects a live helper or unresolved route, DNS, PF or child-session records. Do not delete recovery journals to force an upgrade. Quit old menu-bar instances before replacing a preview app. Closing its window does not quit the application.

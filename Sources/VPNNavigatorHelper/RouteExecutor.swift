@@ -9,9 +9,13 @@ final class RouteExecutor {
     private(set) var installed: [RouteTarget] = []
     private let journal: URL
     private var ambiguous = false
+    private let shouldCancel: () -> Bool
+    private let run: (String, [String]) throws -> String
 
-    init(journal: URL) {
+    init(journal: URL, shouldCancel: @escaping () -> Bool = { false }, run: @escaping (String, [String]) throws -> String = RouteExecutor.command) {
         self.journal = journal
+        self.shouldCancel = shouldCancel
+        self.run = run
         guard let data = try? Data(contentsOf: journal) else { return }
         let replay = RouteLedgerReplay(data: data)
         installed = replay.installed
@@ -26,8 +30,9 @@ final class RouteExecutor {
     }
 
     func apply(_ route: RouteTarget) throws {
+        guard !shouldCancel() else { throw CancellationError() }
         guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
-        let output = try Self.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
+        let output = try run("/usr/sbin/netstat", ["-rn", "-f", "inet"])
         let prefix = route.prefix.description
         if output.split(separator: "\n").contains(where: {
             $0.split(whereSeparator: { $0.isWhitespace }).first.map(String.init) == prefix
@@ -39,7 +44,7 @@ final class RouteExecutor {
 
     func apply(_ routes: [RouteTarget]) throws {
         guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
-        let snapshot = try Self.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
+        let snapshot = try run("/usr/sbin/netstat", ["-rn", "-f", "inet"])
         let occupied = Set(snapshot.split(separator: "\n").compactMap {
             $0.split(whereSeparator: { $0.isWhitespace }).first.map(String.init)
         })
@@ -51,16 +56,18 @@ final class RouteExecutor {
                 try install(route)
             }
         } catch {
-            rollback()
+            // The owning tunnel must exit before any route rollback. Preserve
+            // installed ownership and let ManagedTunnel.stop() do that ordering.
             throw error
         }
     }
 
     private func install(_ route: RouteTarget) throws {
+        guard !shouldCancel() else { throw CancellationError() }
         let mutation = RouteMutation(action: .add, route: route)
         try append(.init(phase: .begun, mutation: mutation))
         ambiguous = true
-        try Self.command("/sbin/route", route.arguments(adding: true))
+        _ = try run("/sbin/route", route.arguments(adding: true))
         try append(.init(phase: .committed, mutation: mutation))
         installed.append(route)
         ambiguous = false
@@ -95,6 +102,7 @@ final class RouteExecutor {
         // The owning tunnel is disconnected by the caller if any mutation fails.
         for route in added { try apply(route) }
         for route in removed {
+            guard !shouldCancel() else { throw CancellationError() }
             guard installed.contains(route) else { continue }
             let actual = try observe(route)
             guard actual.isExactly(route) else {
@@ -109,7 +117,7 @@ final class RouteExecutor {
         try append(.init(phase: .begun, mutation: mutation))
         ambiguous = true
         if deleteSystemRoute {
-            try Self.command("/sbin/route", route.arguments(adding: false))
+            _ = try run("/sbin/route", route.arguments(adding: false))
         }
         try append(.init(phase: .committed, mutation: mutation))
         installed.removeAll { $0 == route }
@@ -117,7 +125,7 @@ final class RouteExecutor {
     }
 
     private func observe(_ route: RouteTarget) throws -> ObservedIPv4Route {
-        let output = try Self.command("/sbin/route",
+        let output = try run("/sbin/route",
                                       ["-n", "get", "-net", route.prefix.description])
         return ObservedIPv4Route(commandOutput: output)
     }

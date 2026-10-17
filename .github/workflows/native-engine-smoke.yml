@@ -64,9 +64,18 @@ jobs:
       - name: Build reviewed-format sources for the declared minimum macOS
         run: |
           python3 scripts/fetch-engine-sources.py "$RUNNER_TEMP/engine-sources"
+      - uses: actions/cache@v4
+        id: source-engine-cache
+        with:
+          path: ${{ runner.temp }}/engine-prefix
+          key: source-engine-${{ runner.arch }}-${{ env.OPENVPN_SOURCE_SHA256 }}-${{ env.OPENSSL_SOURCE_SHA256 }}-${{ hashFiles('scripts/build-openvpn-engine.sh') }}
       - name: Compile static-OpenSSL engine and verify minimum OS
+        env:
+          ENGINE_CACHE_HIT: ${{ steps.source-engine-cache.outputs.cache-hit }}
         run: |
-          ENGINE_OUTPUT_DIR="$RUNNER_TEMP/engine-prefix" bash scripts/build-openvpn-engine.sh
+          if [[ "$ENGINE_CACHE_HIT" != true ]]; then
+            ENGINE_OUTPUT_DIR="$RUNNER_TEMP/engine-prefix" bash scripts/build-openvpn-engine.sh
+          fi
           OPENVPN_BIN="$RUNNER_TEMP/engine-prefix/sbin/openvpn" zsh scripts/build-app.sh
           python3 scripts/release-manifest.py 'dist/VPN Navigator.app' "$RUNNER_TEMP/source-engine-manifest.json"
       - name: Test DNS ownership journal on a synthetic service

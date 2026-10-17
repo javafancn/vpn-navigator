@@ -91,6 +91,7 @@ struct MainView: View {
                 model.message = error.localizedDescription
             }
         }
+        .sheet(isPresented: $model.showingAccountCredentials) { AccountCredentialsView().environmentObject(model) }
         .sheet(item: $model.authenticationChallenge) { challenge in
             AuthenticationChallengeView(challenge: challenge).environmentObject(model)
         }
@@ -278,7 +279,7 @@ private struct ConnectionOverview: View {
                         }
                     } label: { ReferencePowerOrb() }
                     .buttonStyle(ReferenceQuietButton(cornerRadius: 110, hoverOpacity: 0.04))
-                    .disabled(model.stopping || (model.busy && !model.connecting))
+                    .disabled(model.stopping || (model.busy && !model.connecting && !model.connected && !model.firewallRecoveryRequired))
                     .accessibilityLabel(model.connected ? "断开 VPN" : model.connecting ? "取消连接" : "连接 VPN")
                     Text(statusTitle)
                         .font(.system(size: 28, weight: .semibold))

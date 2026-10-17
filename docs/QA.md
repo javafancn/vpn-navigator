@@ -93,3 +93,25 @@ The following checks must be executed on a disposable Mac after Developer ID sig
 
 | A69 | DNS script obtains its lock on a shared world-writable path | Require root-private runtime directory; reject unsafe owner or mode |
 | A70 | PF preview receives a /0 or private geographic exception | Reject invalid policy before producing an apparently restrictive guard |
+
+
+## 0.2 implementation gates (record actual evidence before production publication)
+
+| ID | Scenario | Expected |
+| --- | --- | --- |
+| A71 | Cancel during resolve/auth/key/OTP prompt | Old attempt cannot restart or overwrite the cancelled session |
+| A72 | No account credentials in Keychain | Automatic account prompt; cancellation starts no helper child |
+| A73 | Static OTP / encrypted private key | Correct bounded management response; secret absent from all reports |
+| A74 | Connection deadline and repeated reconnect events | One bounded deadline; repeated events cannot extend it indefinitely |
+| A75 | DNS primary service changes mid-session | Down-hook targets original service; another owner's values are preserved |
+| A76 | Crash after DNS hook applies but before CONNECTED | Committed owned values remain recoverable from root-private journal |
+| A77 | Compatible PF host, then early-pass/skip modification | Reject unsupported layout; no root ruleset replacement |
+| A78 | Existing tunnel PF states when tunnel vanishes | Interface-bound states cannot float to physical egress; capture packets |
+| A79 | Protected reconnect fails or user cancels its delay | Guard retained on failure; explicit cancel prevents all later retries |
+| A80 | Cold start without Internet | Bundled initial rules validate and cache without downloading |
+| A81 | Oversized/redirected/invalid feed | Streaming cancellation; old rules remain intact |
+| A82 | Upgrade/uninstall with DNS/PF journals | Refuse upgrade until explicit safe recovery resolves ownership |
+| A83 | Native arm64 / x86_64 source engine | No external brew dylibs; actual binary deployment targets match app minimum |
+| A84 | Architecture-specific release assets | Updater selects the current architecture or an explicitly universal package |
+
+Automated loopback and synthetic-service tests exercise a subset of these paths. They do not mark the corresponding real-server/physical-network acceptance as passed.

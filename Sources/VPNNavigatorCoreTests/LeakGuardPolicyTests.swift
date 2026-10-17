@@ -13,6 +13,8 @@ final class LeakGuardPolicyTests: XCTestCase {
         XCTAssertTrue(after.contains("block drop out quick inet6 from any to any"))
         XCTAssertFalse(after.contains("pass out quick on en0 all"))
         XCTAssertFalse(after.contains("pass out quick on utun4 inet6"))
+        XCTAssertTrue(after.contains("on utun4 inet from any to any keep state (if-bound)"))
+        XCTAssertTrue(after.contains("on lo0 all no state"))
         XCTAssertThrowsError(try policy.rules(tunnel: "utun4\npass all"))
     }
     func testGuardRefusesBroadAndPrivateCountryExceptions() throws {

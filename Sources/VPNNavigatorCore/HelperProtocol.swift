@@ -5,11 +5,11 @@ import Foundation
 @objc public protocol VPNNavigatorHelperAPI {
     func health(reply: @escaping (String) -> Void)
     func connect(profile: String, profileID: String, mode: String, rules: String,
-                 username: String, password: String, preferences: String,
+                 username: String, password: String, preferences: String, attemptID: String,
                  reply: @escaping (String) -> Void)
     func submitChallenge(id: String, response: String, reply: @escaping (String) -> Void)
     func diagnosticEvents(reply: @escaping (String) -> Void)
-    func disconnect(reply: @escaping (String) -> Void)
+    func disconnect(cancelAttemptID: String, reply: @escaping (String) -> Void)
     func connectionStatus(reply: @escaping (String) -> Void)
     func sessionSnapshot(reply: @escaping (String) -> Void)
     func activeProfile(reply: @escaping (String) -> Void)

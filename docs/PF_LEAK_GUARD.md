@@ -1,38 +1,27 @@
-# PF leak guard: architecture preview (NOT ACTIVE)
+# Experimental PF runtime guard
 
-The repository provides a pure, unit-tested `FirewallRulePreview` policy
-renderer. It produces a proposed per-physical-interface PF anchor with a
-pinned numeric VPN server/port exception, local-network exceptions, China IPv4
-exceptions (for China Direct), and physical IPv4+IPv6 blocking rules.
+0.2.0 adds an explicit, default-off runtime guard for Full VPN and China Direct. The older FirewallRulePreview remains a read-only tool; LeakGuardPolicy and PacketFilterGuard implement the runtime path.
 
-**It is not connected to the privileged helper and does not call pfctl.**
-Do not label VPN Navigator as having a working kill switch.
+## Activation and scope
 
-Activation remains blocked until signed-machine tests can prove:
-- PF is actually enabled and the app anchor is called from the host's main
-  PF ruleset *before* broader quick pass rules; merely running
-  `pfctl -a name -f rules` may populate an anchor that is never evaluated.
-- Host PF rules are not replaced or flushed, and enabling/disabling PF
-  respects any existing reference tokens from other software.
-- Established PF states cannot bypass the guard after Wi-Fi changes,
-  sleep/wake, changing IPv4 addresses, or an OpenVPN tunnel crash.
-- Server re-resolution, DHCP, DNS, local subnet exceptions, and split routing
-  cannot cause leaks or lock the Mac out of the Internet.
-- An emergency recovery/disable path is tested on a spare Mac.
-- IPv6 routing and enterprise VPN coexistence are validated.
+- Require a signed root helper and compatible stock Apple root filter-anchor layout; permit the standard scrub anchor, reject unknown root rules, earlier child anchors and skipped interfaces.
+- Resolve/pin one numeric IPv4 VPN endpoint before activating; select its physical interface and verified local exceptions.
+- Load only `com.apple/000.vpn-navigator`. Never replace `/etc/pf.conf`, reload host root rules, flush other anchors, or use `pfctl -d`.
+- Save an enable receipt and the application's `pfctl -E` token in the root-private runtime directory.
+- Reset existing PF states during protection activation, reconstruction, direct-policy tightening and release. This explicitly affects all current connections, including other VPNs.
+- Bind new allowed states to their interface with `keep state (if-bound)` so an owned tunnel's state cannot float onto a physical interface after tunnel disappearance.
+- Allow the owned tunnel's IPv4, the pinned endpoint, DHCP and selected direct destinations; block all other outward IPv4 and IPv6. Do not advertise IPv6 country routing.
 
-The candidate is deliberately **not a deployable PF firewall policy**. The
-app continues to reject unsafe unmanaged IPv6 routes in IPv4-only modes.
+## Failures and recovery
 
-The macOS runner's `PF preview syntax checks` workflow compiles a
-read-only `VPNNavigatorPFPreview` executable and runs `pfctl -vnf`
-on a generated sample. A pass proves **parser syntax only**, not routing
-or security enforcement.
+Unexpected failure retains the guard. Retried managed sessions require verified PF ownership, old child exit and unambiguous DNS/route rollback. They retain PF between attempts and have a bounded retry budget.
 
-## Static guard constraints
+Explicit disconnect/recovery removes only the owned rules and releases only the recorded enable reference. The enable child's private receipt permits token recovery after a helper crash. Unknown ownership is not authorization to disable PF globally. A live or reused historical OpenVPN PID is never killed by number.
 
-The syntax-only candidate rejects a 0/0 local exception and invalid or
-special-purpose `China Direct` CIDR entries. It must still not be loaded
-or offered as a proven kill switch; PF evaluation order, other interfaces,
-state handling and signed-machine failover require real packet capture and
-host integration testing.
+On an incompatible host, the connection fails with an actionable error. The application does not attempt to make arbitrary third-party firewall configurations compatible.
+
+## Automated checks versus release acceptance
+
+Core tests validate policy bounds, endpoint pinning, host-layout rejection and token syntax. The PF syntax workflow parses both preview and strict runtime policies. A disposable CI fixture tests a real kernel anchor against one loopback TCP port and verifies reachability after releasing the application's token. The fixture does not load the production global egress block or reset unrelated external CI connections.
+
+These checks do not certify physical-interface packet behavior. Before removing the experimental label, use signed installers on spare Intel/Apple Silicon Macs and capture IPv4/IPv6 traffic during tunnel failure, old established connections, rule tightening, Wi-Fi/Ethernet changes, sleep/wake, helper crash, server re-resolution and emergency recovery. Record failures as blockers in QA.md.

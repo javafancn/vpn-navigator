@@ -1,4 +1,5 @@
 import Foundation
+import ServiceManagement
 import VPNNavigatorCore
 
 /// User-scoped launchd job. Never runs as root and never edits the system routing table.
@@ -17,9 +18,15 @@ enum RuleAgent {
             }
             // If the signed root helper has an active split-tunnel, use its typed update API.
             // Inactive/uninstalled helpers do not prevent caching for a future connection.
-            let status = await HelperMessage.request { api, reply in
-                api.connectionStatus(reply: reply)
-            }
+            let enabled = SMAppService.daemon(plistName: HelperIdentity.plistName).status == .enabled
+            let status: String
+            if enabled {
+                status = await HelperMessage.request { api, reply in api.connectionStatus(reply: reply) }
+                guard status.hasPrefix("connected:") || status.hasPrefix("disconnected:") else {
+                    fputs("Helper state is changing or unresolved; preserve the current cache.\n", stderr)
+                    return
+                }
+            } else { status = "disconnected: helper not enabled" }
             if status.hasPrefix("connected:") {
                 let result = await HelperMessage.request { api, reply in
                     api.updateRules(candidate.routes.map(\.description).joined(separator: "\n"), reply: reply)
@@ -77,3 +84,4 @@ private final class OneReply: @unchecked Sendable {
         if first { reply(value) }
     }
 }
+

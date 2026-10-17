@@ -1,34 +1,29 @@
 # Manual signed release workflow
 
-The GitHub workflow `.github/workflows/signed-release.yml` is **manual
-only**. It runs on `main` and uses the protected GitHub Actions environment
-`macos-release`. Configure the environment with required reviewers before
-setting release secrets.
+The workflow runs only on main when the operator enters RELEASE. It builds separate arm64 and x86_64 packages in the macos-release environment.
 
-Provide these repository/environment secrets, never in Git history:
+## Inputs
 
-- `APP_SIGNING_P12_BASE64`, `APP_SIGNING_P12_PASSWORD`
-- `INSTALLER_SIGNING_P12_BASE64`, `INSTALLER_SIGNING_P12_PASSWORD`
-- `TEMP_KEYCHAIN_PASSWORD` (strong random value)
-- `DEVELOPER_ID_APPLICATION`, `DEVELOPER_ID_INSTALLER` (exact identity names)
-- `NOTARY_API_KEY_BASE64`, `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID`
+- Exact reviewed OpenVPN 2.7.x version.
+- Reviewed matching OpenVPN and OpenSSL source SHA256 values.
+- Optional creation/update of a **draft** release; default off.
 
-You must also commit and legally review
-`LICENSES/THIRD_PARTY_NOTICES.txt` *before* releasing. It must list the
-actual third-party dependencies and licenses of your compiled OpenVPN CLI.
-Do not fabricate license notices or use the example BSD DNS notice as a
-substitute.
+Formula metadata supplies source URLs and its hashes; release inputs independently pin the reviewed versions/hashes. Source compilation occurs before loading signing credentials. The engine targets macOS 13 and statically links source-built OpenSSL; actual source licenses and archives are bundled before signing.
 
-Provide the SHA-256 of the **corresponding OpenVPN 2.7.x source tarball**
-as the workflow input, typed with the `RELEASE` confirmation. The workflow
-installs OpenVPN on a temporary macOS build machine, fetches the matching
-official source, validates its SHA-256, relocates dependent dylibs,
-builds and signs the app, notarizes/staples the app, creates the signed
-installer, notarizes/staples the installer, and runs static audits.
-It produces a **review artifact**, not a public GitHub Release.
+## Environment secrets
 
-The release environment must not allow workflow execution from unreviewed
-branches. Before publishing the installer, complete the hardware acceptance
-checklist in `docs/QA.md` and inspect each embedded dependency's license.
-A passing workflow is not evidence of VPN traffic safety or an operational
-firewall kill switch.
+Configure these using GitHub's protected environment UI, never chat or Git:
+
+- APP_SIGNING_P12_BASE64 / APP_SIGNING_P12_PASSWORD
+- INSTALLER_SIGNING_P12_BASE64 / INSTALLER_SIGNING_P12_PASSWORD
+- TEMP_KEYCHAIN_PASSWORD
+- DEVELOPER_ID_APPLICATION / DEVELOPER_ID_INSTALLER
+- NOTARY_API_KEY_BASE64 / NOTARY_KEY_ID / NOTARY_ISSUER_ID
+
+The workflow creates a temporary signing keychain, signs nested binaries and the app, notarizes/staples the app, builds the architecture-specific PKG, notarizes/staples it, audits architecture and minimum OS, and emits hashes/manifests. Temporary signing material is removed.
+
+Draft creation requires both architecture jobs to pass. It targets the workflow commit, refuses to replace a published release, and attaches review artifacts. The workflow never publishes the draft automatically.
+
+## Publication gate
+
+Before publication, review the generated dependency/license materials and record actual signed-machine QA for XPC approval, VPN traffic, DNS restoration, IPv6 safety, PF failures, sleep/wake and installation lifecycle. CI tests of one loopback port do not establish leak-free VPN operation. Configure any required macos-release environment reviewers through GitHub; do not bypass them in code.

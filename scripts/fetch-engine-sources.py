@@ -25,7 +25,7 @@ def main():
         source = formula["urls"]["stable"]
         url, expected = source["url"], source["checksum"]
         parsed = urllib.parse.urlparse(url)
-        if parsed.scheme != "https" or parsed.hostname not in {"swupdate.openvpn.org", "github.com", "www.openssl.org", "openssl-library.org"}:
+        if parsed.scheme != "https" or parsed.hostname not in {"swupdate.openvpn.org", "swupdate.openvpn.net", "build.openvpn.net", "github.com", "www.openssl.org", "openssl-library.org"}:
             raise SystemExit("Formula source does not use an approved upstream HTTPS host")
         path = destination / (key.lower() + "-source.tar.gz")
         digest = hashlib.sha256()

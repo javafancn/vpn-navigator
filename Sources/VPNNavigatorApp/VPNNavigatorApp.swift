@@ -27,6 +27,7 @@ final class AppModel: ObservableObject {
         didSet { UserDefaults.standard.set(killSwitch, forKey: "killSwitch") }
     }
     @Published var authenticationChallenge: AuthenticationChallenge?
+    @Published var showingAccountCredentials = false
     @Published var showingMaintenance = false
     @Published var showingSetup = false
     @Published var showingPreferences = false
@@ -40,6 +41,8 @@ final class AppModel: ObservableObject {
     @Published var eventHistory: [DiagnosticEvent] = []
     @Published var profileSizes: [UUID: Int] = [:]
     private var connectionAttempt: UUID?
+    private var helperAttemptID: UUID?
+    private var helperStateVerified = true
     private let localEvents = DiagnosticEventStore(file: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("VPNNavigator/Diagnostics/events.json"))
     @Published var busy = false
     @Published var message: String?
@@ -116,7 +119,7 @@ final class AppModel: ObservableObject {
     var connected: Bool { sessionState == .connected }
     var connecting: Bool { [.connecting, .authenticating, .reconnecting].contains(sessionState) }
     var stopping: Bool { sessionState == .stopping }
-    var canQuit: Bool { !connected && !connecting && !stopping && activeProfileID == nil && !firewallRecoveryRequired }
+    var canQuit: Bool { !connected && !connecting && !stopping && activeProfileID == nil && !firewallRecoveryRequired && helperStateVerified }
     var sessionPreferences: SessionPreferences {
         .init(connectionTimeout: connectionTimeout == 0 ? 60 : connectionTimeout,
               reconnectOriginal: reconnectOriginal, killSwitch: killSwitch, reconnectManaged: reconnectManaged)
@@ -232,7 +235,7 @@ final class AppModel: ObservableObject {
         }
     }
     func refreshRules() async {
-        guard !busy else { return }
+        guard !busy, !connecting, !stopping else { return }
         busy = true; defer { busy = false }
         do {
             let candidate = try await updater.fetchCandidate()
@@ -334,7 +337,7 @@ final class AppModel: ObservableObject {
         }
     }
     func restoreRuleSnapshot(_ id: UUID) async {
-        guard !busy else { return }
+        guard !busy, !connecting, !stopping else { return }
         busy = true
         defer { busy = false }
         do {
@@ -382,7 +385,11 @@ final class AppModel: ObservableObject {
         helperStatus = displayHelperStatus(helper.installationStatus)
         if helper.installationStatus == .enabled {
             if let report = await helper.sessionReport() {
-                connectionStatus = report.statusText
+                helperStateVerified = true
+                if !(busy && connectionAttempt != nil && sessionState == .connecting && report.state == .disconnected) {
+                    connectionStatus = report.statusText
+                }
+                helperAttemptID = report.attemptID
                 activeProfileID = report.activeProfileID
                 authenticationChallenge = report.challenge
                 firewallActive = report.firewallActive
@@ -396,13 +403,16 @@ final class AppModel: ObservableObject {
                     sendTrend.reset()
                 }
             } else {
-                connectionStatus = "failed: Privileged helper did not return a valid session snapshot"
+                helperStateVerified = false
+                authenticationChallenge = nil
+                connectionStatus = "failed: 无法核验后台会话，请检查助手与网络恢复状态"
                 activeProfileID = nil
                 traffic = nil
                 receiveTrend.reset()
                 sendTrend.reset()
             }
         } else {
+            helperStateVerified = true
             connectionStatus = "disconnected: Privileged helper not enabled"
             activeProfileID = nil
             authenticationChallenge = nil
@@ -427,10 +437,18 @@ final class AppModel: ObservableObject {
                 connectionStatus = "failed: 缺少中国 IPv4 规则"
                 return
             }
-            if rememberCredentials && (username.isEmpty || password.isEmpty),
-               let secret = KeychainVault.load(id: selected.id) {
-                username = secret.username
-                password = secret.password
+            guard connectionAttempt == attempt, selectedID == selected.id else {
+                if connectionAttempt == attempt { connectionStatus = "disconnected: 所选配置已改变" }
+                return
+            }
+            if rememberCredentials, let secret = KeychainVault.load(id: selected.id) {
+                if username.isEmpty { username = secret.username }
+                if password.isEmpty && username == secret.username { password = secret.password }
+            }
+            if validated.requestsCredentials && (username.isEmpty || password.isEmpty) {
+                connectionStatus = "disconnected: 等待输入身份验证信息"
+                showingAccountCredentials = true
+                return
             }
             if rememberCredentials && !password.isEmpty {
                 try KeychainVault.store(.init(username: username, password: password), id: selected.id)
@@ -439,7 +457,7 @@ final class AppModel: ObservableObject {
             guard connectionAttempt == attempt else { return }
             let result = await helper.connect(profile: text, profileID: selected.id,
                                               mode: selected.mode, rules: rulesText,
-                                              username: username, password: password, preferences: sessionPreferences)
+                                              username: username, password: password, preferences: sessionPreferences, attemptID: attempt)
             guard connectionAttempt == attempt else { return }
             password = "" // never retain passwords in UI state after a connection attempt
             if result.hasPrefix("ERROR:") {
@@ -473,11 +491,12 @@ final class AppModel: ObservableObject {
     }
     func disconnect() async {
         guard !stopping else { return }
+        let cancelledAttempt = connectionAttempt ?? helperAttemptID
         connectionAttempt = nil
         if connecting { localEvents.append(.cancelled) }
         connectionStatus = "stopping: 正在停止连接并恢复网络"
         busy = true
-        let response = await helper.disconnect()
+        let response = await helper.disconnect(attemptID: cancelledAttempt)
         busy = false
         if response.hasPrefix("ERROR:") { message = response }
         localEvents.append(.stopped)
@@ -509,7 +528,7 @@ final class AppModel: ObservableObject {
         } catch { message = "诊断报告保存失败：\(error.localizedDescription)" }
     }
     func importRules(_ url: URL) async {
-        guard !busy else { return }
+        guard !busy, !connecting, !stopping else { return }
         let granted = url.startAccessingSecurityScopedResource()
         defer { if granted { url.stopAccessingSecurityScopedResource() } }
         busy = true; defer { busy = false }

@@ -4,8 +4,10 @@ import VPNNavigatorCore
 
 /// Owns one anchor and one PF enable token. Never reloads the main ruleset,
 /// flushes unrelated anchors, disables PF globally, or guesses a missing token.
+/// Strict opt-in resets existing PF states when protection changes; new pass
+/// states are bound to their interface so a dead tunnel cannot float outward.
 final class PacketFilterGuard {
-    private struct Record: Codable { var token: String?; var enabled: Bool }
+    private struct Record: Codable { var token: String?; var enabled: Bool; var resetsStates: Bool? }
     private let folder = URL(fileURLWithPath: "/var/run/vpn-navigator")
     private var journal: URL { folder.appendingPathComponent("pf-guard.json") }
     private var rulesFile: URL { folder.appendingPathComponent("pf-guard.conf") }
@@ -15,11 +17,11 @@ final class PacketFilterGuard {
     private(set) var active = false
     var requiresRecovery: Bool { FileManager.default.fileExists(atPath: journal.path) }
 
-    func activate(_ rules: String, sourceAddresses: [String]) throws {
+    func activate(_ rules: String, resetExistingStates: Bool = true) throws {
         guard !requiresRecovery else { throw LeakGuardError.unresolved }
         try preflight()
         try prepareDirectory()
-        try save(.init(token: nil, enabled: false))
+        try save(.init(token: nil, enabled: false, resetsStates: resetExistingStates))
         try load(rules)
         let response = try enableWithReceipt()
         guard let token = LeakGuardPolicy.enableToken(response) else {
@@ -27,24 +29,17 @@ final class PacketFilterGuard {
             // permission to run pfctl -d; recovery can remove only our rules.
             throw LeakGuardError.unresolved
         }
-        try save(.init(token: token, enabled: true))
+        try save(.init(token: token, enabled: true, resetsStates: resetExistingStates))
         active = true
-        for address in Set(sourceAddresses) {
-            guard Self.isAddress(address) else { throw LeakGuardError.invalid }
-            _ = try Self.command(["-k", address])
-        }
+        if resetExistingStates { _ = try Self.command(["-F", "states"]) }
         try verify()
     }
-    func replaceRules(_ rules: String, sourceAddresses: [String] = []) throws {
+    func replaceRules(_ rules: String, resetExistingStates: Bool = false) throws {
         guard active else { throw LeakGuardError.notActive }
         try preflight(); try load(rules)
-        // Called when direct exceptions are removed: stale states must not
-        // retain the former exception. Only states for observed host addresses
-        // are removed; no global -F states operation is used.
-        for address in Set(sourceAddresses) {
-            guard Self.isAddress(address) else { throw LeakGuardError.invalid }
-            _ = try Self.command(["-k", address])
-        }
+        // Tightening exceptions or rebuilding the protected session invalidates
+        // existing states. The explicit opt-in UI discloses this network reset.
+        if resetExistingStates { _ = try Self.command(["-F", "states"]) }
         try verify()
     }
     func verify() throws {
@@ -64,6 +59,7 @@ final class PacketFilterGuard {
         let remaining = try Self.command(["-a", LeakGuardPolicy.anchor, "-sr"])
         guard Self.cleaned(remaining).isEmpty else { throw LeakGuardError.unresolved }
         let receiptToken = (try? String(contentsOf: receipt)).flatMap(LeakGuardPolicy.enableToken)
+        if record.resetsStates == true { _ = try Self.command(["-F", "states"]) }
         if let token = record.token ?? receiptToken {
             guard !token.isEmpty, token.allSatisfy({ $0.isASCII && $0.isNumber }), UInt64(token) != nil else { throw LeakGuardError.unresolved }
             _ = try Self.command(["-X", token])
@@ -137,19 +133,6 @@ final class PacketFilterGuard {
               ((attrs[.posixPermissions] as? NSNumber)?.intValue ?? 0o777) & 0o077 == 0,
               ((attrs[.size] as? NSNumber)?.intValue ?? Int.max) < 4096 else { throw LeakGuardError.unresolved }
         return try JSONDecoder().decode(Record.self, from: Data(contentsOf: journal))
-    }
-    static func sourceAddresses(_ interfaces: String) -> [String] {
-        interfaces.components(separatedBy: .newlines).compactMap { line in
-            let parts = line.split(whereSeparator: { $0.isWhitespace })
-            guard parts.count > 1, ["inet", "inet6"].contains(String(parts[0])) else { return nil }
-            let address = String(parts[1].split(separator: "%").first ?? "")
-            guard isAddress(address), address != "127.0.0.1", address != "::1" else { return nil }
-            return address
-        }
-    }
-    private static func isAddress(_ input: String) -> Bool {
-        var ipv6 = in6_addr()
-        return IPv4CIDR.parseAddress(input) != nil || input.withCString { inet_pton(AF_INET6, $0, &ipv6) } == 1
     }
     private static func cleaned(_ text: String) -> String {
         text.components(separatedBy: .newlines).filter { !$0.hasPrefix("No ALTQ") && !$0.hasPrefix("ALTQ") }

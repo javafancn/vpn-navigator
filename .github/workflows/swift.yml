@@ -18,4 +18,6 @@ jobs:
         run: swift build
       - name: Unit tests
         run: swift test
+      - name: Verify route rollback ordering without system mutations
+        run: '"$(swift build --show-bin-path)/VPNNavigatorHelper" --self-test-route-ordering'
 

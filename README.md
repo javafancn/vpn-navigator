@@ -1,100 +1,54 @@
 # VPN Navigator
 
-A native SwiftUI macOS OpenVPN CLI client project with a per-profile route policy engine.
+原生 macOS OpenVPN 客户端，提供配置管理、Original / 全局 VPN / 中国 IPv4 直连策略、菜单栏控制与网络诊断。
 
-## Development status (alpha; not yet production ready)
+当前开发版本：**0.2.0**。引擎、安全和 UI 分支已整合至 `main`。正式分发仍须完成 Developer ID 签名、公证和真实 VPN 网络验收；CI 的 UI 体验包不包含连接引擎，也不能注册特权助手。
 
-- Native macOS SwiftUI app, menu bar, profiles and diagnostics
-- Native profile store with configuration groups, favorites, full-text search, secure .ovpn editor, recoverable revisions, preserved original import and relative certificate materialization
-- Original / Full VPN / Mainland China IPv4 Direct policies
-- Country IPv4 rules with validated updates, CIDR diff and persistence
-- Swift helper code for OpenVPN process, Unix management socket, pinned endpoint, route transaction/rollback
-- XPC boundary requiring signed Team/allowed app identity
-- launchd LaunchAgent for daily IPv4 rule refresh
-- Standalone app packaging, signing, notarization and PKG packaging scripts with GPL source/notice checks
-- Verified GitHub Release PKG download (same Developer ID Team + Gatekeeper) with explicit system Installer handoff
-- Swift macOS CI unit tests and unsigned developer UI-only app build
+## 已实现
 
-**Not yet proven or delivered as a production VPN client:** audited signed/distributed OpenVPN binaries and dependency notices, notarized distribution, real root Helper registration, live VPN + DNS/IPv6 integration tests, traffic leak testing, complete split-route reliability, true firewall kill switch, full historical .ovpn support or unattended kernel upgrades.
+- 五个原生工作区、随桌面透色的毛玻璃、菜单栏、单窗口和退出前停止会话。
+- `.ovpn` 导入、搜索、分类、收藏、备注、安全编辑、版本恢复；原始配置保留，邻接证书材料内联至运行副本。
+- 用户名密码与可选 Keychain 保存；连接时自动询问缺少的凭据；加密私钥密码及 SCRV1 静态 OTP 单次安全输入。
+- 已认证 XPC、签名/权限校验、受管 OpenVPN 子进程、Unix 管理套接字、可取消连接和 20–180 秒连接/认证期限。
+- 三种路由策略、端点固定、局域网保护、路由事务日志、校验、热更新及确认进程退出后的回滚。
+- DNS 写前记录、固定原物理网络服务、可信 DNS hook 检查点；仅在当前值仍属于本应用时恢复，冲突时保留证据。
+- **默认关闭的实验性 PF 断线保护**：独立 anchor、引用 token、接口绑定状态、物理 IPv6 阻断与异常后保留保护。严格拒绝不兼容宿主 PF 配置，不替换主规则集。
+- 可选受管模式安全重连：仅在 PF 核验成功后，确认旧子进程、DNS 和路由已清理，再在保护持续存在的条件下启动新会话；10 分钟最多 3 次。
+- 随包提供可校验的离线初始 IPv4 地区规则、官方源回退下载、流式大小限制、本地导入、每日更新及快照恢复。
+- 实际 TCP 端口探测、系统 DNS 查询、最多 8 跳 traceroute、3 次 ICMP 延迟/丢包；支持取消和期限。
+- 私有、有界的故障类别日志与脱敏报告导出；报告不包含原始引擎输出、地址、域名、配置或凭据。
+- 首次使用检查、连接偏好、登录启动、升级/卸载准备；默认保留配置。
+- 从校验后的 OpenVPN/OpenSSL 源码构建 macOS 13 目标引擎；双架构安装器、版本自动读取、更新包架构筛选、最低系统版本审计、签名/公证与可选 Draft Release 流程。
 
-## Build (macOS 13+, Xcode Swift toolchain)
+## 构建
+
+需要 macOS 13+ 和 Swift 5.9+：
 
 ```sh
 swift test
-swift run VPNNavigatorApp
 zsh scripts/build-app.sh
 ```
 
-`dist/VPN Navigator.app` without a Developer ID signature and vetted bundled OpenVPN CLI is **UI-only**, and refuses privileged operation. It is NOT a working production VPN.
+未提供 `OPENVPN_BIN` 的构建是 UI-only。真实连接还需要符合签名要求的引擎、Developer ID 签名、通过 PKG 安装到 `/Applications` 的受保护应用，以及用户授权后台助手。应用不会要求最终用户安装 Homebrew。
 
-## Signed distribution
+源码引擎与签名分发步骤见 [安装与发布](docs/INSTALL_AND_RELEASE.md) 和 [手动签名工作流](docs/SIGNED_RELEASE_WORKFLOW.md)。
 
-See [INSTALL_AND_RELEASE.md](docs/INSTALL_AND_RELEASE.md). Sign with Developer ID, bundle a vetted relocatable GPL-compliant OpenVPN 2.x binary, use `scripts/build-app.sh`, then `scripts/build-pkg.sh` and notarize. Helper only executes binaries from root-owned signed app under /Applications; it cannot execute arbitrary paths. Sign-off requires physical macOS route/DNS/IPv6 testing.
+## 安全范围
 
-## Security
+断线保护为显式启用的实验性能力，限 IPv4 端点及全局/中国直连模式。在兼容的系统 PF 布局中接入独立 anchor；启用、重建、收紧规则或解除时会重置现有网络连接，包括其他 VPN。它不与未知 PF 布局强行共存。完整物理网络防泄漏验收尚未完成，不能依据静态规则或回环测试宣称零泄漏。
 
-No arbitrary scripts or plugins in imported OpenVPN profile are run as root. Only allowlisted directives and relative certificate files are allowed; unsupported profiles fail closed with a clear error. All imported originals are preserved separately and stored privately. Never commit secrets, .ovpn, .key, .p12 or .pfx files.
+非保护模式仍保守拒绝具有 IPv6 默认路由的受管 IPv4 策略。IPv6 地区分流、动态 CRV1/SAML/浏览器认证、TAP、任意脚本/插件和硬件 PKCS11 不在当前支持范围；不支持的配置或认证应明确失败。
 
-For architectural and safety caveats, read [ARCHITECTURE.md](docs/ARCHITECTURE.md).
+异常恢复只处理可确认的本应用 DNS、路由与 PF 所有权。活着或复用的孤儿 PID 不会被盲目终止，模糊事务不会被猜测删除。
 
-Rule feed: [chnroutes2](https://github.com/misakaio/chnroutes2), which requires license/attribution review for redistributions. OpenVPN Community 2.x has separate GPL obligations.
+## 验证与发布门槛
 
-## October 2026 safety and maintenance hardening
+自动化包括核心测试、macOS 14/15/26 和 Intel 构建、双架构 UI 包、回环网络探测、合成服务 DNS 恢复、PF 规则语法、实际单回环端口的 PF 阻断/解除，以及源码引擎与最低系统版本检查。各项是否通过以当前提交的 Actions 结果为准。
 
-- IPv4 country feeds now reject CIDRs that overlap RFC-reserved, multicast,
-  CGNAT and local-use ranges. Inputs from HTTP and XPC have byte/count limits.
-- Live rule updates rebuild the *effective* route plan with on-link LAN
-  exclusions instead of blindly applying changes in the source feed.
-- Before every country rules commit, a validated previous version is archived
-  under private Application Support; recent snapshots can be restored from UI.
-- Root XPC now uses macOS 13 `setCodeSigningRequirement` rather than
-  validating a peer by PID. Clients also validate the root helper's signing
-  identity before sending authentication credentials.
-- A previous root-helper crash with a leftover active OpenVPN configuration
-  refuses to start another session until the orphan is investigated.
-- The diagnostics view can show IPv6 default-route risk and DNS resolver counts
-  without revealing private domain names.
+以下仍需在签名安装包与实际服务器上记录结果：特权助手授权、真实 TLS/MFA、国内外出口与 DNS 抓包、IPv6/网络切换/睡眠唤醒、守护进程崩溃、长时运行及安装升级卸载。[完整验收清单](docs/QA.md) 与 [本轮完成记录](docs/PRODUCT_READINESS_2026_10_17.md)。
 
-These additions require real signed-macOS device testing. They are NOT
-equivalent to an audited kill switch, traffic leak guarantees or a production
-VPN release. See [QA](docs/QA.md).
+## 数据与许可证
 
-## macOS Alpha hardening — October 15, 2026
+配置可能包含私钥，默认只保存在本机私有目录；请勿提交真实 `.ovpn`、密码、私钥或签名证书。
 
-- VPN disconnect now waits for OpenVPN to exit before restoring custom routes.
-  If the child remains alive after graceful termination and forced stop,
-  the helper retains the active-profile marker and route journal.
-- Native profile switching uses the root helper's actual active profile ID,
-  requires explicit confirmation and verifies disconnect before reconnecting.
-- Added a bounded, reserved-range-aware IPv6 CIDR parser and offline rule set
-  as an **unwired foundation** for eventual dual-stack routing.
-  The current China route feed does not supply a corresponding IPv6 text feed.
-- Added a pure `FirewallRulePreview` generator and a separate macOS
-  `pfctl -vnf` syntax smoke test, without enabling PF or touching the
-  system's anchors. This is NOT yet a functioning kill switch.
-- Early startup signature failures avoid leaving a false active VPN marker.
-  Background helper deregistration checks the daemon's true session state.
-
-The shipping VPN remains **IPv4-only for non-original policies**, refuses
-unsafe IPv6 defaults and has no validated PF-enforced leak protection.
-
-## Route-management safety and recovery notes (October 2026)
-
-The managed Full VPN and China Direct modes now reject local `.ovpn`
-`route`/`route-ipv6`/`redirect-gateway` statements, and send
-OpenVPN compatibility `pull-filter` directives for server-pushed routes.
-The original profile remains available for Original mode. **These filters
-are not a hostile-server security boundary:** OpenVPN upstream warns that
-prefix matching may be bypassed by whitespace variations.
-
-On an OpenVPN RECONNECTING event, route-managed sessions terminate instead
-of releasing route ownership while the OpenVPN child is still alive. The
-Original mode continues to use OpenVPN's internal reconnect. Automatic safe
-reconnect for managed routes requires a verified firewall kill switch and
-hardware network-state testing; it is deliberately disabled for now.
-
-The helper writes a private root-owned `openvpn-child.json` containing the
-launched child PID. After an abnormal helper exit, **manual safe recovery**
-may clear the old session marker if `kill(pid, 0)` conclusively reports
-`ESRCH`. Any live/reused PID, missing record or ambiguous route journal
-blocks cleanup. No orphan is forcibly killed by PID.
+初始地区规则来自 [misakaio/chnroutes2](https://github.com/misakaio/chnroutes2)，保留 CC BY-SA 2.0 标识、来源和快照 blob SHA，见 `Resources/Rules/README.md`。OpenVPN/OpenSSL 的原始许可证与对应源码归档由源码构建/签名流程收集并随正式应用提供；分发前仍须审阅实际依赖与通知。

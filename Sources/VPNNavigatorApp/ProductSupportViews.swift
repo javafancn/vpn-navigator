@@ -3,6 +3,26 @@ import ServiceManagement
 import UniformTypeIdentifiers
 import VPNNavigatorCore
 
+struct AccountCredentialsView: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("身份验证").font(.system(size: 24, weight: .bold))
+            Text(model.selected?.name ?? "当前配置").font(.system(size: 14)).foregroundStyle(.secondary)
+            TextField("用户名", text: $model.username).textFieldStyle(.plain).referenceInput()
+            SecureField("密码", text: $model.password).textFieldStyle(.plain).referenceInput()
+            Toggle("在此 Mac 的 Keychain 中保存用户名与密码", isOn: $model.rememberCredentials)
+            HStack {
+                Button("取消") { model.password = ""; dismiss() }.buttonStyle(ReferenceSecondaryButton())
+                Spacer()
+                Button("连接") { dismiss(); Task { await model.connectSelected() } }
+                    .buttonStyle(ReferencePrimaryButton()).disabled(model.username.isEmpty || model.password.isEmpty)
+            }
+        }.padding(24).frame(width: 460).background(GlassAtmosphere())
+    }
+}
+
 struct MaintenanceAssistantView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -111,7 +131,7 @@ struct SetupAssistantView: View {
                         .buttonStyle(ReferenceSecondaryButton()).padding(.trailing, 14)
                 }
             }.glassCard(cornerRadius: 16)
-            Label("国内直连需要先下载或导入 IPv4 规则；IPv6 地区分流仍未提供，实验性断线保护需完成发布验收。", systemImage: "info.circle")
+            Label("国内直连使用已校验的本地规则，支持在线更新与离线导入。IPv6 地区分流未提供，实验性断线保护需完成发布验收。", systemImage: "info.circle")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
@@ -162,7 +182,7 @@ struct ClientPreferencesView: View {
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 Divider().opacity(0.25)
                 Toggle("断线保护（实验性，全局 VPN / 国内直连）", isOn: $model.killSwitch)
-                Text("启用时会检查 PF 环境、重置现有网络连接并阻断物理 IPv6。异常时保护保留，手动断开或恢复网络可解除。完整真机防泄漏验收尚待完成。")
+                Text("保护启用、重建、收紧规则或解除时会重置现有网络连接（含其它 VPN），并阻断物理 IPv6。异常时保护保留，手动断开或恢复网络可解除。完整真机验收尚待完成。")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 Toggle("受管模式安全重连（最多 3 次 / 10 分钟）", isOn: $model.reconnectManaged)
                     .disabled(!model.killSwitch)

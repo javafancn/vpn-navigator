@@ -65,11 +65,11 @@ final class HelperClient {
         await ask { helper, reply in helper.connectionStatus(reply: reply) }
     }
     func connect(profile: String, profileID: UUID, mode: RoutingMode, rules: String,
-                 username: String, password: String, preferences: SessionPreferences) async -> String {
+                 username: String, password: String, preferences: SessionPreferences, attemptID: UUID) async -> String {
         await ask { helper, reply in
             helper.connect(profile: profile, profileID: profileID.uuidString,
                            mode: mode.rawValue, rules: rules,
-                           username: username, password: password, preferences: preferences.json, reply: reply)
+                           username: username, password: password, preferences: preferences.json, attemptID: attemptID.uuidString, reply: reply)
         }
     }
     func submitChallenge(id: UUID, response: String) async -> String {
@@ -80,8 +80,8 @@ final class HelperClient {
         guard raw.utf8.count < 200_000, let data = raw.data(using: .utf8) else { return [] }
         return (try? JSONDecoder().decode([DiagnosticEvent].self, from: data)) ?? []
     }
-    func disconnect() async -> String {
-        await ask(timeout: 30) { helper, reply in helper.disconnect(reply: reply) }
+    func disconnect(attemptID: UUID? = nil) async -> String {
+        await ask(timeout: 30) { helper, reply in helper.disconnect(cancelAttemptID: attemptID?.uuidString ?? "", reply: reply) }
     }
     func trafficStatus() async -> String {
         await ask { helper, reply in helper.trafficStatus(reply: reply) }

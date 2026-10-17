@@ -10,7 +10,7 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
         reply("VPN Navigator Helper (signed)")
     }
     func connect(profile: String, profileID: String, mode: String, rules: String,
-                 username: String, password: String,
+                 username: String, password: String, preferences: String,
                  reply: @escaping (String) -> Void) {
         queue.async {
             guard let profileUUID = UUID(uuidString: profileID) else {
@@ -22,9 +22,16 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
             do {
                 try self.engine.start(profile: profile, profileID: profileUUID,
                                       mode: requested, ruleText: rules,
-                                      username: username, password: password)
+                                      username: username, password: password,
+                                      preferences: try SessionPreferences.decoded(preferences))
                 reply("Connecting. Await tunnel state and route validation.")
             } catch { reply("ERROR: \(error.localizedDescription)") }
+        }
+    }
+    func diagnosticEvents(reply: @escaping (String) -> Void) {
+        queue.async {
+            let data = (try? JSONEncoder().encode(self.engine.diagnosticEvents)) ?? Data()
+            reply(String(decoding: data, as: UTF8.self))
         }
     }
     func disconnect(reply: @escaping (String) -> Void) {
@@ -103,3 +110,4 @@ let delegate = HelperDelegate()
 listener.delegate = delegate
 listener.resume()
 RunLoop.current.run()
+

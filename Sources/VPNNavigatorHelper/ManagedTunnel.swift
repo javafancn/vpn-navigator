@@ -5,6 +5,12 @@ import VPNNavigatorCore
 /// Root-owned, single-session OpenVPN process. The caller has already passed code-signing verification.
 final class ManagedTunnel {
     let queue = DispatchQueue(label: "VPNNavigator.ManagedTunnel")
+    private var attemptTimer: DispatchSourceTimer?
+    private var preferences = SessionPreferences()
+    private var outputPipe: Pipe?
+    private var outputBuffer = Data()
+    private let eventStore = DiagnosticEventStore(file: URL(fileURLWithPath: "/var/run/vpn-navigator/events.json"))
+    var diagnosticEvents: [DiagnosticEvent] { eventStore.events() }
     private var networkWatchdog: DispatchSourceTimer?
     private let workdir = URL(fileURLWithPath: "/var/run/vpn-navigator", isDirectory: true)
     private var process: Process?
@@ -51,7 +57,7 @@ final class ManagedTunnel {
     var activeSplitRoutes: Bool { activeMode == .chinaDirect && routing != nil }
 
     func start(profile text: String, profileID: UUID, mode: RoutingMode, ruleText: String,
-               username: String, password: String) throws {
+               username: String, password: String, preferences: SessionPreferences = .init()) throws {
         guard getuid() == 0 else { throw TunnelError.needRoot }
         guard !FileManager.default.fileExists(atPath: workdir.appendingPathComponent("active.ovpn").path),
               !FileManager.default.fileExists(atPath: orphanRecordFile.path) else {
@@ -61,6 +67,7 @@ final class ManagedTunnel {
             throw TunnelError.unresolvedRoutes
         }
         guard process == nil else { throw TunnelError.alreadyRunning }
+        self.preferences = preferences
         let validated = try ProfileSafety.validate(text)
         try ManagedRoutingPolicy.validate(validated, mode: mode)
         // IPv4-only routing cannot protect IPv6. Refuse a non-original split or
@@ -104,11 +111,23 @@ final class ManagedTunnel {
         task.executableURL = URL(fileURLWithPath: binary)
         task.arguments = options
         task.currentDirectoryURL = workdir
-        task.standardOutput = FileHandle.nullDevice
-        task.standardError = FileHandle.nullDevice
+        let output = Pipe()
+        outputPipe = output
+        outputBuffer.removeAll(keepingCapacity: false)
+        task.standardOutput = output
+        task.standardError = output
+        output.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let bytes = handle.availableData
+            guard !bytes.isEmpty else { handle.readabilityHandler = nil; return }
+            self?.queue.async { [weak self] in self?.consumeLog(bytes) }
+        }
         task.terminationHandler = { [weak self, weak task] _ in
             self?.queue.async { [weak self] in
                 guard let self, let task, self.process === task else { return }
+                if self.state != .stopping && self.state != .failed {
+                    self.eventStore.append(.unexpectedExit)
+                    self.lastError = "OpenVPN 意外退出，请查看诊断报告。"
+                }
                 self.stopRoutesAndReset()
             }
         }
@@ -121,6 +140,8 @@ final class ManagedTunnel {
         message = "OpenVPN is starting"
         do {
             try task.run()
+            eventStore.append(.starting)
+            startAttemptDeadline()
             let record = try OrphanProcessRecord(pid: task.processIdentifier)
             try JSONEncoder().encode(record).write(to: orphanRecordFile, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600],
@@ -133,7 +154,8 @@ final class ManagedTunnel {
                 self?.queue.async { [weak self] in
                     guard let self, self.management === socket else { return }
                     self.stop()
-                    self.lastError = "VPN authentication failed. Check the credentials."
+                    self.eventStore.append(.authentication)
+                    self.lastError = DiagnosticCode.authentication.summary
                     self.state = .failed
                     self.message = self.lastError ?? "Authentication failed"
                 }
@@ -178,6 +200,35 @@ final class ManagedTunnel {
             throw error
         }
     }
+    private func startAttemptDeadline() {
+        // One total deadline per attempt. Repeated RECONNECTING messages must
+        // not postpone it indefinitely.
+        guard attemptTimer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + .seconds(preferences.connectionTimeout))
+        timer.setEventHandler { [weak self] in
+            guard let self, self.state != .connected else { return }
+            self.eventStore.append(.timeout)
+            self.stop()
+            self.lastError = DiagnosticCode.timeout.summary
+            self.state = .failed
+            self.message = DiagnosticCode.timeout.summary
+        }
+        attemptTimer = timer; timer.resume()
+    }
+
+    private func consumeLog(_ data: Data) {
+        // Bound even a hostile/very verbose engine line. Raw data is transient
+        // and discarded; only predefined failure categories are persisted.
+        outputBuffer.append(data.prefix(32_768))
+        if outputBuffer.count > 65_536 { outputBuffer.removeAll(); return }
+        while let end = outputBuffer.firstIndex(of: 10) {
+            let line = String(decoding: outputBuffer[..<end], as: UTF8.self)
+            outputBuffer.removeSubrange(...end)
+            if let code = OpenVPNLogClassifier.classify(line) { eventStore.append(code) }
+        }
+    }
+
     private func checkIPv6Bypass() throws {
         // The IPv6 policy must never treat a failed command as absence of
         // IPv6. In dual-stack networks a physical IPv6 default bypasses
@@ -203,7 +254,7 @@ final class ManagedTunnel {
             return
         }
         if snapshot.state == .reconnecting,
-           TunnelReconnectPolicy.action(for: activeMode) == .stopAndRestoreOnlyAfterExit {
+           (TunnelReconnectPolicy.action(for: activeMode) == .stopAndRestoreOnlyAfterExit || !preferences.reconnectOriginal) {
             // Releasing route ownership while OpenVPN is still reconnecting
             // silently creates a path back to the physical network. A managed
             // reconnect requires a proven PF kill switch that does not exist yet.
@@ -215,6 +266,12 @@ final class ManagedTunnel {
         }
         state = snapshot.state
         message = snapshot.message
+        if snapshot.state == .connected {
+            attemptTimer?.cancel(); attemptTimer = nil
+            eventStore.append(.connected)
+        } else if snapshot.state == .reconnecting {
+            startAttemptDeadline()
+        }
         if snapshot.state == .connected && activeMode == .chinaDirect {
             state = .connecting
             message = "Applying and validating China IPv4 routes"
@@ -384,6 +441,7 @@ final class ManagedTunnel {
             guard let rules else { throw TunnelError.missingRules }
             try verifySplitRoutes(plan: plan, country: rules)
         } catch {
+            eventStore.append(.networkChanged)
             let failure = "Network route/IPv6 protection changed; VPN disconnected: \(error.localizedDescription)"
             stop()
             lastError = failure
@@ -393,6 +451,7 @@ final class ManagedTunnel {
     }
 
     func retryRouteRecovery() -> String {
+        eventStore.append(.recovery)
         guard process == nil else {
             return "ERROR: Disconnect the current VPN before recovering routes."
         }
@@ -493,6 +552,7 @@ final class ManagedTunnel {
         }
     }
     func stop() {
+        attemptTimer?.cancel(); attemptTimer = nil
         // A restarted helper has no Process identity for an orphaned child.
         // A plain Disconnect must never erase the very evidence that prevents
         // route rollback and a competing tunnel. Recovery checks PID absence.
@@ -552,6 +612,12 @@ final class ManagedTunnel {
         networkWatchdog = nil
         management?.close()
         management = nil
+        attemptTimer?.cancel(); attemptTimer = nil
+        outputPipe?.fileHandleForReading.readabilityHandler = nil
+        try? outputPipe?.fileHandleForReading.close()
+        outputPipe = nil
+        outputBuffer.removeAll(keepingCapacity: false)
+        eventStore.append(.stopped)
         routing?.rollback()
         routing = nil
         activePlan = nil
@@ -598,3 +664,4 @@ enum TunnelError: Error, LocalizedError {
         }
     }
 }
+

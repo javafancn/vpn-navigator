@@ -16,6 +16,19 @@ final class AppModel: ObservableObject {
     @Published var rules: RuleSet?
     @Published var ipv6Preview: IPv6RuleSet?
     @Published var ruleSnapshots: [RuleSnapshot] = []
+    @Published var showingSetup = false
+    @Published var showingPreferences = false
+    @Published var showingDiagnostics = false
+    @Published var connectionTimeout = UserDefaults.standard.integer(forKey: "connectionTimeout") {
+        didSet { UserDefaults.standard.set(connectionTimeout, forKey: "connectionTimeout") }
+    }
+    @Published var reconnectOriginal = UserDefaults.standard.object(forKey: "reconnectOriginal") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(reconnectOriginal, forKey: "reconnectOriginal") }
+    }
+    @Published var eventHistory: [DiagnosticEvent] = []
+    @Published var profileSizes: [UUID: Int] = [:]
+    private var connectionAttempt: UUID?
+    private let localEvents = DiagnosticEventStore(file: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("VPNNavigator/Diagnostics/events.json"))
     @Published var busy = false
     @Published var message: String?
     @Published var helperStatus = "未启用"
@@ -67,7 +80,13 @@ final class AppModel: ObservableObject {
             connectionStatus = "disconnected: UI composition fixture, no tunnel"
             return
         }
-        Task { await load() }
+        Task {
+            await load()
+            eventHistory = localEvents.events()
+            if !UserDefaults.standard.bool(forKey: "setupAssistantDismissed") {
+                showingSetup = true
+            }
+        }
         Task {
             while !Task.isCancelled {
                 await refreshConnectionStatus()
@@ -78,12 +97,24 @@ final class AppModel: ObservableObject {
 
     var selected: VPNProfile? { profiles.first { $0.id == selectedID } }
     var activeProfile: VPNProfile? { profiles.first { $0.id == activeProfileID } }
-    var connected: Bool { connectionStatus.hasPrefix("connected:") }
-    var connecting: Bool { connectionStatus.hasPrefix("connecting:") || connectionStatus.hasPrefix("authenticating:") }
+    var sessionState: TunnelState {
+        TunnelState(rawValue: String(connectionStatus.prefix { $0 != ":" })) ?? .failed
+    }
+    var connected: Bool { sessionState == .connected }
+    var connecting: Bool { [.connecting, .authenticating, .reconnecting].contains(sessionState) }
+    var stopping: Bool { sessionState == .stopping }
+    var canQuit: Bool { !connected && !connecting && !stopping && activeProfileID == nil }
+    var sessionPreferences: SessionPreferences {
+        .init(connectionTimeout: connectionTimeout == 0 ? 60 : connectionTimeout,
+              reconnectOriginal: reconnectOriginal)
+    }
 
     func load() async {
         do {
             profiles = try await store.list()
+            var sizes: [UUID: Int] = [:]
+            for item in profiles { sizes[item.id] = try? await store.fileSize(for: item) }
+            profileSizes = sizes
             if selectedID == nil { selectedID = profiles.first?.id }
             rules = try await updater.cached()
             ipv6Preview = try await ipv6Updater.cached()
@@ -355,14 +386,19 @@ final class AppModel: ObservableObject {
         }
     }
     func connectSelected() async {
-        guard !busy, let selected else { return }
-        busy = true; defer { busy = false }
+        guard !busy, !connecting, !connected, !stopping, let selected else { return }
+        let attempt = UUID(); connectionAttempt = attempt
+        connectionStatus = "connecting: 正在准备连接"
+        busy = true
+        defer { if connectionAttempt == attempt { busy = false } }
+        localEvents.append(.starting)
         do {
             let text = try await store.runtimeConfig(for: selected)
             let validated = try ProfileSafety.validate(text)
             try ManagedRoutingPolicy.validate(validated, mode: selected.mode)
             if selected.mode == .chinaDirect && rules == nil {
-                message = "Download China IPv4 rules before connecting."
+                message = "请先下载或导入中国 IPv4 规则。"
+                connectionStatus = "failed: 缺少中国 IPv4 规则"
                 return
             }
             if rememberCredentials && (username.isEmpty || password.isEmpty),
@@ -374,13 +410,22 @@ final class AppModel: ObservableObject {
                 try KeychainVault.store(.init(username: username, password: password), id: selected.id)
             }
             let rulesText = (rules?.routes ?? []).map(\.description).joined(separator: "\n")
+            guard connectionAttempt == attempt else { return }
             let result = await helper.connect(profile: text, profileID: selected.id,
                                               mode: selected.mode, rules: rulesText,
-                                              username: username, password: password)
+                                              username: username, password: password, preferences: sessionPreferences)
+            guard connectionAttempt == attempt else { return }
             password = "" // never retain passwords in UI state after a connection attempt
-            if result.hasPrefix("ERROR:") { message = result }
-            else { connectionStatus = "connecting: \(result)" }
-        } catch { message = "Profile rejected: \(error.localizedDescription)" }
+            if result.hasPrefix("ERROR:") {
+                message = result
+                connectionStatus = "failed: \(result)"
+            } else { await refreshConnectionStatus() }
+        } catch {
+            guard connectionAttempt == attempt else { return }
+            password = ""
+            message = "配置未通过检查：\(error.localizedDescription)"
+            connectionStatus = "failed: 配置未通过检查"
+        }
     }
     func switchToSelected() async {
         guard !busy, let selected, connected, activeProfileID != selected.id else { return }
@@ -401,10 +446,56 @@ final class AppModel: ObservableObject {
         await connectSelected()
     }
     func disconnect() async {
+        guard !stopping else { return }
+        connectionAttempt = nil
+        if connecting { localEvents.append(.cancelled) }
+        connectionStatus = "stopping: 正在停止连接并恢复网络"
+        busy = true
         let response = await helper.disconnect()
+        busy = false
         if response.hasPrefix("ERROR:") { message = response }
+        localEvents.append(.stopped)
         await refreshConnectionStatus()
     }
+    func refreshDiagnostics() async {
+        let remote = helper.installationStatus == .enabled ? await helper.diagnosticEvents() : []
+        eventHistory = (localEvents.events() + remote).sorted { $0.date < $1.date }
+    }
+    func exportDiagnostics() async {
+        await refreshDiagnostics()
+        // Explicitly constructed support fields; never serialize AppModel,
+        // profile contents, command output, hostnames, IPs or Keychain values.
+        let events = eventHistory.suffix(150).map {
+            "\(ISO8601DateFormatter().string(from: $0.date)) [\($0.code.rawValue)] \($0.code.summary)"
+        }.joined(separator: "\n")
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        let report = "VPN Navigator \(version)\nmacOS \(ProcessInfo.processInfo.operatingSystemVersionString)\n状态：\(sessionState.rawValue)\n配置数：\(profiles.count)\nIPv4规则数：\(rules?.routes.count ?? 0)\n\n本报告不包含地址、域名、配置、证书或凭据。\n\n\(events)\n"
+        let panel = NSSavePanel(); panel.nameFieldStringValue = "VPNNavigator-diagnostics.txt"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try report.write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        } catch { message = "诊断报告保存失败：\(error.localizedDescription)" }
+    }
+    func importRules(_ url: URL) async {
+        guard !busy else { return }
+        let granted = url.startAccessingSecurityScopedResource()
+        defer { if granted { url.stopAccessingSecurityScopedResource() } }
+        busy = true; defer { busy = false }
+        do {
+            let candidate = try await updater.localCandidate(url)
+            if connected {
+                let response = await helper.updateRules(candidate.routes.map(\.description).joined(separator: "\n"))
+                guard response == "Rules applied" || response == "NO_ACTIVE_SPLIT" else {
+                    message = response; return
+                }
+            }
+            try await updater.commit(candidate)
+            rules = candidate; ruleSnapshots = try await updater.snapshots()
+            message = "已校验并导入 \(candidate.routes.count) 条 IPv4 规则。"
+        } catch { message = "规则导入失败，原规则已保留：\(error.localizedDescription)" }
+    }
+
     func exportPreview() async {
         guard let profile = selected else { return }
         do {
@@ -421,10 +512,12 @@ final class AppModel: ObservableObject {
 
 @main
 struct VPNNavigatorApp: App {
+    @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
     @StateObject private var model = AppModel()
     var body: some Scene {
-        WindowGroup("VPN Navigator") {
+        Window("VPN Navigator", id: "main") {
             MainView().environmentObject(model)
+                .onAppear { appDelegate.model = model }
                 .frame(minWidth: 1100, minHeight: 700)
         }
         .windowStyle(.hiddenTitleBar)

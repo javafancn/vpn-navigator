@@ -60,6 +60,14 @@ public actor RuleUpdater {
         guard FileManager.default.fileExists(atPath: file.path) else { return nil }
         return try RuleSet(text: String(contentsOf: file, encoding: .utf8))
     }
+    public func localCandidate(_ url: URL) throws -> RuleSet {
+        let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard ((attrs[.size] as? NSNumber)?.intValue ?? Int.max) < 2_000_000 else { throw RuleError.tooLarge }
+        let value = try RuleSet(text: String(contentsOf: url, encoding: .utf8))
+        guard value.routes.count >= 100 else { throw RuleError.empty }
+        if let previous = try cached() { try Self.validateChange(previous: previous, next: value) }
+        return value
+    }
     public func fetchCandidate() async throws -> RuleSet {
         let (data, response) = try await URLSession.shared.data(from: Self.source)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw RuleError.empty }
@@ -106,3 +114,4 @@ public actor RuleUpdater {
         return candidate
     }
 }
+

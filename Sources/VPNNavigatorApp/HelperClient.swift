@@ -65,12 +65,17 @@ final class HelperClient {
         await ask { helper, reply in helper.connectionStatus(reply: reply) }
     }
     func connect(profile: String, profileID: UUID, mode: RoutingMode, rules: String,
-                 username: String, password: String) async -> String {
+                 username: String, password: String, preferences: SessionPreferences) async -> String {
         await ask { helper, reply in
             helper.connect(profile: profile, profileID: profileID.uuidString,
                            mode: mode.rawValue, rules: rules,
-                           username: username, password: password, reply: reply)
+                           username: username, password: password, preferences: preferences.json, reply: reply)
         }
+    }
+    func diagnosticEvents() async -> [DiagnosticEvent] {
+        let raw = await ask { helper, reply in helper.diagnosticEvents(reply: reply) }
+        guard raw.utf8.count < 200_000, let data = raw.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([DiagnosticEvent].self, from: data)) ?? []
     }
     func disconnect() async -> String {
         await ask(timeout: 30) { helper, reply in helper.disconnect(reply: reply) }
@@ -100,3 +105,4 @@ private final class OnceReply: @unchecked Sendable {
         if shouldFire { done(result) }
     }
 }
+

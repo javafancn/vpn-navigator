@@ -5,8 +5,9 @@ import Foundation
 @objc public protocol VPNNavigatorHelperAPI {
     func health(reply: @escaping (String) -> Void)
     func connect(profile: String, profileID: String, mode: String, rules: String,
-                 username: String, password: String,
+                 username: String, password: String, preferences: String,
                  reply: @escaping (String) -> Void)
+    func diagnosticEvents(reply: @escaping (String) -> Void)
     func disconnect(reply: @escaping (String) -> Void)
     func connectionStatus(reply: @escaping (String) -> Void)
     func sessionSnapshot(reply: @escaping (String) -> Void)
@@ -20,3 +21,4 @@ public enum HelperIdentity {
     public static let machService = "com.javafancn.vpn-navigator.helper"
     public static let plistName = "com.javafancn.vpn-navigator.helper.plist"
 }
+

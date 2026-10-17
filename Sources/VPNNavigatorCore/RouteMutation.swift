@@ -33,4 +33,17 @@ public enum TunnelShutdownPolicy {
     public static func mayRestoreRoutes(openVPNExited: Bool) -> Bool {
         openVPNExited
     }
+
+    /// A newly started helper cannot infer that an old OpenVPN child has died
+    /// merely because it has no local Process object. Its private session
+    /// markers must survive ordinary disconnect and require explicit
+    /// absence-only orphan recovery instead.
+    public static func mayFinalizeSessionCleanup(
+        ownedChildProcess: Bool,
+        childExited: Bool,
+        hasPersistentSessionEvidence: Bool
+    ) -> Bool {
+        if ownedChildProcess { return childExited }
+        return !hasPersistentSessionEvidence
+    }
 }

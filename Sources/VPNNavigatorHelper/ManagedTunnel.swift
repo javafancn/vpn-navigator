@@ -16,8 +16,15 @@ final class ManagedTunnel {
     private var activePlan: RoutePlan?
     private var protectedLocalNetworks: [IPv4CIDR] = []
     private var protectedPhysicalInterface: String?
+    private var protectedVPNInterface: String?
+    private var fullVPNEndpointIPv4: String?
+    private var fullVPNGateway: String?
     private var lastError: String?
     private var orphanRecordFile: URL { workdir.appendingPathComponent("openvpn-child.json") }
+    private var hasPersistentSessionEvidence: Bool {
+        FileManager.default.fileExists(atPath: workdir.appendingPathComponent("active.ovpn").path) ||
+        FileManager.default.fileExists(atPath: orphanRecordFile.path)
+    }
 
     init() {
         // Never remove routes while an OpenVPN process may still be alive
@@ -63,11 +70,9 @@ final class ManagedTunnel {
             rules = try RuleSet(text: ruleText)
             guard let rules, rules.routes.count >= 100 else { throw TunnelError.missingRules }
         }
-        guard !username.contains("\n"), !password.contains("\n"),
-              username.utf8.count < 1024, password.utf8.count < 4096 else { throw TunnelError.badCredential }
-        if validated.requestsCredentials && (username.isEmpty || password.isEmpty) {
-            throw TunnelError.badCredential
-        }
+        guard ManagementCredentialPolicy.allows(
+            username: username, password: password,
+            credentialsRequired: validated.requestsCredentials) else { throw TunnelError.badCredential }
         // Resolve and verify both required signed components before creating
         // any root-owned session markers or credentials.
         let binary = try ExecutableTrust.trustedOpenVPN().path
@@ -216,7 +221,24 @@ final class ManagedTunnel {
         }
         if snapshot.state == .connected, activeMode == .fullVPN {
             do {
-                try verifyForeignVPNRoute(knownTunnel: nil)
+                guard let remote = snapshot.remoteIPv4,
+                      let localIP = snapshot.localTunnelIPv4 else {
+                    throw TunnelError.routeVerificationFailed
+                }
+                let interfaces = try RouteExecutor.command("/sbin/ifconfig", ["-a"])
+                guard let expectedTunnel = Self.findTunnel(containing: localIP, in: interfaces) else {
+                    throw TunnelError.noTunnelInterface
+                }
+                try verifyForeignVPNRoute(knownTunnel: expectedTunnel)
+                let endpoint = try RouteExecutor.command("/sbin/route", ["-n", "get", remote])
+                guard let physical = Self.parseValue("interface:", in: endpoint),
+                      physical.hasPrefix("en"),
+                      let gateway = Self.parseValue("gateway:", in: endpoint),
+                      !gateway.isEmpty else { throw TunnelError.noPhysicalGateway }
+                protectedVPNInterface = expectedTunnel
+                protectedPhysicalInterface = physical
+                fullVPNEndpointIPv4 = remote
+                fullVPNGateway = gateway
                 state = .connected
                 message = "Connected · global VPN route verified"
                 startNetworkWatchdog()
@@ -264,6 +286,7 @@ final class ManagedTunnel {
             activePlan = plan
             protectedLocalNetworks = localPrefixes
             protectedPhysicalInterface = physicalInterface
+            protectedVPNInterface = utun
             state = .connected
             message = "Connected · China IPv4 split routing enabled"
             startNetworkWatchdog()
@@ -328,7 +351,18 @@ final class ManagedTunnel {
         do {
             try checkIPv6Bypass()
             if activeMode == .fullVPN {
-                try verifyForeignVPNRoute(knownTunnel: nil)
+                guard let expectedTunnel = protectedVPNInterface,
+                      let remote = fullVPNEndpointIPv4,
+                      let expectedGateway = fullVPNGateway,
+                      let expectedPhysical = protectedPhysicalInterface else {
+                    throw TunnelError.routeVerificationFailed
+                }
+                try verifyForeignVPNRoute(knownTunnel: expectedTunnel)
+                let endpoint = try RouteExecutor.command("/sbin/route", ["-n", "get", remote])
+                guard Self.parseValue("interface:", in: endpoint) == expectedPhysical,
+                      Self.parseValue("gateway:", in: endpoint) == expectedGateway else {
+                    throw TunnelError.noPhysicalGateway
+                }
                 return
             }
             guard activeMode == .chinaDirect, let plan = activePlan,
@@ -442,6 +476,7 @@ final class ManagedTunnel {
 
         do {
             try executor.refreshDirectRoutes(added: additions, removed: removals)
+            try verifySplitRoutes(plan: updated, country: next)
             activePlan = updated
             rules = next
             message = "Routes refreshed; OpenVPN remains connected"
@@ -458,6 +493,16 @@ final class ManagedTunnel {
         }
     }
     func stop() {
+        // A restarted helper has no Process identity for an orphaned child.
+        // A plain Disconnect must never erase the very evidence that prevents
+        // route rollback and a competing tunnel. Recovery checks PID absence.
+        if process == nil && !TunnelShutdownPolicy.mayFinalizeSessionCleanup(
+            ownedChildProcess: false, childExited: false,
+            hasPersistentSessionEvidence: hasPersistentSessionEvidence) {
+            state = .failed
+            message = "Previous OpenVPN session is unverified. Use Safe Network Recovery; Disconnect cannot clear its evidence."
+            return
+        }
         networkWatchdog?.cancel()
         networkWatchdog = nil
         lastError = nil
@@ -492,16 +537,29 @@ final class ManagedTunnel {
     private func stopRoutesAndReset() {
         // Invoked by both explicit disconnect and a natural process-exit
         // callback. A stale callback must never restore routes for a live VPN.
-        guard TunnelShutdownPolicy.mayRestoreRoutes(openVPNExited: process?.isRunning != true) else {
+        guard TunnelShutdownPolicy.mayRestoreRoutes(openVPNExited: process?.isRunning != true),
+              TunnelShutdownPolicy.mayFinalizeSessionCleanup(
+                ownedChildProcess: process != nil,
+                childExited: process?.isRunning != true,
+                hasPersistentSessionEvidence: hasPersistentSessionEvidence) else {
             state = .failed
-            message = "OpenVPN is still running; preserving VPN routes and recovery evidence."
+            message = "OpenVPN exit or ownership is unverified; preserving routes and session evidence."
             return
         }
+        // Natural child exit may reach here before the management socket's
+        // EOF callback. Disable its stale callbacks and stop the watchdog.
+        networkWatchdog?.cancel()
+        networkWatchdog = nil
+        management?.close()
+        management = nil
         routing?.rollback()
         routing = nil
         activePlan = nil
         protectedLocalNetworks = []
         protectedPhysicalInterface = nil
+        protectedVPNInterface = nil
+        fullVPNEndpointIPv4 = nil
+        fullVPNGateway = nil
         process = nil
         activeProfileID = nil
         traffic = nil

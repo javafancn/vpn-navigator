@@ -121,3 +121,19 @@ ownership-checked route-journal rollback. Ambiguous WAL records still block.
 
 The route-managed reconnect event is a fail-safe disconnect, **not**
 seamless auto-reconnect and **not** an active PF firewall kill switch.
+
+## Input and managed route audit (October 2026)
+
+The OpenVPN 2.7 DNS hook now treats `dns_vars_file` as an **untrusted
+KEY=value data file**, not as shell source. Accepted values are narrowly
+restricted and the file must belong to the hook's effective UID, be
+non-symlink, and not group/other writable. Unsupported DNS characters
+fail the hook rather than executing commands. A validation-only smoke
+mode verifies this in CI without changing DNS state.
+
+OpenVPN management credentials reject control characters and Unicode line
+separators before being forwarded to the privileged child. Full VPN
+requires its connected IPv4 route to use the actual reported tunnel,
+records the server's physical route, and checks both identities on
+subsequent watchdog ticks. The interval between ticks is not covered
+by a traffic-enforcing kill switch.

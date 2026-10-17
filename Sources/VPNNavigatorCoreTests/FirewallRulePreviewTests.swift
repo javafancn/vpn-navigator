@@ -27,6 +27,24 @@ final class FirewallRulePreviewTests: XCTestCase {
         XCTAssertEqual(rendered.components(separatedBy: "223.5.5.0/24").count, 2)
     }
 
+    func testPreviewCannotAllowAllPhysicalTraffic() throws {
+        XCTAssertThrowsError(try FirewallRulePreview(
+            physicalInterface: "en0", tunnelInterface: "utun4",
+            endpointIPv4: "8.8.8.8", endpointPort: 1194, transport: .udp,
+            policy: .chinaDirect([try IPv4CIDR("0.0.0.0/0")]),
+            localNetworks: [try IPv4CIDR("192.168.1.0/24")]))
+        XCTAssertThrowsError(try FirewallRulePreview(
+            physicalInterface: "en0", tunnelInterface: "utun4",
+            endpointIPv4: "8.8.8.8", endpointPort: 1194, transport: .udp,
+            policy: .fullVPN,
+            localNetworks: [try IPv4CIDR("0.0.0.0/0")]))
+        XCTAssertThrowsError(try FirewallRulePreview(
+            physicalInterface: "en0", tunnelInterface: "utun4",
+            endpointIPv4: "8.8.8.8", endpointPort: 1194, transport: .udp,
+            policy: .chinaDirect([try IPv4CIDR("192.168.0.0/16")]),
+            localNetworks: [try IPv4CIDR("192.168.1.0/24")]))
+    }
+
     func testBroadDirectExceptionsAreRejected() throws {
         let local = try IPv4CIDR("192.168.1.0/24")
         for broad in ["0.0.0.0/0", "0.0.0.0/1", "128.0.0.0/1", "0.0.0.0/7"] {
@@ -54,3 +72,4 @@ final class FirewallRulePreviewTests: XCTestCase {
             policy: .fullVPN, localNetworks: []))
     }
 }
+

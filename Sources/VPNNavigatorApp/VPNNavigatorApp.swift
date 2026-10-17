@@ -18,12 +18,14 @@ final class AppModel: ObservableObject {
     @Published var ruleSnapshots: [RuleSnapshot] = []
     @Published var busy = false
     @Published var message: String?
-    @Published var helperStatus = "Unavailable"
+    @Published var helperStatus = "未启用"
     @Published var availableInstaller: URL?
     @Published var availableReleasePage: URL?
     @Published var connectionStatus = "disconnected: Not connected"
     @Published var activeProfileID: UUID?
     @Published var traffic: TunnelTraffic?
+    @Published var receiveTrend = TrafficTrend()
+    @Published var sendTrend = TrafficTrend()
     @Published var username = ""
     @Published var password = ""
     @Published var rememberCredentials = UserDefaults.standard.bool(forKey: "rememberCredentials") {
@@ -44,6 +46,27 @@ final class AppModel: ObservableObject {
         store = ProfileStore(root: root.appendingPathComponent("Profiles"))
         updater = RuleUpdater(folder: root.appendingPathComponent("Rules"))
         ipv6Updater = APNICIPv6PreviewStore(root: root.appendingPathComponent("Rules"))
+        // CI-only in-memory composition fixture for checking the populated
+        // inspector against the design. Never written to ProfileStore, never
+        // launches OpenVPN and never marks the session as connected.
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot") {
+            let names = [
+                ("dy", "dy.ovpn", true),
+                ("工作网络", "work.ovpn", false),
+                ("家庭网络", "home.ovpn", false),
+                ("新加坡节点", "sg.ovpn", false),
+                ("美国节点", "us.ovpn", false),
+                ("日本节点", "jp.ovpn", false)
+            ]
+            profiles = names.map { name, file, favorite in
+                VPNProfile(name: name, sourceFilename: file,
+                    relativePath: "ui-snapshot-only",
+                    group: "个人", isFavorite: favorite)
+            }
+            selectedID = profiles.first?.id
+            connectionStatus = "disconnected: UI composition fixture, no tunnel"
+            return
+        }
         Task { await load() }
         Task {
             while !Task.isCancelled {
@@ -120,6 +143,9 @@ final class AppModel: ObservableObject {
     }
 
     func revisions(for profile: VPNProfile) async -> [ProfileRevision] {
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot") {
+            return []
+        }
         do { return try await store.revisions(for: profile) }
         catch { message = "Cannot read profile history: \(error.localizedDescription)"; return [] }
     }
@@ -281,30 +307,51 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func displayHelperStatus(_ status: SMAppService.Status) -> String {
+        switch status {
+        case .enabled: return "已启用"
+        case .notRegistered: return "未注册"
+        case .requiresApproval: return "等待系统授权"
+        case .notFound: return "服务未安装"
+        @unknown default: return "状态未知"
+        }
+    }
+
     func requestHelper() {
         do {
             try helper.requestRegistration()
             try SMAppService.agent(plistName: "com.javafancn.vpn-navigator.rules.plist").register()
-            helperStatus = String(describing: helper.installationStatus)
+            helperStatus = displayHelperStatus(helper.installationStatus)
             message = "Enable the background helper in System Settings if requested. A signed .app distribution is required."
         } catch { message = "Helper registration failed: \(error.localizedDescription)" }
     }
     func refreshConnectionStatus() async {
-        helperStatus = String(describing: helper.installationStatus)
+        helperStatus = displayHelperStatus(helper.installationStatus)
         if helper.installationStatus == .enabled {
             if let report = await helper.sessionReport() {
                 connectionStatus = report.statusText
                 activeProfileID = report.activeProfileID
                 traffic = report.traffic
+                if report.state == .connected, let value = report.traffic {
+                    receiveTrend.record(cumulativeBytes: value.receivedBytes)
+                    sendTrend.record(cumulativeBytes: value.sentBytes)
+                } else {
+                    receiveTrend.reset()
+                    sendTrend.reset()
+                }
             } else {
                 connectionStatus = "failed: Privileged helper did not return a valid session snapshot"
                 activeProfileID = nil
                 traffic = nil
+                receiveTrend.reset()
+                sendTrend.reset()
             }
         } else {
             connectionStatus = "disconnected: Privileged helper not enabled"
             activeProfileID = nil
             traffic = nil
+            receiveTrend.reset()
+            sendTrend.reset()
         }
     }
     func connectSelected() async {
@@ -378,46 +425,18 @@ struct VPNNavigatorApp: App {
     var body: some Scene {
         WindowGroup("VPN Navigator") {
             MainView().environmentObject(model)
-                .frame(minWidth: 780, minHeight: 500)
+                .frame(minWidth: 1100, minHeight: 700)
         }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1100, height: 700)
         MenuBarExtra("VPN Navigator", systemImage: "network") {
-            Text("VPN Navigator")
-            Text(model.connectionStatus).foregroundStyle(.secondary)
-            if let current = model.activeProfile { Text("Active: \(current.name)") }
-            if let traffic = model.traffic {
-                Text("↓ " + ByteCountFormatter.string(fromByteCount: Int64(clamping: traffic.receivedBytes), countStyle: .file) +
-                     "  ↑ " + ByteCountFormatter.string(fromByteCount: Int64(clamping: traffic.sentBytes), countStyle: .file))
-                    .foregroundStyle(.secondary)
-            }
-            Divider()
-            if model.connected || model.connecting {
-                Button("Disconnect") { Task { await model.disconnect() } }
-            } else {
-                Button("Connect Selected Profile") { Task { await model.connectSelected() } }
-                    .disabled(model.selected == nil)
-            }
-            Button("Check China IP Rules") { Task { await model.refreshRules() } }
-            Divider()
-            Text("\(model.profiles.count) saved profiles")
+            GlassMenuBarView().environmentObject(model)
         }
+        .menuBarExtraStyle(.window)
         Settings {
-            Form {
-                LabeledContent("VPN engine", value: "Bundled OpenVPN CLI (requires signed distribution)")
-                LabeledContent("Background helper", value: model.helperStatus)
-                Button("Enable Privileged Helper…") { model.requestHelper() }
-                Button("Disable Background Services…") { Task { await model.disableServices() } }
-                Button("Attempt Safe Network Recovery…") { Task { await model.retryNetworkRecovery() } }
-                Button("Check for App Updates") { Task { await model.checkForUpdates() } }
-                Button("Download Verified Update…") { Task { await model.downloadVerifiedUpdate() } }
-                    .disabled(model.availableInstaller == nil || model.busy)
-                Button("View Release Notes…") { model.viewReleasePage() }
-                    .disabled(model.availableReleasePage == nil)
-                Text("This developer SwiftPM build cannot register a launch daemon by itself. Use the signed app bundle.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            .formStyle(.grouped)
-            .frame(width: 540)
-            .padding()
+            SystemSettingsPane().environmentObject(model)
+                .frame(minWidth: 650, minHeight: 620)
         }
     }
 }
+

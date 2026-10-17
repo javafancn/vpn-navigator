@@ -4,8 +4,14 @@
 set -euo pipefail
 cd "${0:A:h}/.."
 
-swift build -c release
-BIN="$(swift build -c release --show-bin-path)"
+# CI may opt in to a universal UI-only developer bundle. Production
+# builds retain the ordinary host architecture unless explicitly requested.
+BUILD_FLAGS=(-c release)
+if [[ "${VPNNAV_BUILD_UNIVERSAL:-0}" == "1" ]]; then
+  BUILD_FLAGS+=(--arch arm64 --arch x86_64)
+fi
+swift build "${BUILD_FLAGS[@]}"
+BIN="$(swift build "${BUILD_FLAGS[@]}" --show-bin-path)"
 APP="$PWD/dist/VPN Navigator.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" \

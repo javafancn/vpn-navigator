@@ -81,3 +81,15 @@ The following checks must be executed on a disposable Mac after Developer ID sig
 | A60 | Helper crash after PID record, child already exited | Recovery clears stale markers only when exact PID is absent |
 | A61 | Helper crash with alive or reused PID | Recovery does not send signals or clear evidence |
 | A62 | Client cert inline data contains directive-like text | Managed routing scanner ignores inline certificate material |
+
+| A63 | Helper restarted with old active.ovpn/PID marker; user clicks Disconnect | No marker deletion or route rollback; only explicit absence-verified recovery can clear evidence |
+
+| A64 | OpenVPN DNS vars file contains shell metacharacters / control characters | Reject without evaluating any shell commands; no root DNS changes |
+| A65 | Management credentials contain CR/NUL/Unicode separators | Reject before management socket is opened |
+| A66 | Full VPN gateway or tunnel interface changes after CONNECTED | Watchdog detects path change; managed session terminates |
+| A67 | China Direct hot rule update changes routed sample unexpectedly | Fail update, disconnect and retain route journal until verified cleanup |
+
+| A68 | OpenVPN passes malicious DNS environment values without a vars file | Reject before constructing scutil command text |
+
+| A69 | DNS script obtains its lock on a shared world-writable path | Require root-private runtime directory; reject unsafe owner or mode |
+| A70 | PF preview receives a /0 or private geographic exception | Reject invalid policy before producing an apparently restrictive guard |

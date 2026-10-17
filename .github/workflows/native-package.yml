@@ -15,7 +15,9 @@ jobs:
           plutil -lint Resources/Info.plist Resources/LaunchDaemons/*.plist Resources/LaunchAgents/*.plist
           zsh -n scripts/build-app.sh scripts/build-pkg.sh scripts/notarize.sh scripts/release-audit.sh scripts/pkg-scripts/preinstall scripts/live-route-assert.sh
           python3 -m py_compile scripts/vendor-openvpn.py
-      - name: Build unsigned developer-only app
+      - name: Build dual-architecture developer-only app
+        env:
+          VPNNAV_BUILD_UNIVERSAL: "1"
         run: zsh scripts/build-app.sh
       - name: Verify development bundle
         run: |
@@ -26,8 +28,125 @@ jobs:
           test -f 'dist/VPN Navigator.app/Contents/Resources/LICENSES/OpenVPN-DNS-BSD-2-Clause.txt'
           /bin/bash -n 'dist/VPN Navigator.app/Contents/Resources/macos-dns-updown.sh'
           test ! -f 'dist/VPN Navigator.app/Contents/Resources/openvpn'
+      - name: Verify Apple Silicon and Intel slices
+        run: |
+          for entry in \
+            'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp' \
+            'dist/VPN Navigator.app/Contents/Resources/VPNNavigatorHelper' \
+            'dist/VPN Navigator.app/Contents/Resources/VPNNavigatorRuleAgent'; do
+            archs="$(lipo -archs "$entry")"
+            echo "$entry: $archs"
+            [[ " $archs " == *" arm64 "* && " $archs " == *" x86_64 "* ]] || exit 1
+          done
+      - name: Ad-hoc sign development UI for local integrity checks
+        run: |
+          APP='dist/VPN Navigator.app'
+          codesign --force --sign - --identifier com.javafancn.vpn-navigator.helper "$APP/Contents/Resources/VPNNavigatorHelper"
+          codesign --force --sign - --identifier com.javafancn.vpn-navigator.rule-agent "$APP/Contents/Resources/VPNNavigatorRuleAgent"
+          codesign --force --sign - --identifier com.javafancn.vpn-navigator "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          echo 'This ad-hoc signature is NOT an Apple Developer ID signature and is NOT notarized.'
+      - name: Capture all five native workspaces
+        run: |
+          # Ephemeral CI machine only: native AppKit materials also respect
+          # accessibility defaults, independently of the SwiftUI snapshot flag.
+          defaults write com.apple.universalaccess reduceTransparency -bool false || true
+          # Test against a REAL macOS desktop image, not in-app scenery.
+          # CI machines often start with a monochrome desktop which makes
+          # transparent native material look opaque in screenshots.
+          WALLPAPER="$(find '/System/Library/Desktop Pictures' -type f \( -iname '*.heic' -o -iname '*.jpg' -o -iname '*.png' \) 2>/dev/null | head -n 1 || true)"
+          if [[ -n "$WALLPAPER" ]]; then
+            export VPNNAV_TEST_WALLPAPER="$WALLPAPER"
+            cat > "$RUNNER_TEMP/desktop-wallpaper.swift" <<'SWIFT'
+          import AppKit
+          import Foundation
+          if let path = ProcessInfo.processInfo.environment["VPNNAV_TEST_WALLPAPER"] {
+              for screen in NSScreen.screens {
+                  do {
+                      try NSWorkspace.shared.setDesktopImageURL(
+                          URL(fileURLWithPath: path), for: screen, options: [:])
+                      print("Desktop wallpaper configured: \(path)")
+                  } catch {
+                      print("Desktop wallpaper update unavailable: \(error)")
+                  }
+              }
+          }
+          SWIFT
+            swift "$RUNNER_TEMP/desktop-wallpaper.swift" || true
+            sleep 3
+          fi
+          screencapture -x "$RUNNER_TEMP/VPNNavigator-Desktop-Before.png" || true
+          cat > "$RUNNER_TEMP/window-id.swift" <<'SWIFT'
+          import AppKit
+          import CoreGraphics
+          let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+          for item in windows {
+              let owner = item[kCGWindowOwnerName as String] as? String ?? ""
+              let bounds = item[kCGWindowBounds as String] as? [String: Any] ?? [:]
+              if owner.contains("VPN"), let width = bounds["Width"] as? Double, width >= 800,
+                 let number = item[kCGWindowNumber as String] as? Int {
+                  print(number)
+                  FileHandle.standardError.write(Data("owner=\(owner), bounds=\(bounds)\n".utf8))
+                  exit(0)
+              }
+          }
+          exit(1)
+          SWIFT
+          APP='dist/VPN Navigator.app'
+          for PAGE in overview profiles routing diagnostics settings; do
+            killall VPNNavigatorApp 2>/dev/null || true
+            sleep 1
+            open -n "$APP" --args "--vpnnav-ui-tab=$PAGE" "--vpnnav-ui-glass-snapshot" "--vpnnav-ui-demo-snapshot"
+            sleep 7
+            WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift" 2> "$RUNNER_TEMP/$PAGE-bounds.txt")"
+            cat "$RUNNER_TEMP/$PAGE-bounds.txt"
+            screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-$PAGE.png"
+            screencapture -x "$RUNNER_TEMP/VPNNavigator-display-$PAGE.png"
+            test -s "$RUNNER_TEMP/VPNNavigator-$PAGE.png"
+          done
+          killall VPNNavigatorApp 2>/dev/null || true
+          # The exact same binary/UI, with two external desktop colours.
+          for SCENE in cool warm; do
+            swift scripts/capture-glass-calibration.swift "$SCENE" "$RUNNER_TEMP"
+            sleep 3
+            open -n "$APP" --args "--vpnnav-ui-tab=overview" "--vpnnav-ui-glass-snapshot" "--vpnnav-ui-demo-snapshot"
+            sleep 7
+            WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift" 2> "$RUNNER_TEMP/$SCENE-bounds.txt")"
+            screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-glass-$SCENE.png"
+            screencapture -x "$RUNNER_TEMP/VPNNavigator-composited-$SCENE.png"
+            test -s "$RUNNER_TEMP/VPNNavigator-glass-$SCENE.png"
+            killall VPNNavigatorApp 2>/dev/null || true
+          done
       - uses: actions/upload-artifact@v4
         with:
-          name: VPNNavigator-unsigned-UI-only
-          path: dist/VPN Navigator.app
+          name: VPNNavigator-visual-smoke
+          path: |
+            ${{ runner.temp }}/VPNNavigator-overview.png
+            ${{ runner.temp }}/VPNNavigator-profiles.png
+            ${{ runner.temp }}/VPNNavigator-routing.png
+            ${{ runner.temp }}/VPNNavigator-diagnostics.png
+            ${{ runner.temp }}/VPNNavigator-settings.png
+            ${{ runner.temp }}/VPNNavigator-Desktop-Before.png
+            ${{ runner.temp }}/*-bounds.txt
+            ${{ runner.temp }}/VPNNavigator-glass-*.png
+            ${{ runner.temp }}/VPNNavigator-wallpaper-*.png
+            ${{ runner.temp }}/VPNNavigator-display-*.png
+            ${{ runner.temp }}/VPNNavigator-composited-*.png
           if-no-files-found: error
+          retention-days: 7
+      - name: Package verified .app using macOS ditto
+        run: |
+          APP='dist/VPN Navigator.app'
+          OUT="$RUNNER_TEMP/VPN-Navigator-0.1.0-macOS-Universal-UI-Test.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT"
+          unzip -t "$OUT"
+          (cd "$RUNNER_TEMP" && shasum -a 256 "$(basename "$OUT")" | tee VPN-Navigator-0.1.0-macOS-Universal-UI-Test.sha256)
+          ls -lh "$OUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VPNNavigator-0.1.0-macOS-Universal-UI-Test
+          path: |
+            ${{ runner.temp }}/VPN-Navigator-0.1.0-macOS-Universal-UI-Test.zip
+            ${{ runner.temp }}/VPN-Navigator-0.1.0-macOS-Universal-UI-Test.sha256
+          if-no-files-found: error
+

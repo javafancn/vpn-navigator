@@ -28,3 +28,11 @@ The macOS runner's `PF preview syntax checks` workflow compiles a
 read-only `VPNNavigatorPFPreview` executable and runs `pfctl -vnf`
 on a generated sample. A pass proves **parser syntax only**, not routing
 or security enforcement.
+
+## Static guard constraints
+
+The syntax-only candidate rejects a 0/0 local exception and invalid or
+special-purpose `China Direct` CIDR entries. It must still not be loaded
+or offered as a proven kill switch; PF evaluation order, other interfaces,
+state handling and signed-machine failover require real packet capture and
+host integration testing.

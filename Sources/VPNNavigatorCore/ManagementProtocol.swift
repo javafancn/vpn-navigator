@@ -79,6 +79,20 @@ public enum ManagementParser {
 
 /// Values for the OpenVPN management text protocol, not shell quoting.
 /// Caller must reject control characters before using this escape function.
+/// Credentials cross a privileged XPC boundary and are later sent on a
+/// line-oriented OpenVPN management connection. Reject every Unicode control
+/// or line separator instead of merely screening ASCII LF. No secret is logged.
+public enum ManagementCredentialPolicy {
+    public static func allows(username: String, password: String,
+                              credentialsRequired: Bool) -> Bool {
+        guard username.utf8.count < 1024, password.utf8.count < 4096 else { return false }
+        if credentialsRequired && (username.isEmpty || password.isEmpty) { return false }
+        let forbidden = CharacterSet.controlCharacters.union(.newlines)
+        return !username.unicodeScalars.contains(where: { forbidden.contains($0) }) &&
+               !password.unicodeScalars.contains(where: { forbidden.contains($0) })
+    }
+}
+
 public enum ManagementEscaping {
     public static func escape(_ value: String) -> String {
         value.replacingOccurrences(of: "\\", with: "\\\\")

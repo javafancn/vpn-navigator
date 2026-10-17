@@ -36,7 +36,7 @@ public struct LeakGuardPolicy: Sendable {
     }
     public static func compatibleRootRules(_ text: String) -> Bool {
         let lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && !$0.hasPrefix("No ALTQ") && !$0.hasPrefix("ALTQ") }
+            .filter { !$0.isEmpty && !$0.hasPrefix("No ALTQ") && !$0.hasPrefix("ALTQ") && $0 != "scrub-anchor \"com.apple/*\" all fragment reassemble" }
         return lines == ["anchor \"com.apple/*\" all"] || lines == ["anchor \"com.apple/*\""]
     }
     public static func enableToken(_ text: String) -> String? {

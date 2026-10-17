@@ -3,6 +3,42 @@ import ServiceManagement
 import UniformTypeIdentifiers
 import VPNNavigatorCore
 
+struct MaintenanceAssistantView: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var removeProfiles = false
+    @State private var prepared = false
+    @State private var preparing = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("升级与卸载准备").font(.system(size: 24, weight: .bold))
+            Text("先停止 VPN、恢复网络并停用本应用后台服务，再交由系统安装器升级或 Finder 移除应用。")
+                .font(.system(size: 14)).fixedSize(horizontal: false, vertical: true)
+            Toggle("同时删除全部连接配置、历史版本与已保存凭据", isOn: $removeProfiles)
+                .disabled(preparing || prepared)
+            Text("默认保留本地配置。勾选删除后无法撤销；不会删除其他应用或系统的凭据。")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+            if let message = model.message { Text(message).font(.system(size: 13)).foregroundStyle(.secondary) }
+            HStack {
+                Button(preparing ? "准备中…" : "断开并停用后台服务") {
+                    preparing = true
+                    Task { prepared = await model.prepareMaintenance(removeProfiles: removeProfiles); preparing = false }
+                }.buttonStyle(ReferencePrimaryButton()).disabled(preparing || prepared)
+                Spacer()
+            }
+            HStack {
+                Button("在 Finder 中显示应用") { NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL]) }
+                    .buttonStyle(ReferenceSecondaryButton()).disabled(!prepared)
+                Button("下载已验证的更新…") {
+                    dismiss(); Task { await model.downloadVerifiedUpdate() }
+                }.buttonStyle(ReferenceSecondaryButton()).disabled(!prepared || model.availableInstaller == nil)
+                Spacer()
+                Button("完成") { dismiss() }.buttonStyle(ReferenceSecondaryButton()).disabled(preparing)
+            }
+        }.padding(24).frame(width: 680).background(GlassAtmosphere()).interactiveDismissDisabled(preparing)
+    }
+}
+
 struct AuthenticationChallengeView: View {
     @EnvironmentObject private var model: AppModel
     let challenge: AuthenticationChallenge
@@ -122,11 +158,15 @@ struct ClientPreferencesView: View {
                     ForEach([30, 60, 90, 120, 180], id: \.self) { Text("\($0) 秒").tag($0) }
                 }
                 Toggle("Original 模式断线后自动重连", isOn: $model.reconnectOriginal)
-                Text("全局 VPN 和国内直连遇到重连事件时停止会话，防止在未验证的网络路径上继续运行。")
+                Text("Original 使用 OpenVPN 内部重连；受管模式仅在已启用并核验断线保护时，才允许额外重试。")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 Divider().opacity(0.25)
                 Toggle("断线保护（实验性，全局 VPN / 国内直连）", isOn: $model.killSwitch)
-                Text("启用时会检查 PF 环境、重置现有网络连接并阻断物理 IPv6。意外断线后保护会保留，需手动断开或恢复网络。完整真机防泄漏验收尚待完成。")
+                Text("启用时会检查 PF 环境、重置现有网络连接并阻断物理 IPv6。异常时保护保留，手动断开或恢复网络可解除。完整真机防泄漏验收尚待完成。")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                Toggle("受管模式安全重连（最多 3 次 / 10 分钟）", isOn: $model.reconnectManaged)
+                    .disabled(!model.killSwitch)
+                Text("重连期间持续保留防火墙，旧进程、DNS 和路由未安全恢复时不会启动新会话。服务器地址固定为本次已解析的 IPv4。")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 Divider().opacity(0.25)
                 Toggle("登录时启动 VPN Navigator", isOn: $launchAtLogin)

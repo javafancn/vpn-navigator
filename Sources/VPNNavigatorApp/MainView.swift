@@ -94,6 +94,7 @@ struct MainView: View {
         .sheet(item: $model.authenticationChallenge) { challenge in
             AuthenticationChallengeView(challenge: challenge).environmentObject(model)
         }
+        .sheet(isPresented: $model.showingMaintenance) { MaintenanceAssistantView().environmentObject(model) }
         .sheet(isPresented: $model.showingSetup) { SetupAssistantView().environmentObject(model) }
         .sheet(isPresented: $model.showingPreferences) { ClientPreferencesView().environmentObject(model) }
         .sheet(isPresented: $model.showingDiagnostics) { DiagnosticHistoryView().environmentObject(model) }
@@ -914,6 +915,9 @@ struct SystemSettingsPane: View {
                     }
                     settingsRow("诊断报告", subtitle: "查看脱敏会话事件并导出支持报告", symbol: "doc.text.magnifyingglass") {
                         Button("查看…") { model.showingDiagnostics = true }.buttonStyle(ReferenceSecondaryButton())
+                    }
+                    settingsRow("升级与卸载", subtitle: "准备安装更新或安全移除应用", symbol: "shippingbox") {
+                        Button("准备…") { model.showingMaintenance = true }.buttonStyle(ReferenceSecondaryButton())
                     }
                     settingsRow("安装检查", subtitle: "检查引擎、后台助手和配置是否就绪", symbol: "checklist") {
                         Button("打开…") { model.showingSetup = true }.buttonStyle(ReferenceSecondaryButton())

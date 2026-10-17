@@ -21,7 +21,8 @@ def main():
     helper = str(pathlib.Path(sys.argv[1]).resolve())
     root = pf("-sr")
     initialized = not root
-    if root and root not in ('anchor "com.apple/*" all', 'anchor "com.apple/*"'):
+    filters = [line for line in root.splitlines() if line != 'scrub-anchor "com.apple/*" all fragment reassemble']
+    if root and filters not in (['anchor "com.apple/*" all'], ['anchor "com.apple/*"']):
         raise SystemExit(f"Runner PF root rules need inspection; fixture refuses to alter them: {root!r}")
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))

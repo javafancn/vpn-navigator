@@ -5,7 +5,8 @@ cd "${0:A:h}/.."
 : "${NOTARY_KEYCHAIN_PROFILE:?Set NOTARY_KEYCHAIN_PROFILE}"
 MODE="${1:-app}"
 APP="$PWD/dist/VPN Navigator.app"
-PKG="$PWD/dist/VPN-Navigator-0.1.0.pkg"
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+PKG="$PWD/dist/VPN-Navigator-$VERSION-$(uname -m).pkg"
 case "$MODE" in
   app)
     [[ -d "$APP" ]] || { echo "Build and sign the app first"; exit 1; }
@@ -28,3 +29,4 @@ case "$MODE" in
     exit 2
     ;;
 esac
+

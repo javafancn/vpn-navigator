@@ -1,10 +1,11 @@
 name: PF preview syntax checks
 on:
   push:
-    branches: [feat/engine-management-and-routes]
+    branches: [main]
   pull_request:
     paths:
       - 'Sources/VPNNavigatorCore/FirewallRulePreview.swift'
+      - 'Sources/VPNNavigatorCore/LeakGuardPolicy.swift'
       - 'Sources/VPNNavigatorPFPreview/**'
       - '.github/workflows/pf-preview.yml'
       - 'Package.swift'
@@ -30,3 +31,4 @@ jobs:
         run: |
           sudo /sbin/pfctl -vnf "$RUNNER_TEMP/pf-vpn-navigator-preview.conf"
           echo 'Candidate anchor syntax parsed; no PF changes made.'
+

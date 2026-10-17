@@ -5,6 +5,16 @@ import VPNNavigatorCore
 /// Root-owned, single-session OpenVPN process. The caller has already passed code-signing verification.
 final class ManagedTunnel {
     let queue = DispatchQueue(label: "VPNNavigator.ManagedTunnel")
+    private struct ReconnectContext {
+        let profile: String
+        let profileID: UUID
+        let mode: RoutingMode
+        let username: String
+        let password: String
+    }
+    private var reconnectContext: ReconnectContext?
+    private var retryBudget = ReconnectBudget()
+    private var retryWork: DispatchWorkItem?
     private var attemptTimer: DispatchSourceTimer?
     private var preferences = SessionPreferences()
     private var outputPipe: Pipe?
@@ -21,6 +31,7 @@ final class ManagedTunnel {
     private let packetGuard = PacketFilterGuard()
     private var guardPolicy: LeakGuardPolicy?
     private var releaseProtectionOnExit = false
+    private var protectionTeardownBlocked = false
     var firewallActive: Bool { packetGuard.active }
     var firewallRecoveryRequired: Bool { packetGuard.requiresRecovery }
     private var activeMode: RoutingMode = .original
@@ -73,7 +84,7 @@ final class ManagedTunnel {
     var activeSplitRoutes: Bool { activeMode == .chinaDirect && routing != nil }
 
     func start(profile text: String, profileID: UUID, mode: RoutingMode, ruleText: String,
-               username: String, password: String, preferences: SessionPreferences = .init()) throws {
+               username: String, password: String, preferences: SessionPreferences = .init(), reusingGuard: Bool = false) throws {
         guard getuid() == 0 else { throw TunnelError.needRoot }
         guard !FileManager.default.fileExists(atPath: workdir.appendingPathComponent("active.ovpn").path),
               !FileManager.default.fileExists(atPath: orphanRecordFile.path) else {
@@ -82,8 +93,16 @@ final class ManagedTunnel {
         guard !FileManager.default.fileExists(atPath: workdir.appendingPathComponent("routes.journal").path) else {
             throw TunnelError.unresolvedRoutes
         }
-        guard !packetGuard.requiresRecovery else { throw LeakGuardError.unresolved }
+        if reusingGuard {
+            guard packetGuard.active, preferences.killSwitch, preferences.reconnectManaged else { throw LeakGuardError.unresolved }
+            try packetGuard.verify()
+        } else {
+            guard !packetGuard.requiresRecovery else { throw LeakGuardError.unresolved }
+            retryBudget = ReconnectBudget()
+            reconnectContext = nil
+        }
         releaseProtectionOnExit = false
+        protectionTeardownBlocked = false
         guard !dnsRecovery.exists else { throw DNSJournalError.conflict }
         guard process == nil else { throw TunnelError.alreadyRunning }
         self.preferences = preferences
@@ -133,8 +152,11 @@ final class ManagedTunnel {
                 transport: endpoint.transport, local: local, country: mode == .chinaDirect ? rules?.routes ?? [] : [])
             validated = try ProfileSafety.validate(endpoint.pinnedProfile(validated.text, address: numeric))
             let interfaces = try RouteExecutor.command("/sbin/ifconfig", ["-a"])
-            try packetGuard.activate(policy.rules(tunnel: nil), sourceAddresses: PacketFilterGuard.sourceAddresses(interfaces))
+            let sources = PacketFilterGuard.sourceAddresses(interfaces)
+            if reusingGuard { try packetGuard.replaceRules(policy.rules(tunnel: nil), sourceAddresses: sources) }
+            else { try packetGuard.activate(policy.rules(tunnel: nil), sourceAddresses: sources) }
             guardPolicy = policy
+            reconnectContext = ReconnectContext(profile: validated.text, profileID: profileID, mode: mode, username: username, password: password)
         }
         try validated.text.write(to: configFile, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configFile.path)
@@ -171,11 +193,13 @@ final class ManagedTunnel {
         task.terminationHandler = { [weak self, weak task] _ in
             self?.queue.async { [weak self] in
                 guard let self, let task, self.process === task else { return }
+                if self.state != .stopping && self.state != .failed,
+                   self.scheduleGuardedReconnect() { return }
                 if self.state != .stopping && self.state != .failed {
                     self.eventStore.append(.unexpectedExit)
                     self.lastError = "OpenVPN 意外退出，请查看诊断报告。"
                 }
-                self.stopRoutesAndReset()
+                self.stop()
             }
         }
         activeMode = mode
@@ -255,6 +279,38 @@ final class ManagedTunnel {
             throw error
         }
     }
+    @discardableResult
+    private func scheduleGuardedReconnect() -> Bool {
+        guard let context = reconnectContext,
+              let delay = retryBudget.nextDelay(guardVerified: packetGuard.active, optedIn: preferences.reconnectManaged) else { return false }
+        do { try packetGuard.verify() } catch { return false }
+        // Keep PF installed while the old child exits, DNS is restored and
+        // owned routes roll back. Only a new root-owned start may reuse it.
+        stop(preservingReconnectContext: true)
+        guard process == nil, !dnsRecovery.exists,
+              !FileManager.default.fileExists(atPath: workdir.appendingPathComponent("routes.journal").path),
+              packetGuard.active else { return false }
+        state = .reconnecting
+        message = "断线保护保留，\(delay) 秒后尝试重连（\(retryBudget.attempts)/3）"
+        activeProfileID = context.profileID
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.state == .reconnecting, self.reconnectContext != nil else { return }
+            self.retryWork = nil
+            let ruleText = (self.rules?.routes ?? []).map(\.description).joined(separator: "\n")
+            do {
+                try self.start(profile: context.profile, profileID: context.profileID,
+                    mode: context.mode, ruleText: ruleText, username: context.username,
+                    password: context.password, preferences: self.preferences, reusingGuard: true)
+            } catch {
+                self.state = .failed; self.lastError = error.localizedDescription
+                self.message = "安全重连未成功，保护保留：" + error.localizedDescription
+            }
+        }
+        retryWork = work
+        queue.asyncAfter(deadline: .now() + .seconds(delay), execute: work)
+        return true
+    }
+
     func submitChallenge(id: String, response: String) throws {
         guard challenge?.id.uuidString == id, state == .authenticating, let management else { throw ChallengeResponseError.stale }
         try management.respond(id: id, response: response)
@@ -316,6 +372,7 @@ final class ManagedTunnel {
         }
         if snapshot.state == .reconnecting,
            (TunnelReconnectPolicy.action(for: activeMode) == .stopAndRestoreOnlyAfterExit || !preferences.reconnectOriginal) {
+            if scheduleGuardedReconnect() { return }
             // Releasing route ownership while OpenVPN is still reconnecting
             // silently creates a path back to the physical network. A managed
             // reconnect requires a proven PF kill switch that does not exist yet.
@@ -517,6 +574,7 @@ final class ManagedTunnel {
             try verifySplitRoutes(plan: plan, country: rules)
         } catch {
             eventStore.append(.networkChanged)
+            if scheduleGuardedReconnect() { return }
             let failure = "Network route/IPv6 protection changed; VPN disconnected: \(error.localizedDescription)"
             stop()
             lastError = failure
@@ -565,7 +623,7 @@ final class ManagedTunnel {
         catch { state = .failed; message = error.localizedDescription; return "ERROR: " + message }
         let journal = workdir.appendingPathComponent("routes.journal")
         guard FileManager.default.fileExists(atPath: journal.path) else {
-            do { try packetGuard.release(); guardPolicy = nil }
+            do { try packetGuard.release(); guardPolicy = nil; reconnectContext = nil }
             catch { state = .failed; message = error.localizedDescription; return "ERROR: " + message }
             lastError = nil
             state = .disconnected
@@ -578,7 +636,7 @@ final class ManagedTunnel {
             message = "Route recovery is incomplete; some routes could not be safely verified."
             return "ERROR: \(message)"
         }
-        do { try packetGuard.release(); guardPolicy = nil }
+        do { try packetGuard.release(); guardPolicy = nil; reconnectContext = nil }
         catch { state = .failed; message = error.localizedDescription; return "ERROR: " + message }
         lastError = nil
         state = .disconnected
@@ -639,8 +697,17 @@ final class ManagedTunnel {
             throw error
         }
     }
-    func stop(releaseProtection: Bool = false) {
+    func stop(releaseProtection: Bool = false, preservingReconnectContext: Bool = false) {
         releaseProtectionOnExit = releaseProtectionOnExit || releaseProtection
+        retryWork?.cancel(); retryWork = nil
+        if !preservingReconnectContext { reconnectContext = nil }
+        if packetGuard.active, let policy = guardPolicy {
+            do {
+                let interfaces = try RouteExecutor.command("/sbin/ifconfig", ["-a"])
+                try packetGuard.replaceRules(policy.rules(tunnel: nil), sourceAddresses: PacketFilterGuard.sourceAddresses(interfaces))
+                protectionTeardownBlocked = false
+            } catch { protectionTeardownBlocked = true }
+        }
         attemptTimer?.cancel(); attemptTimer = nil
         // A restarted helper has no Process identity for an orphaned child.
         // A plain Disconnect must never erase the very evidence that prevents
@@ -696,6 +763,12 @@ final class ManagedTunnel {
             message = "OpenVPN exit or ownership is unverified; preserving routes and session evidence."
             return
         }
+        if protectionTeardownBlocked && !releaseProtectionOnExit {
+            process = nil; activeProfileID = nil; traffic = nil
+            state = .failed
+            message = "断线保护无法核验，DNS 与路由恢复记录已保留。请执行安全网络恢复。"
+            return
+        }
         // Natural child exit may reach here before the management socket's
         // EOF callback. Disable its stale callbacks and stop the watchdog.
         networkWatchdog?.cancel()
@@ -725,7 +798,7 @@ final class ManagedTunnel {
         let unresolved = FileManager.default.fileExists(
             atPath: workdir.appendingPathComponent("routes.journal").path)
         if releaseProtectionOnExit && !unresolved && !dnsRecovery.exists {
-            do { try packetGuard.release(); guardPolicy = nil }
+            do { try packetGuard.release(); guardPolicy = nil; reconnectContext = nil }
             catch { lastError = error.localizedDescription }
         }
         let protectionPending = packetGuard.requiresRecovery

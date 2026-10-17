@@ -20,10 +20,14 @@ final class AppModel: ObservableObject {
     @Published var ruleSnapshots: [RuleSnapshot] = []
     @Published var firewallActive = false
     @Published var firewallRecoveryRequired = false
+    @Published var reconnectManaged = UserDefaults.standard.bool(forKey: "reconnectManaged") {
+        didSet { UserDefaults.standard.set(reconnectManaged, forKey: "reconnectManaged") }
+    }
     @Published var killSwitch = UserDefaults.standard.bool(forKey: "killSwitch") {
         didSet { UserDefaults.standard.set(killSwitch, forKey: "killSwitch") }
     }
     @Published var authenticationChallenge: AuthenticationChallenge?
+    @Published var showingMaintenance = false
     @Published var showingSetup = false
     @Published var showingPreferences = false
     @Published var showingDiagnostics = false
@@ -115,7 +119,7 @@ final class AppModel: ObservableObject {
     var canQuit: Bool { !connected && !connecting && !stopping && activeProfileID == nil && !firewallRecoveryRequired }
     var sessionPreferences: SessionPreferences {
         .init(connectionTimeout: connectionTimeout == 0 ? 60 : connectionTimeout,
-              reconnectOriginal: reconnectOriginal, killSwitch: killSwitch)
+              reconnectOriginal: reconnectOriginal, killSwitch: killSwitch, reconnectManaged: reconnectManaged)
     }
 
     func load() async {
@@ -276,7 +280,8 @@ final class AppModel: ObservableObject {
     func downloadVerifiedUpdate() async {
         guard !busy, let url = availableInstaller else { return }
         guard !connected && !connecting, helper.installationStatus != .enabled else {
-            message = "Disconnect the VPN and disable VPN Navigator background services before upgrading."
+            message = "请先准备升级：断开 VPN 并停用后台服务。"
+            showingMaintenance = true
             return
         }
         busy = true
@@ -319,8 +324,9 @@ final class AppModel: ObservableObject {
             }
         }
         do {
-            try await SMAppService.agent(plistName: "com.javafancn.vpn-navigator.rules.plist").unregister()
-            try helper.unregister()
+            let agent = SMAppService.agent(plistName: "com.javafancn.vpn-navigator.rules.plist")
+            if agent.status != .notRegistered && agent.status != .notFound { try await agent.unregister() }
+            if helper.installationStatus != .notRegistered && helper.installationStatus != .notFound { try helper.unregister() }
             await refreshConnectionStatus()
             message = "VPN Navigator background services have been unregistered."
         } catch {
@@ -522,6 +528,26 @@ final class AppModel: ObservableObject {
         } catch { message = "规则导入失败，原规则已保留：\(error.localizedDescription)" }
     }
 
+    func prepareMaintenance(removeProfiles: Bool) async -> Bool {
+        if !canQuit { await disconnect() }
+        guard canQuit else { message = "会话或网络恢复尚未完成，不能准备升级或卸载。"; return false }
+        await disableServices()
+        guard [.notRegistered, .notFound].contains(helper.installationStatus) else {
+            message = "后台助手未完全停用，请检查系统授权与恢复状态。"; return false
+        }
+        if removeProfiles {
+            do {
+                for profile in profiles {
+                    try await store.delete(id: profile.id)
+                    KeychainVault.remove(id: profile.id)
+                }
+                selectedID = nil; username = ""; password = ""
+                await load()
+            } catch { message = "配置未能全部删除：\(error.localizedDescription)"; return false }
+        }
+        message = "后台服务已停用，可以升级或在 Finder 中移除应用。"
+        return true
+    }
     func exportPreview() async {
         guard let profile = selected else { return }
         do {

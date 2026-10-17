@@ -23,6 +23,7 @@ final class LeakGuardPolicyTests: XCTestCase {
     }
     func testHostMustEvaluateOwnedAnchorBeforeOtherRules() {
         XCTAssertTrue(LeakGuardPolicy.compatibleRootRules("anchor \"com.apple/*\" all\n"))
+        XCTAssertTrue(LeakGuardPolicy.compatibleRootRules("scrub-anchor \"com.apple/*\" all fragment reassemble\nanchor \"com.apple/*\" all"))
         XCTAssertFalse(LeakGuardPolicy.compatibleRootRules("pass out quick all\nanchor \"com.apple/*\" all"))
         XCTAssertFalse(LeakGuardPolicy.compatibleRootRules(""))
         XCTAssertFalse(LeakGuardPolicy.compatibleRootRules("anchor \"other/*\" all"))

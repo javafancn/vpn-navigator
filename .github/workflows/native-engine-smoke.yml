@@ -1,7 +1,7 @@
 name: Standalone OpenVPN engine smoke test
 on:
   push:
-    branches: [feat/engine-management-and-routes]
+    branches: [main]
   workflow_dispatch:
   pull_request:
     paths:
@@ -17,7 +17,11 @@ concurrency:
   cancel-in-progress: true
 jobs:
   vendor-engine:
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4

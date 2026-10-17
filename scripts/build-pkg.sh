@@ -17,13 +17,17 @@ STAGING="$(mktemp -d)"
 trap 'rm -rf "$STAGING"' EXIT
 mkdir -p "$STAGING/Applications"
 ditto "$APP" "$STAGING/Applications/VPN Navigator.app"
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+ARCH="$(uname -m)"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && ( "$ARCH" == arm64 || "$ARCH" == x86_64 ) ]] || exit 1
 # PKG installer assigns root ownership at installation (inspect on a test machine).
 pkgbuild --root "$STAGING" \
     --install-location / \
     --identifier com.javafancn.vpn-navigator.pkg \
-    --version 0.1.0 \
+    --version "$VERSION" \
     --ownership recommended \
     --scripts "$PWD/scripts/pkg-scripts" \
     --sign "$DEVELOPER_ID_INSTALLER" \
-    "$PWD/dist/VPN-Navigator-0.1.0.pkg"
-echo "Created: $PWD/dist/VPN-Navigator-0.1.0.pkg"
+    "$PWD/dist/VPN-Navigator-$VERSION-$ARCH.pkg"
+echo "Created: $PWD/dist/VPN-Navigator-$VERSION-$ARCH.pkg"
+

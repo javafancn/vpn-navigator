@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build-machine only: fetch source archives pinned by Homebrew formula SHA256.
+"""Build-machine only: fetch source archives pinned by reviewed upstream release SHA256.
 
 Signed releases additionally compare these against maintainer-supplied hashes.
 No binary or signing secret is downloaded or created by this helper.
@@ -9,7 +9,6 @@ import json
 import os
 import pathlib
 import re
-import subprocess
 import sys
 import urllib.request
 import urllib.error
@@ -19,19 +18,20 @@ import urllib.parse
 def main():
     destination = pathlib.Path(sys.argv[1]).resolve()
     destination.mkdir(parents=True, exist_ok=True)
-    metadata = json.loads(subprocess.check_output(["brew", "info", "--json=v2", "openvpn", "openssl@3"], text=True))
+    metadata = json.loads((pathlib.Path(__file__).resolve().parents[1] / "Resources/Engine/sources.lock.json").read_text())
     output = {}
-    for formula in metadata["formulae"]:
-        name = formula["name"]
+    for name in ("openvpn", "openssl"):
+        source = metadata[name]
         key = "OPENVPN" if name == "openvpn" else "OPENSSL"
-        source = formula["urls"]["stable"]
-        url, expected = source["url"], source["checksum"]
+        url, expected = source["url"], source["sha256"]
+        if not re.fullmatch(r"[0-9a-f]{64}", expected):
+            raise SystemExit("Invalid pinned source SHA256")
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme != "https" or parsed.hostname not in {"swupdate.openvpn.org", "swupdate.openvpn.net", "build.openvpn.net", "github.com", "www.openssl.org", "openssl-library.org"}:
-            raise SystemExit("Formula source does not use an approved upstream HTTPS host")
+            raise SystemExit("Pinned source does not use an approved upstream HTTPS host")
         path = destination / (key.lower() + "-source.tar.gz")
         candidates = [url]
-        version = formula["versions"]["stable"]
+        version = source["version"]
         if key == "OPENVPN" and re.fullmatch(r"2\.7\.[0-9]+", version):
             # Official release assets have the same reviewed archive digest.
             # GitHub runners may receive a CDN/WAF 403 from swupdate.openvpn.net.
@@ -54,13 +54,13 @@ def main():
                 path.unlink(missing_ok=True)
                 continue
             if digest.hexdigest().lower() != expected.lower():
-                raise SystemExit("Upstream archive does not match formula SHA256")
+                raise SystemExit("Upstream archive does not match reviewed SHA256")
             break
         else:
             raise SystemExit(f"Unable to fetch verified {key} sources from official upstreams")
         output[key + "_SOURCE_ARCHIVE"] = str(path)
         output[key + "_SOURCE_SHA256"] = digest.hexdigest()
-        output[key + "_SOURCE_VERSION"] = formula["versions"]["stable"]
+        output[key + "_SOURCE_VERSION"] = version
     if len(output) != 6:
         raise SystemExit("Both OpenVPN and OpenSSL source archives are required")
     (destination / "sources.json").write_text(json.dumps(output, indent=2) + "\n")

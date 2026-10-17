@@ -14,6 +14,8 @@ on:
       - 'scripts/test-pf-loopback.py'
       - 'scripts/build-openvpn-engine.sh'
       - 'scripts/fetch-engine-sources.py'
+      - 'Resources/Engine/sources.lock.json'
+      - 'scripts/tests/**'
       - 'scripts/release-manifest.py'
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

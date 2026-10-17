@@ -11,7 +11,7 @@ Without OPENVPN_BIN this produces UI-only preview software. Real privileged oper
 
 ## Source-built engine
 
-On a macOS build machine, fetch the official source archives described by the Homebrew formula metadata. This does not require Homebrew on an end-user Mac.
+On a macOS build machine, fetch the official source archives pinned in `Resources/Engine/sources.lock.json` (OpenVPN 2.7.8 and OpenSSL 3.5.9). This does not require Homebrew on an end-user Mac.
 
 ```sh
 python3 scripts/fetch-engine-sources.py /absolute/engine-sources

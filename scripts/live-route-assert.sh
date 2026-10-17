@@ -43,3 +43,4 @@ DEFAULT_GATEWAY="$(route_value default gateway)"
 }
 echo "PASS: selected CN IPv4 -> physical gateway; foreign IPv4 -> tunnel; no physical IPv6 default found."
 echo "This test does not establish packet-level DNS/PF leak freedom, or verify VPN server egress identity."
+

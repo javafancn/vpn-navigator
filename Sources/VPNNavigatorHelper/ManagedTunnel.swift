@@ -176,6 +176,7 @@ final class ManagedTunnel {
         try dnsRecovery.begin()
         var environment = ProcessInfo.processInfo.environment
         environment["VPNNAV_PRIMARY_SERVICE_UUID"] = dnsRecovery.primaryService
+        environment["OPENSSL_CONF"] = "/dev/null"
         task.environment = environment
         let output = Pipe()
         outputPipe = output

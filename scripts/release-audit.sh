@@ -51,4 +51,7 @@ for path in [binary, *frameworks.glob("*.dylib")]:
         raise SystemExit(f"Unresolved dependency: {name} referenced by {path}")
 print("Dependency audit passed.")
 PY
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+python3 scripts/release-manifest.py "$APP" "$PWD/dist/VPN-Navigator-$VERSION-$(uname -m)-manifest.json"
 echo "Release package passes static checks. Physical Mac/VPN traffic tests remain mandatory."
+

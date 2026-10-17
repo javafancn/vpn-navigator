@@ -12,6 +12,9 @@ on:
       - 'Sources/VPNNavigatorHelper/**'
       - 'Sources/VPNNavigatorCore/LeakGuardPolicy.swift'
       - 'scripts/test-pf-loopback.py'
+      - 'scripts/build-openvpn-engine.sh'
+      - 'scripts/fetch-engine-sources.py'
+      - 'scripts/release-manifest.py'
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -22,7 +25,7 @@ jobs:
       matrix:
         runner: [macos-15, macos-15-intel]
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Install OpenVPN CLI on build runner only
@@ -58,6 +61,14 @@ jobs:
           if env dev=utun4 script_type=dns-up dns_search_domain_1='a;malicious'               /bin/bash "$hook" --check-dns-vars; then
             echo 'Unsafe inherited DNS variable was accepted' >&2; exit 1
           fi
+      - name: Build reviewed-format sources for the declared minimum macOS
+        run: |
+          python3 scripts/fetch-engine-sources.py "$RUNNER_TEMP/engine-sources"
+      - name: Compile static-OpenSSL engine and verify minimum OS
+        run: |
+          ENGINE_OUTPUT_DIR="$RUNNER_TEMP/engine-prefix" bash scripts/build-openvpn-engine.sh
+          OPENVPN_BIN="$RUNNER_TEMP/engine-prefix/sbin/openvpn" zsh scripts/build-app.sh
+          python3 scripts/release-manifest.py 'dist/VPN Navigator.app' "$RUNNER_TEMP/source-engine-manifest.json"
       - name: Test DNS ownership journal on a synthetic service
         run: |
           swift build --product VPNNavigatorHelper

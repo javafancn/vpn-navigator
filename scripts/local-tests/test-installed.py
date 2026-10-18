@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Disposable CI Macs only: real launchd/XPC trust, no VPN/network changes."""
 import os
+import json
+import hashlib
 import pathlib
 import plistlib
 import subprocess
@@ -66,6 +68,24 @@ RunLoop.current.run()
         run(['codesign', '--force', '--options', 'runtime', '--sign', '-', '--identifier', 'com.javafancn.vpn-navigator', folder / 'unapproved'])
         run([folder / 'unapproved'])
         print('PASS: different code hash rejected even with the same bundle identifier.')
+        # Simulate a prior administrator-approved client identity, then revoke
+        # it by restoring the current build approval. This probe deliberately
+        # bypasses the app's self-check, so rejection must come from server XPC.
+        signature = run(['codesign', '-dv', '--verbose=4', folder / 'unapproved'])
+        cdhash = next(line.split('=', 1)[1] for line in signature.stderr.splitlines() if line.startswith('CDHash='))
+        prior = json.loads(saved_manifest.read_text())
+        prior['binaries']['app']['cdhash'] = cdhash
+        prior['binaries']['app']['sha256'] = hashlib.sha256((folder / 'unapproved').read_bytes()).hexdigest()
+        prior_manifest = folder / 'prior-approval.json'
+        prior_manifest.write_text(json.dumps(prior))
+        run(['sudo', 'cp', prior_manifest, manifest])
+        try:
+            assert run([folder / 'unapproved'], ok=False).returncode == 1, 'Previously approved identity was not accepted'
+        finally:
+            run(['sudo', 'cp', saved_manifest, manifest])
+        run([folder / 'unapproved'])
+        health()
+        print('PASS: previously approved client hash cannot replay after approval changes.')
         backup = folder / 'engine-backup'
         run(['cp', PAYLOAD / 'openvpn', backup])
         run(['sudo', 'chmod', 'o+w', PAYLOAD / 'openvpn'])
@@ -150,11 +170,15 @@ let delegate = Delegate(); listener.delegate = delegate; listener.resume(); RunL
             run(['sudo', 'cp', setup_backup, PAYLOAD / 'VPNNavigatorLocalSetup'])
             run(['sudo', 'chmod', '755', PAYLOAD / 'VPNNavigatorLocalSetup'])
         print('PASS: installer guards reject writable payload and altered setup before execution.')
+        # Incomplete protected payload remains untrusted and is repaired only by
+        # reinstalling a trusted PKG with administrator authorization.
+        run(['sudo', 'rm', PAYLOAD / 'macos-dns-updown.sh'])
+        health(False)
         run(['sudo', '/usr/sbin/installer', '-pkg', installer, '-target', '/'])
         health()
-        print('PASS: actual administrator-approved reinstall after maintenance.')
+        print('PASS: administrator-approved reinstall repairs incomplete payload after maintenance.')
         run([APP / 'Contents/MacOS/VPNNavigatorApp', '--vpnnav-local-services-self-test'])
-        run(['sudo', '/usr/sbin/installer', '-pkg', uninstaller, '-target', '/'])
+        run(['sudo', '/usr/sbin/installer', '-pkg', PAYLOAD / 'VPNNavigator-Uninstall.pkg', '-target', '/'])
         assert not BASE.exists() and not PLIST.exists() and not APP.exists()
         assert run(['launchctl', 'print', 'system/' + LABEL], ok=False).returncode != 0
         print('PASS: actual local install, bidirectional XPC trust and complete system uninstall.')

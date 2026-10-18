@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-15, macos-15-intel, macos-26]
+        runner: [macos-14, macos-15, macos-15-intel, macos-26]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     steps:
@@ -49,7 +49,7 @@ jobs:
         run: sudo tail -n 180 /var/log/install.log
       - uses: actions/upload-artifact@v4
         with:
-          name: VPNNavigator-Local-${{ runner.arch }}
+          name: VPNNavigator-Local-${{ matrix.runner }}-${{ runner.arch }}
           path: |
             dist/*-Local.pkg
             dist/*-Local-Uninstall.pkg

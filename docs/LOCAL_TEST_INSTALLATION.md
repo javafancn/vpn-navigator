@@ -4,7 +4,7 @@
 
 ## 选择安装包
 
-从本仓库通过检查的 `Local test installer and XPC trust` Actions 运行下载对应架构 artifact：Apple Silicon 使用 ARM64，Intel 使用 X64。压缩包包含：
+从本仓库通过检查的 `Local test installer and XPC trust` Actions 运行下载对应架构 artifact：Apple Silicon 使用 ARM64，Intel 使用 X64；名称同时标明验收所用 macOS。压缩包包含：
 
 - `VPN-Navigator-0.2.0-arm64-Local.pkg` 或 `…-x86_64-Local.pkg`：完整安装包。
 - `…-Local-Uninstall.pkg`：系统组件卸载包；先在应用中完成维护准备。
@@ -57,6 +57,6 @@ zsh scripts/build-local-pkg.sh
 
 ## 验收边界
 
-自动检查覆盖原生代码编译、模型及现有连接测试、实际 PKG 安装、合法/冒充双方的 XPC 校验、引擎权限及内容变更、用户服务、维护撤销、恢复证据阻止更新/卸载、重新安装和完整系统卸载。结果以具体 Actions 运行记录为准。
+自动检查覆盖原生代码编译、模型及现有连接测试、实际 PKG 安装、合法/冒充双方的 XPC 校验、引擎权限及内容变更、旧批准身份失效、部分 payload 修复、用户服务、维护撤销、恢复证据阻止更新/卸载、重新安装和完整系统卸载。结果以具体 Actions 运行记录为准。
 
 真实 TLS/MFA 服务器、物理 DNS/出口与 IPv4/IPv6 抓包、网络切换/睡眠/重启、助手崩溃恢复、长时运行、管理员取消及浏览器下载后的 Gatekeeper 流程仍需人工 Mac 验收。macOS 13 为声明的最低构建目标，不表示已通过 13 真机安装测试。不得据此宣称已达到正式发布或防泄漏验收标准。

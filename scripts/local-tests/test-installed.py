@@ -17,7 +17,10 @@ SERVICE = 'com.javafancn.vpn-navigator.helper'
 
 
 def run(args, ok=True):
-    result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=120)
+    command = [str(x) for x in args]
+    if '/usr/sbin/installer' in command:
+        command.insert(command.index('/usr/sbin/installer') + 1, '-dumplog')
+    result = subprocess.run(command, capture_output=True, text=True, timeout=120)
     if ok and result.returncode:
         raise AssertionError('Fixture command failed: ' + str(args[0]) + '\n' + result.stdout + result.stderr)
     return result
@@ -117,7 +120,7 @@ let delegate = Delegate(); listener.delegate = delegate; listener.resume(); RunL
         # A journal created by this fixture must block both update and uninstall.
         # Never delete unknown recovery evidence, even on a CI runner.
         journal = pathlib.Path('/var/run/vpn-navigator/routes.journal')
-        assert not journal.exists()
+        assert run(['sudo', '/bin/test', '-e', journal], ok=False).returncode != 0
         run(['sudo', 'mkdir', '-p', journal.parent])
         run(['sudo', 'touch', journal])
         installer = next(pathlib.Path('dist').glob('*-Local.pkg'))
@@ -125,7 +128,9 @@ let delegate = Delegate(); listener.delegate = delegate; listener.resume(); RunL
         try:
             assert run(['sudo', '/usr/sbin/installer', '-pkg', installer, '-target', '/'], ok=False).returncode != 0
             assert run(['sudo', '/usr/sbin/installer', '-pkg', uninstaller, '-target', '/'], ok=False).returncode != 0
-            assert BASE.exists() and APP.exists() and journal.exists()
+            assert BASE.exists(), 'Rejected update removed protected payload'
+            assert APP.exists(), 'Rejected update removed installed app'
+            assert run(['sudo', '/bin/test', '-e', journal], ok=False).returncode == 0, 'Recovery evidence was removed'
         finally:
             run(['sudo', 'rm', journal])
         print('PASS: unresolved recovery blocks update/uninstall and preserves evidence.')

@@ -25,7 +25,16 @@ VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/
 "$APP/Contents/Resources/VPNNavigatorLocalSetup" template "$APP" "$PAYLOAD" "$VERSION"
 chmod -R go-w "$STAGING/Library"
 mkdir -p dist
-pkgbuild --root "$STAGING" --install-location / --ownership recommended \
+pkgbuild --analyze --root "$STAGING" "$INSTALL_SCRIPTS/components.plist"
+python3 - "$INSTALL_SCRIPTS/components.plist" <<'PY'
+import pathlib, plistlib, sys
+path = pathlib.Path(sys.argv[1])
+components = plistlib.loads(path.read_bytes())
+for component in components:
+    component["BundleIsRelocatable"] = False
+path.write_bytes(plistlib.dumps(components))
+PY
+pkgbuild --root "$STAGING" --component-plist "$INSTALL_SCRIPTS/components.plist" --install-location / --ownership recommended \
   --identifier com.javafancn.vpn-navigator.local --version "$VERSION" \
   --scripts "$INSTALL_SCRIPTS" "dist/VPN-Navigator-$VERSION-$(uname -m)-Local.pkg"
 cp "$PAYLOAD/VPNNavigator-Uninstall.pkg" "dist/VPN-Navigator-$VERSION-$(uname -m)-Local-Uninstall.pkg"

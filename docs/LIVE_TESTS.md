@@ -22,4 +22,5 @@ Validate managed profile route collisions, server-pushed route behavior,
 tunnel reconnecting, DNS resolver restoration, orphan PID recovery and
 physical IPv6 emergence on an isolated test Mac. Root helper watchdog
 polling does **not** ensure packet-level leak freedom between samples.
-A true kill switch and IPv6 country routing remain release blockers.
+Runtime PF protection is implemented as a default-off experimental capability; physical packet capture and crash acceptance still gate a protection guarantee. IPv6 country routing is not in the current release scope.
+

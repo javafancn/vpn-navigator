@@ -115,3 +115,17 @@ The following checks must be executed on a disposable Mac after Developer ID sig
 | A84 | Architecture-specific release assets | Updater selects the current architecture or an explicitly universal package |
 
 Automated loopback and synthetic-service tests exercise a subset of these paths. They do not mark the corresponding real-server/physical-network acceptance as passed.
+
+
+## Authentication and maintenance follow-up (2026-10-18)
+
+| ID | Exercise | Required result |
+| --- | --- | --- |
+| A85 | Initial CRV1 challenge, with/without R; repeated factors | Wait for next Need Auth, use server-decoded username and exact opaque state; explicit acknowledgement if no response; at most three challenges in the original attempt deadline |
+| A86 | Bad flags/base64/control characters/UTF-8; replaced challenge or duplicate reply | Reject or invalidate; never reuse the saved password as an OTP; no opaque context in SessionReport or support exports |
+| A87 | CRV1 auth-failure restart vs transport reconnect | Only the initial pending CRV1 auth-failure is treated as authentication; TLS/ping/transport failures and post-connect challenges retain fail-closed reconnect policy |
+| A88 | Static challenge flags 0–3 over real Unix socket | 0/1 use SCRV1; 2/3 concatenate exactly and escape management quoting; always secure user input |
+| A89 | Cancel while receiving fragments or waiting for challenge | Reader wakes, exactly one exit callback, no stale response; descriptor closed by its reader; debug test entry absent from release helper |
+| A90 | Maintenance with login startup, pending service approval or Keychain error | Stop all three app services, block concurrent connection/profile edits and Quit during cleanup; never claim deletion or preparation succeeded on partial failure |
+
+`python3 scripts/test-management-socket.py "$(swift build --show-bin-path)/VPNNavigatorHelper"` runs non-root local fixtures without OpenVPN, route, DNS or PF changes. These fixtures validate protocol I/O and cancellation, not real TLS-server compatibility. A85/A87/A90 still require signed application/server acceptance on a disposable Mac.

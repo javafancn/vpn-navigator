@@ -2,15 +2,15 @@ import Foundation
 import Darwin
 import VPNNavigatorCore
 
-/// Root-private Unix management interface. Never expose the management socket
-/// outside its root-owned 0700 runtime directory.
+/// Root-private Unix management interface. The read loop owns its descriptor
+/// until shutdown completes, preventing close/read races and descriptor reuse.
 final class ManagementSocket {
     private let ioLock = NSRecursiveLock()
-    private var pendingChallenge: AuthenticationChallenge?
+    private var authentication = ManagementAuthentication()
     private var descriptor: Int32 = -1
+    private var readerRunning = false
+    private var closed = false
     private let queue = DispatchQueue(label: "VPNNavigator.Management")
-    private var buffer = Data()
-    private var credentials: (username: String, password: String)?
     var onChallenge: ((AuthenticationChallenge) -> Void)?
     var onState: ((TunnelSnapshot) -> Void)?
     var onTraffic: ((TunnelTraffic) -> Void)?
@@ -20,17 +20,18 @@ final class ManagementSocket {
 
     func setCredentials(username: String, password: String) {
         ioLock.lock(); defer { ioLock.unlock() }
-        credentials = (username, password)
+        authentication.setCredentials(username: username, password: password)
     }
-
     func open(path: String) throws {
-        guard path.utf8.count < 100 else { throw ManagementError.badPath }
+        ioLock.lock(); defer { ioLock.unlock() }
+        guard !closed, !readerRunning, descriptor < 0, path.utf8.count < 100 else { throw ManagementError.badPath }
         let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw ManagementError.socket }
         var noSigPipe: Int32 = 1
-        _ = withUnsafePointer(to: &noSigPipe) {
-            Darwin.setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, $0,
-                              socklen_t(MemoryLayout<Int32>.size))
+        var writeTimeout = timeval(tv_sec: 2, tv_usec: 0)
+        guard withUnsafePointer(to: &noSigPipe, { Darwin.setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, $0, socklen_t(MemoryLayout<Int32>.size)) }) == 0,
+              withUnsafePointer(to: &writeTimeout, { Darwin.setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, $0, socklen_t(MemoryLayout<timeval>.size)) }) == 0 else {
+            Darwin.close(fd); throw ManagementError.socket
         }
         var address = sockaddr_un()
         address.sun_family = sa_family_t(AF_UNIX)
@@ -46,15 +47,16 @@ final class ManagementSocket {
         }
         guard rc == 0 else { Darwin.close(fd); throw ManagementError.unavailable }
         descriptor = fd
-        try send("state on")
-        try send("bytecount 3")
-        try send("hold release")
-        queue.async { [weak self] in self?.readLoop() }
+        do {
+            try send("state on"); try send("bytecount 3"); try send("hold release")
+        } catch { close(); throw error }
+        readerRunning = true
+        queue.async { self.readLoop(fd: fd) }
     }
-
     func send(_ command: String) throws {
         ioLock.lock(); defer { ioLock.unlock() }
-        guard descriptor >= 0, !command.contains("\n"), !command.contains("\r") else {
+        guard !closed, descriptor >= 0, command.utf8.count < 16_384,
+              !command.unicodeScalars.contains(where: { CharacterSet.controlCharacters.union(.newlines).contains($0) }) else {
             throw ManagementError.socket
         }
         let data = Array((command + "\n").utf8)
@@ -63,73 +65,69 @@ final class ManagementSocket {
             let written = data.withUnsafeBytes { input in
                 Darwin.write(descriptor, input.baseAddress!.advanced(by: position), data.count - position)
             }
+            if written < 0 && errno == EINTR { continue }
             guard written > 0 else { throw ManagementError.socket }
             position += written
         }
     }
-
     func close() {
         ioLock.lock(); defer { ioLock.unlock() }
-        pendingChallenge = nil
+        closed = true
+        authentication = ManagementAuthentication()
         if descriptor >= 0 {
             Darwin.shutdown(descriptor, SHUT_RDWR)
-            Darwin.close(descriptor)
-            descriptor = -1
+            // Only the reader closes an active descriptor. shutdown wakes it.
+            if !readerRunning { Darwin.close(descriptor); descriptor = -1 }
         }
-        credentials = nil
     }
-
     func respond(id: String, response: String) throws {
         ioLock.lock(); defer { ioLock.unlock() }
-        guard let pending = pendingChallenge, pending.id.uuidString == id else { throw ChallengeResponseError.stale }
-        let command = try pending.responseCommand(response: response, accountPassword: credentials?.password ?? "")
-        if pending.kind == .staticOTP {
-            guard let credentials else { throw ChallengeResponseError.invalid }
-            try send("username \"Auth\" \"\(ManagementEscaping.escape(credentials.username))\"")
-        }
-        try send(command)
-        pendingChallenge = nil
+        guard !closed else { throw ChallengeResponseError.stale }
+        let commands = try authentication.respond(id: id, response: response)
+        do { for command in commands { try send(command) } }
+        catch { close(); throw error }
     }
-
-    private func readLoop() {
-        var chunk = [UInt8](repeating: 0, count: 8192)
-        while descriptor >= 0 {
-            let size = chunk.withUnsafeMutableBytes { bytes in
-                Darwin.read(descriptor, bytes.baseAddress, bytes.count)
-            }
-            if size <= 0 { break }
-            buffer.append(contentsOf: chunk.prefix(size))
-            guard buffer.count < 1_048_576 else { break }
-            while let newline = buffer.firstIndex(of: 10) {
-                let line = String(decoding: buffer[..<newline], as: UTF8.self).trimmingCharacters(in: .newlines)
-                buffer.removeSubrange(...newline)
-                if let snapshot = ManagementParser.parseState(line) {
-                    onState?(snapshot)
-                } else if let traffic = ManagementParser.parseByteCount(line) {
-                    onTraffic?(traffic)
-                } else if line.hasPrefix(">PASSWORD:Verification Failed:") {
-                    onAuthenticationFailure?()
-                    close()
-                    break
-                } else if line.hasPrefix(">PASSWORD:Need ") {
-                    ioLock.lock()
-                    let saved = credentials
-                    ioLock.unlock()
-                    if let challenge = AuthenticationChallenge.parse(line) {
-                        ioLock.lock(); pendingChallenge = challenge; ioLock.unlock()
-                        onChallenge?(challenge)
-                    } else if line == ">PASSWORD:Need 'Auth' username/password", let saved {
-                        do {
-                            try send("username \"Auth\" \"\(ManagementEscaping.escape(saved.username))\"")
-                            try send("password \"Auth\" \"\(ManagementEscaping.escape(saved.password))\"")
-                        } catch { onUnsupportedChallenge?(); close(); break }
-                    } else { onUnsupportedChallenge?(); close(); break }
-                }
+    private func consume(_ line: String) -> Bool {
+        ioLock.lock(); defer { ioLock.unlock() }
+        guard !closed else { return false }
+        if let snapshot = ManagementParser.parseState(line) {
+            onState?(authentication.transition(snapshot))
+        } else if let traffic = ManagementParser.parseByteCount(line) {
+            onTraffic?(traffic)
+        } else if let event = authentication.receive(line) {
+            switch event {
+            case .commands(let commands):
+                do { for command in commands { try send(command) } }
+                catch { onUnsupportedChallenge?(); close(); return false }
+            case .challenge(let challenge): onChallenge?(challenge)
+            case .failed: onAuthenticationFailure?(); close(); return false
+            case .unsupported: onUnsupportedChallenge?(); close(); return false
             }
         }
-        close()
-        onExit?()
+        return !closed
+    }
+    private func readLoop(fd: Int32) {
+        defer {
+            ioLock.lock()
+            closed = true; authentication = ManagementAuthentication()
+            Darwin.close(fd); descriptor = -1; readerRunning = false
+            ioLock.unlock()
+            onExit?()
+        }
+        var buffer = Data(), chunk = [UInt8](repeating: 0, count: 8192)
+        while true {
+            let size = chunk.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
+            if size < 0 && errno == EINTR { continue }
+            if size <= 0 { return }
+            buffer.append(contentsOf: chunk.prefix(size))
+            guard buffer.count < 65_536 else { onUnsupportedChallenge?(); return }
+            while let newline = buffer.firstIndex(of: 10) {
+                guard var line = String(data: buffer[..<newline], encoding: .utf8) else { onUnsupportedChallenge?(); return }
+                if line.hasSuffix("\r") { line.removeLast() }
+                buffer.removeSubrange(...newline)
+                guard consume(line) else { return }
+            }
+        }
     }
 }
 enum ManagementError: Error { case badPath, socket, unavailable }
-

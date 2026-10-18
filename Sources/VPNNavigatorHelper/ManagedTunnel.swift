@@ -176,6 +176,7 @@ final class ManagedTunnel {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configFile.path)
         var options = ["--config", configFile.path]
         options += ManagedRoutingPolicy.openVPNArguments(mode: mode)
+        if validated.requestsCredentials { options += ManagementAuthentication.openVPNArguments }
         let managementPath = workdir.appendingPathComponent("management.sock").path
         try? FileManager.default.removeItem(atPath: managementPath)
         options += ["--management", managementPath, "unix", "--management-hold", "--management-up-down", "--management-query-passwords"]

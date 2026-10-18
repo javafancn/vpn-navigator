@@ -18,7 +18,7 @@ final class AuthenticationChallengeTests: XCTestCase {
     }
     func testUnknownOrMaliciousChallengesAreRejected() {
         XCTAssertNil(AuthenticationChallenge.parse(">PASSWORD:Need 'HTTP Proxy' username/password"))
-        XCTAssertNil(AuthenticationChallenge.parse(">PASSWORD:Need 'Auth' username/password SC:3,unsupported format"))
+        XCTAssertNil(AuthenticationChallenge.parse(">PASSWORD:Need 'Auth' username/password SC:4,unsupported format"))
         XCTAssertNil(AuthenticationChallenge.parse(">PASSWORD:Need 'Auth' username/password SC:1,bad\ntext"))
         XCTAssertNil(AuthenticationChallenge.parse(">PASSWORD:Need 'Auth' username/password SC:1,"))
         XCTAssertNil(AuthenticationChallenge.parse(">PASSWORD:Need 'Auth' username/password"))

@@ -36,6 +36,9 @@ def main():
     architecture = platform.machine()
     entries = [app / "Contents/MacOS/VPNNavigatorApp"]
     entries += [app / "Contents/Resources" / name for name in ("VPNNavigatorHelper", "VPNNavigatorRuleAgent", "openvpn")]
+    setup = app / "Contents/Resources/VPNNavigatorLocalSetup"
+    if setup.exists():
+        entries.append(setup)
     entries += sorted((app / "Contents/Frameworks").glob("*.dylib"))
     binaries = []
     for path in entries:
@@ -49,7 +52,7 @@ def main():
                          "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
     source_files = sorted((app / "Contents/Resources/Sources").glob("*.tar.gz"))
     manifest = {"version": info["CFBundleShortVersionString"], "build": info["CFBundleVersion"],
-                "architecture": architecture, "minimum_macos": minimum, "binaries": binaries,
+                "architecture": architecture, "minimum_macos": minimum, "build_channel": info.get("VPNNavigatorBuildChannel", "legacy"), "binaries": binaries,
                 "sources": [{"name": p.name, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in source_files]}
     output.write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"Architecture and minimum macOS verified: {architecture}, {minimum}")

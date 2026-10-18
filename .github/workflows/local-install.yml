@@ -36,6 +36,7 @@ jobs:
           export OPENVPN_BIN="$RUNNER_TEMP/engine-prefix/sbin/openvpn"
           export THIRD_PARTY_NOTICES="$RUNNER_TEMP/engine-prefix/share/vpn-navigator/THIRD_PARTY_NOTICES.txt"
           VPNNAV_CHANNEL=local-test zsh scripts/build-app.sh
+          python3 scripts/release-manifest.py 'dist/VPN Navigator.app' "dist/VPN-Navigator-$(uname -m)-Local-audit.json"
           zsh scripts/build-local-pkg.sh
       - name: Install through macOS Installer (disposable runner only)
         run: |
@@ -51,5 +52,6 @@ jobs:
             dist/*-Local-Uninstall.pkg
             dist/*-Local-SHA256.txt
             dist/*-Local-manifest.json
+            dist/*-Local-audit.json
           if-no-files-found: error
           retention-days: 14

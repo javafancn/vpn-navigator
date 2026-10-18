@@ -93,7 +93,7 @@ struct MainView: View {
         }
         .sheet(isPresented: $model.showingAccountCredentials) { AccountCredentialsView().environmentObject(model) }
         .sheet(item: $model.authenticationChallenge) { challenge in
-            AuthenticationChallengeView(challenge: challenge).environmentObject(model)
+            AuthenticationChallengeView(challenge: challenge).id(challenge.id).environmentObject(model)
         }
         .sheet(isPresented: $model.showingMaintenance) { MaintenanceAssistantView().environmentObject(model) }
         .sheet(isPresented: $model.showingSetup) { SetupAssistantView().environmentObject(model) }

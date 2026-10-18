@@ -530,8 +530,10 @@ final class AppModel: ObservableObject {
     }
     func respondToChallenge(_ challenge: AuthenticationChallenge, value: String) async {
         let response = await helper.submitChallenge(id: challenge.id, response: value)
-        if response == "Accepted" { authenticationChallenge = nil }
-        else { message = response }
+        if response == "Accepted" {
+            // A newer factor may have arrived while this XPC call awaited.
+            if authenticationChallenge?.id == challenge.id { authenticationChallenge = nil }
+        } else { message = response }
     }
     func refreshDiagnostics() async {
         let remote = helper.installationStatus == .enabled ? await helper.diagnosticEvents() : []

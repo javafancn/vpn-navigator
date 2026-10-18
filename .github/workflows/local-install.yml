@@ -42,6 +42,8 @@ jobs:
         run: |
           stat -f 'Console UID %u' /dev/console
           sudo /usr/sbin/installer -verboseR -dumplog -pkg dist/*-Local.pkg -target /
+      - name: Test real certificate TLS and utun through installed helper
+        run: python3 scripts/local-tests/test-tls-loopback.py
       - name: Test actual root service and both sides of XPC authentication
         run: python3 scripts/local-tests/test-installed.py
       - name: Diagnose failed local installation

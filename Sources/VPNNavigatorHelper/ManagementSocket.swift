@@ -20,6 +20,7 @@ final class ManagementSocket {
 
     func setCredentials(username: String, password: String) {
         ioLock.lock(); defer { ioLock.unlock() }
+        guard !closed else { return }
         authentication.setCredentials(username: username, password: password)
     }
     func open(path: String) throws {
@@ -90,7 +91,7 @@ final class ManagementSocket {
     private func consume(_ line: String) -> Bool {
         ioLock.lock(); defer { ioLock.unlock() }
         guard !closed else { return false }
-        if let snapshot = ManagementParser.parseState(line) {
+        if line.hasPrefix(">STATE:"), let snapshot = ManagementParser.parseState(line) {
             onState?(authentication.transition(snapshot))
         } else if let traffic = ManagementParser.parseByteCount(line) {
             onTraffic?(traffic)

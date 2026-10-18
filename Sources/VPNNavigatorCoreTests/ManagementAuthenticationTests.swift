@@ -34,6 +34,15 @@ final class ManagementAuthenticationTests: XCTestCase {
         XCTAssertEqual(try flow.respond(id: value.id.uuidString, response: "").last,
                        "password \"Auth\" \"CRV1::opaque-state::\"")
     }
+    func testPrivateKeyUnlockDuringRetryPreservesDynamicContext() throws {
+        var flow = ManagementAuthentication(); _ = flow.receive(challenge())
+        let key = try presentation(flow.receive(">PASSWORD:Need 'Private Key' password"))
+        XCTAssertEqual(try flow.respond(id: key.id.uuidString, response: "unlock"), ["password \"Private Key\" \"unlock\""])
+        let value = try presentation(flow.receive(need))
+        XCTAssertEqual(value.kind, .dynamicOTP)
+        XCTAssertEqual(try flow.respond(id: value.id.uuidString, response: "123").last,
+                       "password \"Auth\" \"CRV1::opaque-state::123\"")
+    }
     func testOpaqueStateAndResponseAreEscapedWithoutInterpretation() throws {
         var flow = ManagementAuthentication()
         XCTAssertNil(flow.receive(challenge("a\"b\\c")))

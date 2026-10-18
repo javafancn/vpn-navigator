@@ -62,7 +62,8 @@ def exercise(helper, scenario):
                             send(">PASSWORD:Need 'Private Key' password")
                             commands('password "Private Key" "fixture-key"')
                             for flag in range(4):
-                                send(f">PASSWORD:Need 'Auth' username/password SC:{flag},设备验证码")
+                                prompt = "CONNECTED" if flag == 1 else "设备验证码"
+                                send(f">PASSWORD:Need 'Auth' username/password SC:{flag},{prompt}")
                                 if flag < 2:
                                     packed = "SCRV1:" + base64.b64encode(b"fixture-password").decode() + ":" + base64.b64encode(b"8675309").decode()
                                 else:

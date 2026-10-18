@@ -59,6 +59,11 @@ public struct ManagementAuthentication {
             return nil
         }
         guard line.hasPrefix(">PASSWORD:Need ") else { return nil }
+        // A reconnect can ask to unlock the local key before requesting the
+        // next server factor. Preserve the independent CRV1 context.
+        if let value = AuthenticationChallenge.parse(line), value.kind == .privateKey {
+            pending = value; return .challenge(value)
+        }
         if let dynamic {
             guard line == ">PASSWORD:Need 'Auth' username/password" else { return .unsupported }
             awaitingAuthRequest = false; pending = dynamic.presentation
@@ -72,9 +77,12 @@ public struct ManagementAuthentication {
                           "password \"Auth\" \"\(ManagementEscaping.escape(credentials.password))\""])
     }
     public mutating func respond(id: String, response: String) throws -> [String] {
-        guard let pending, pending.id.uuidString == id, !awaitingAuthRequest else { throw ChallengeResponseError.stale }
+        guard let pending, pending.id.uuidString == id else { throw ChallengeResponseError.stale }
         let commands: [String]
-        if let dynamic { commands = try dynamic.commands(response: response) }
+        if pending.kind == .dynamicOTP {
+            guard let dynamic, !awaitingAuthRequest else { throw ChallengeResponseError.stale }
+            commands = try dynamic.commands(response: response)
+        }
         else {
             let password = try pending.responseCommand(response: response, accountPassword: credentials?.password ?? "")
             if pending.kind == .staticOTP {
@@ -82,7 +90,8 @@ public struct ManagementAuthentication {
                 commands = ["username \"Auth\" \"\(ManagementEscaping.escape(credentials.username))\"", password]
             } else { commands = [password] }
         }
-        self.pending = nil; dynamic = nil
+        self.pending = nil
+        if pending.kind == .dynamicOTP { dynamic = nil }
         return commands
     }
     public mutating func transition(_ snapshot: TunnelSnapshot) -> TunnelSnapshot {

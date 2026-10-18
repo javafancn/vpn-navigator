@@ -65,7 +65,8 @@ def main():
             port_reservation.bind(('127.0.0.1', 0))
             port = port_reservation.getsockname()[1]
         config = folder / 'server.conf'
-        config.write_text(f"""dev utun
+        config.write_text(f"""dev tun
+dev-node utun
 proto tcp4-server
 local 127.0.0.1
 port {port}

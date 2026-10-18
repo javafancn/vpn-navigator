@@ -183,7 +183,9 @@ final class ManagedTunnel {
         if validated.requestsCredentials { options += ManagementAuthentication.openVPNArguments }
         let managementPath = workdir.appendingPathComponent("management.sock").path
         try? FileManager.default.removeItem(atPath: managementPath)
-        options += ["--management", managementPath, "unix", "--management-hold", "--management-up-down", "--management-query-passwords"]
+        let listener = try ManagementListener(path: managementPath)
+        defer { listener.close() }
+        options += ["--management", managementPath, "unix", "--management-client", "--management-hold", "--management-up-down", "--management-query-passwords"]
 
         // Trusted binary and DNS hook were verified before the runtime profile
         // was created. Never leave a false orphan marker on signature errors.
@@ -277,7 +279,16 @@ final class ManagedTunnel {
             socket.onExit = { [weak self, weak socket] in
                 self?.queue.async { [weak self] in
                     guard let self, self.management === socket else { return }
+                    // EOF can arrive before Process.terminationHandler. Keep
+                    // the unexpected failure visible after successful cleanup.
+                    let failure = self.lastError ?? "OpenVPN 意外退出，请查看诊断报告。"
+                    self.eventStore.append(.unexpectedExit)
                     self.stop()
+                    if self.state == .disconnected {
+                        self.lastError = failure
+                        self.state = .failed
+                        self.message = failure
+                    }
                 }
             }
             socket.onTraffic = { [weak self, weak socket] sample in
@@ -293,11 +304,13 @@ final class ManagedTunnel {
                 }
             }
             management = socket
-            // OpenVPN creates the socket asynchronously. Bounded retry only.
+            // The private listener exists before child launch. A lost controller
+            // connection makes OpenVPN terminate itself, without signaling a
+            // numeric PID after a helper crash. Accept is bounded/cancellable.
             var success = false
             for _ in 0..<50 {
                 try ensureAttempt()
-                if (try? socket.open(path: managementPath)) != nil { success = true; break }
+                if (try? socket.accept(from: listener)) == true { success = true; break }
                 Thread.sleep(forTimeInterval: 0.1)
             }
             guard success else { throw TunnelError.managementUnavailable }

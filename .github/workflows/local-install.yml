@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+      - name: Check integration fixture syntax
+        run: python3 -m py_compile scripts/local-tests/test-upgrade.py scripts/local-tests/test-tls-loopback.py scripts/local-tests/test-installed.py
       - name: Fetch verified sources
         run: python3 scripts/fetch-engine-sources.py "$RUNNER_TEMP/local-engine-sources"
       - uses: actions/cache@v4
@@ -38,10 +40,10 @@ jobs:
           VPNNAV_CHANNEL=local-test zsh scripts/build-app.sh
           python3 scripts/release-manifest.py 'dist/VPN Navigator.app' "dist/VPN-Navigator-$(uname -m)-Local-audit.json"
           zsh scripts/build-local-pkg.sh
-      - name: Install through macOS Installer (disposable runner only)
+      - name: Test lower-version PKG and administrator upgrade (disposable runner only)
         run: |
           stat -f 'Console UID %u' /dev/console
-          sudo /usr/sbin/installer -verboseR -dumplog -pkg dist/*-Local.pkg -target /
+          python3 scripts/local-tests/test-upgrade.py
       - name: Test real certificate TLS and utun through installed helper
         run: python3 scripts/local-tests/test-tls-loopback.py
       - name: Test actual root service and both sides of XPC authentication

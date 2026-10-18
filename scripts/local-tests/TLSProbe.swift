@@ -8,6 +8,7 @@ import Darwin
                  username: String, password: String, preferences: String, attemptID: String,
                  reply: @escaping (String) -> Void)
     func disconnect(cancelAttemptID: String, reply: @escaping (String) -> Void)
+    func recoverOrphanedRoutes(reply: @escaping (String) -> Void)
     func connectionStatus(reply: @escaping (String) -> Void)
 }
 final class Reply: @unchecked Sendable {
@@ -41,7 +42,7 @@ func ask(_ block: @escaping (TLSHelper, @escaping (String) -> Void) -> Void) asy
 func disconnect() async -> Bool {
     await ask { $0.disconnect(cancelAttemptID: "", reply: $1) } == "Disconnected"
 }
-func exercise(_ profile: String, shouldConnect: Bool) async -> Bool {
+func exercise(_ profile: String, shouldConnect: Bool, disconnectAtEnd: Bool = true) async -> Bool {
     let preferences = #"{"connectionTimeout":20,"reconnectOriginal":false,"killSwitch":false,"reconnectManaged":false}"#
     let result = await ask {
         $0.connect(profile: profile, profileID: UUID().uuidString, mode: "Original", rules: "",
@@ -54,10 +55,12 @@ func exercise(_ profile: String, shouldConnect: Bool) async -> Bool {
         let status = await ask { $0.connectionStatus(reply: $1) }
         if status != previousStatus { print("Observed: " + status); previousStatus = status }
         if status.hasPrefix("connected:") { matched = shouldConnect; break }
-        if status.hasPrefix("failed:") || status.hasPrefix("disconnected:") { matched = !shouldConnect; break }
+        if status.hasPrefix("failed:") { matched = !shouldConnect; break }
+        if shouldConnect && status.hasPrefix("disconnected:") { break }
         if status.hasPrefix("ERROR:") { print(status); break }
         try? await Task.sleep(nanoseconds: 500_000_000)
     }
+    if !disconnectAtEnd { return matched }
     let cleaned = await disconnect()
     if !cleaned { print("Disconnect did not confirm cleanup") }
     return matched && cleaned
@@ -65,6 +68,17 @@ func exercise(_ profile: String, shouldConnect: Bool) async -> Bool {
 Task {
     let arguments = Array(CommandLine.arguments.dropFirst())
     if arguments == ["--disconnect"] { exit(await disconnect() ? 0 : 1) }
+    if arguments == ["--recover"] {
+        let result = await ask { $0.recoverOrphanedRoutes(reply: $1) }
+        guard !result.hasPrefix("ERROR:") else { print(result); exit(1) }
+        let status = await ask { $0.connectionStatus(reply: $1) }
+        print("Recovered: " + status)
+        exit(status.hasPrefix("disconnected:") ? 0 : 1)
+    }
+    if arguments.count == 2, arguments[0] == "--connect-only",
+       let profile = try? String(contentsOfFile: arguments[1]) {
+        exit(await exercise(profile, shouldConnect: true, disconnectAtEnd: false) ? 0 : 1)
+    }
     guard arguments.count == 2, let valid = try? String(contentsOfFile: arguments[0]),
           let invalid = try? String(contentsOfFile: arguments[1]) else { exit(1) }
     for _ in 0..<2 {

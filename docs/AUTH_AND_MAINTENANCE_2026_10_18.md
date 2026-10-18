@@ -14,7 +14,13 @@
 
 Pure state-machine tests cover valid responses, optional acknowledgements, escaping, replaced/stale IDs, bounded retries, malformed challenges, established-session boundaries and sanitized session payloads. Non-root Unix socket fixtures exercise credential/private-key/static/dynamic exchanges, split UTF-8/CRLF, invalid data and repeated concurrent/idle cancellation on the four macOS runner configurations. Release bundles are checked to exclude the debug fixture entry.
 
-Current GitHub workflow status is authoritative. These fixtures do not simulate a successful signed XPC installation, TLS server, real network route or packet-leak acceptance.
+Implementation `7fb2d2deb8502906d1844e110735df0006a5de9b` passed:
+
+- [114 core tests, route ordering and real management socket fixtures on macOS 14, 15, 26 and Intel](https://github.com/javafancn/vpn-navigator/actions/runs/39101779879).
+- [Universal native build, real diagnostic probes, debug fixture exclusion and five-workspace captures](https://github.com/javafancn/vpn-navigator/actions/runs/39101779876).
+- [Both-architecture engine packaging/minimum-OS audits, synthetic DNS recovery and actual PF blocking/release](https://github.com/javafancn/vpn-navigator/actions/runs/39101779885).
+
+The final follow-up changes only this validation record and checklist formatting. These fixtures do not simulate a successful signed XPC installation, TLS server, real network route or packet-leak acceptance.
 
 ## Remaining boundaries
 

@@ -44,7 +44,7 @@ func disconnect() async -> Bool {
 func exercise(_ profile: String, shouldConnect: Bool) async -> Bool {
     let preferences = #"{"connectionTimeout":20,"reconnectOriginal":false,"killSwitch":false,"reconnectManaged":false}"#
     let result = await ask {
-        $0.connect(profile: profile, profileID: UUID().uuidString, mode: "original", rules: "",
+        $0.connect(profile: profile, profileID: UUID().uuidString, mode: "Original", rules: "",
                    username: "", password: "", preferences: preferences, attemptID: UUID().uuidString, reply: $1)
     }
     guard !result.hasPrefix("ERROR:") else { print(result); _ = await disconnect(); return false }

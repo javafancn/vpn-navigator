@@ -49,14 +49,17 @@ func exercise(_ profile: String, shouldConnect: Bool) async -> Bool {
     }
     guard !result.hasPrefix("ERROR:") else { print(result); _ = await disconnect(); return false }
     var matched = false
+    var previousStatus = ""
     for _ in 0..<60 {
         let status = await ask { $0.connectionStatus(reply: $1) }
+        if status != previousStatus { print("Observed: " + status); previousStatus = status }
         if status.hasPrefix("connected:") { matched = shouldConnect; break }
-        if status.hasPrefix("failed:") { matched = !shouldConnect; break }
+        if status.hasPrefix("failed:") || status.hasPrefix("disconnected:") { matched = !shouldConnect; break }
         if status.hasPrefix("ERROR:") { print(status); break }
         try? await Task.sleep(nanoseconds: 500_000_000)
     }
     let cleaned = await disconnect()
+    if !cleaned { print("Disconnect did not confirm cleanup") }
     return matched && cleaned
 }
 Task {
@@ -67,7 +70,7 @@ Task {
     for _ in 0..<2 {
         guard await exercise(valid, shouldConnect: true) else { print("Real TLS/utun connection or cleanup failed"); exit(1) }
     }
-    guard await exercise(invalid, shouldConnect: false) else { print("Wrong CA was accepted or cleanup failed"); exit(1) }
+    guard await exercise(invalid, shouldConnect: false) else { print("Wrong-CA session did not reach a clean rejected state"); exit(1) }
     print("PASS: real certificate TLS, utun, disconnect/reconnect and wrong-CA rejection through installed helper.")
     exit(0)
 }

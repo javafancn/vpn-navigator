@@ -129,6 +129,8 @@ verb 3
         result = run([probe, valid, invalid], ok=False, timeout=120)
         print(result.stdout, end='')
         assert result.returncode == 0, 'Installed helper TLS fixture failed: ' + result.stderr
+        log.flush()
+        assert 'unknown ca' in (folder / 'server.log').read_text().lower(), 'TLS server did not observe the controlled wrong-CA rejection'
         for name in ['active.ovpn', 'routes.journal', 'dns.journal', 'pf-guard.json', 'openvpn-child.json']:
             assert run(['sudo', '/bin/test', '-e', '/var/run/vpn-navigator/' + name], ok=False).returncode != 0, 'Unresolved owned session: ' + name
         assert default_path() == before_route, 'Loopback TLS fixture changed the default network path'

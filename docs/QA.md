@@ -128,4 +128,6 @@ Automated loopback and synthetic-service tests exercise a subset of these paths.
 | A89 | Cancel while receiving fragments or waiting for challenge | Reader wakes, exactly one exit callback, no stale response; descriptor closed by its reader; debug test entry absent from release helper |
 | A90 | Maintenance with login startup, pending service approval or Keychain error | Stop all three app services, block concurrent connection/profile edits and Quit during cleanup; never claim deletion or preparation succeeded on partial failure |
 
+| A91 | Child exited but DNS/route journals remain; legacy failed snapshot | Quit/maintenance stay blocked; an explicit recovered report clears the gate |
+
 `python3 scripts/test-management-socket.py "$(swift build --show-bin-path)/VPNNavigatorHelper"` runs non-root local fixtures without OpenVPN, route, DNS or PF changes. These fixtures validate protocol I/O and cancellation, not real TLS-server compatibility. A85/A87/A90 still require signed application/server acceptance on a disposable Mac.

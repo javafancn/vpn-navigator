@@ -7,6 +7,7 @@
 - Opaque CRV1 context remains exclusively in the helper's in-memory exchange. SessionReport carries only the challenge identity, prompt and input policy. Neither OTP nor challenge state is written to profiles, Keychain or diagnostics.
 - An expected CRV1 initial auth-failure restart retains the same process, original overall deadline and pre-tunnel PF rules. Transport failures and post-connect challenges do not bypass managed reconnect protection.
 - The Unix read loop owns its descriptor until shutdown finishes, while writes are bounded. Cancellation wakes a blocked reader and clears pending secrets. Closed connections cannot be reopened or answer stale challenges.
+- Session reports explicitly carry pending DNS/route/session recovery evidence. Quit and maintenance remain blocked after process exit until it is resolved; failed snapshots from older helpers are treated conservatively.
 - Maintenance verifies helper, rule updater and login startup unregistering; blocks concurrent connection/profile edits and Quit during cleanup; checks scoped Keychain deletion including orphan entries before reporting success.
 
 ## Validation

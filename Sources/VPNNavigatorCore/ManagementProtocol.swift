@@ -26,10 +26,11 @@ public struct SessionReport: Codable, Equatable, Sendable {
     public let sentBytes: UInt64?
     public let firewallActive: Bool
     public let firewallRecoveryRequired: Bool
+    public let networkRecoveryRequired: Bool?
     public let challenge: AuthenticationChallenge?
 
     public init(state: TunnelState, message: String, activeProfileID: UUID?,
-                receivedBytes: UInt64?, sentBytes: UInt64?, challenge: AuthenticationChallenge? = nil, firewallActive: Bool = false, firewallRecoveryRequired: Bool = false, attemptID: UUID? = nil) {
+                receivedBytes: UInt64?, sentBytes: UInt64?, challenge: AuthenticationChallenge? = nil, firewallActive: Bool = false, firewallRecoveryRequired: Bool = false, attemptID: UUID? = nil, networkRecoveryRequired: Bool? = nil) {
         self.state = state
         self.message = message
         self.activeProfileID = activeProfileID
@@ -39,13 +40,24 @@ public struct SessionReport: Codable, Equatable, Sendable {
         self.challenge = challenge
         self.firewallActive = firewallActive
         self.firewallRecoveryRequired = firewallRecoveryRequired
+        self.networkRecoveryRequired = networkRecoveryRequired
     }
 
     public var statusText: String { "\(state.rawValue): \(message)" }
+    /// Older helpers do not report DNS/route evidence. A failed legacy
+    /// snapshot must be explicitly disconnected/recovered before exit.
+    public var requiresNetworkRecovery: Bool {
+        firewallRecoveryRequired || (networkRecoveryRequired ?? (state == .failed))
+    }
 
     public var traffic: TunnelTraffic? {
         guard let receivedBytes, let sentBytes else { return nil }
         return TunnelTraffic(receivedBytes: receivedBytes, sentBytes: sentBytes)
+    }
+}
+public enum SessionExitPolicy {
+    public static func mayExit(state: TunnelState, activeProfileID: UUID?, helperVerified: Bool, recoveryRequired: Bool) -> Bool {
+        helperVerified && !recoveryRequired && activeProfileID == nil && state != .connected && !ConnectionControl.inProgress(state)
     }
 }
 public enum ManagementParser {

@@ -20,6 +20,7 @@ final class AppModel: ObservableObject {
     @Published var ruleSnapshots: [RuleSnapshot] = []
     @Published var firewallActive = false
     @Published var firewallRecoveryRequired = false
+    @Published var networkRecoveryRequired = false
     @Published var reconnectManaged = UserDefaults.standard.bool(forKey: "reconnectManaged") {
         didSet { UserDefaults.standard.set(reconnectManaged, forKey: "reconnectManaged") }
     }
@@ -76,6 +77,7 @@ final class AppModel: ObservableObject {
         store = ProfileStore(root: root.appendingPathComponent("Profiles"))
         updater = RuleUpdater(folder: root.appendingPathComponent("Rules"))
         ipv6Updater = APNICIPv6PreviewStore(root: root.appendingPathComponent("Rules"))
+        helperStateVerified = helper.installationStatus != .enabled
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") { return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
@@ -121,7 +123,7 @@ final class AppModel: ObservableObject {
     var connected: Bool { sessionState == .connected }
     var connecting: Bool { [.connecting, .authenticating, .reconnecting].contains(sessionState) }
     var stopping: Bool { sessionState == .stopping }
-    var canQuit: Bool { !connected && !connecting && !stopping && activeProfileID == nil && !firewallRecoveryRequired && helperStateVerified }
+    var canQuit: Bool { SessionExitPolicy.mayExit(state: sessionState, activeProfileID: activeProfileID, helperVerified: helperStateVerified, recoveryRequired: firewallRecoveryRequired || networkRecoveryRequired) }
     var sessionPreferences: SessionPreferences {
         .init(connectionTimeout: connectionTimeout == 0 ? 60 : connectionTimeout,
               reconnectOriginal: reconnectOriginal, killSwitch: killSwitch, reconnectManaged: reconnectManaged)
@@ -418,6 +420,7 @@ final class AppModel: ObservableObject {
                 authenticationChallenge = report.challenge
                 firewallActive = report.firewallActive
                 firewallRecoveryRequired = report.firewallRecoveryRequired
+                networkRecoveryRequired = report.requiresNetworkRecovery
                 traffic = report.traffic
                 if report.state == .connected, let value = report.traffic {
                     receiveTrend.record(cumulativeBytes: value.receivedBytes)
@@ -581,7 +584,7 @@ final class AppModel: ObservableObject {
         }
         maintenanceInProgress = true; busy = true
         defer { maintenanceInProgress = false; busy = false }
-        if !canQuit { await disconnect() }
+        if helper.installationStatus == .enabled || !canQuit { await disconnect() }
         guard canQuit else { message = "会话或网络恢复尚未完成，不能准备升级或卸载。"; return false }
         guard await unregisterNetworkServices() else { return false }
         do {

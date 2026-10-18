@@ -43,6 +43,10 @@ final class ManagedTunnel {
     private var protectionTeardownBlocked = false
     var firewallActive: Bool { packetGuard.active }
     var firewallRecoveryRequired: Bool { packetGuard.requiresRecovery }
+    var networkRecoveryRequired: Bool {
+        dnsRecovery.exists || packetGuard.requiresRecovery || hasPersistentSessionEvidence ||
+        FileManager.default.fileExists(atPath: workdir.appendingPathComponent("routes.journal").path)
+    }
     private var activeMode: RoutingMode = .original
     private(set) var activeProfileID: UUID?
     private var rules: RuleSet?

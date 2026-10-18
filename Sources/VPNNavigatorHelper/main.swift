@@ -120,7 +120,7 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
                 activeProfileID: self.engine.activeProfileID,
                 receivedBytes: self.engine.traffic?.receivedBytes,
                 sentBytes: self.engine.traffic?.sentBytes, challenge: self.engine.challenge,
-                firewallActive: self.engine.firewallActive, firewallRecoveryRequired: self.engine.firewallRecoveryRequired, attemptID: self.engine.activeAttemptID)
+                firewallActive: self.engine.firewallActive, firewallRecoveryRequired: self.engine.firewallRecoveryRequired, attemptID: self.engine.activeAttemptID, networkRecoveryRequired: self.engine.networkRecoveryRequired)
             guard let bytes = try? JSONEncoder().encode(report),
                   let output = String(data: bytes, encoding: .utf8) else {
                 reply("ERROR: Cannot serialize tunnel status")

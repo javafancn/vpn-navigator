@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 [[ "${3:-/}" == / ]] || { echo "Install on the running system only" >&2; exit 1; }
+EXPECTED="$(/bin/cat "$(/usr/bin/dirname "$0")/architecture")"
+[[ "$(/usr/bin/uname -m)" == "$EXPECTED" ]] || { echo 'Wrong installer architecture' >&2; exit 1; }
 for name in VPNNavigatorApp VPNNavigatorHelper VPNNavigatorRuleAgent; do
   if /usr/bin/pgrep -x "$name" >/dev/null 2>&1; then
     echo 'Quit VPN Navigator and prepare maintenance before installing.' >&2; exit 1

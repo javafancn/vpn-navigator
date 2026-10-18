@@ -4,7 +4,10 @@ cd "${0:A:h}/.."
 APP="$PWD/dist/VPN Navigator.app"
 [[ -x "$APP/Contents/Resources/VPNNavigatorLocalSetup" ]] || exit 1
 STAGING="$(mktemp -d)"
-trap 'rm -rf "$STAGING"' EXIT
+INSTALL_SCRIPTS="$(mktemp -d)"
+trap 'rm -rf "$STAGING" "$INSTALL_SCRIPTS"' EXIT
+cp scripts/local-pkg-scripts/* "$INSTALL_SCRIPTS/"
+uname -m > "$INSTALL_SCRIPTS/architecture"
 mkdir -p "$STAGING/Applications" "$STAGING/Library/Application Support/VPNNavigator/Local/Payload"
 ditto "$APP" "$STAGING/Applications/VPN Navigator.app"
 PAYLOAD="$STAGING/Library/Application Support/VPNNavigator/Local/Payload"
@@ -18,7 +21,7 @@ chmod -R go-w "$STAGING/Library"
 mkdir -p dist
 pkgbuild --root "$STAGING" --install-location / --ownership recommended \
   --identifier com.javafancn.vpn-navigator.local --version "$VERSION" \
-  --scripts scripts/local-pkg-scripts "dist/VPN-Navigator-$VERSION-$(uname -m)-Local.pkg"
+  --scripts "$INSTALL_SCRIPTS" "dist/VPN-Navigator-$VERSION-$(uname -m)-Local.pkg"
 cp "$PAYLOAD/VPNNavigator-Uninstall.pkg" "dist/VPN-Navigator-$VERSION-$(uname -m)-Local-Uninstall.pkg"
 
 (cd dist && shasum -a 256 *-Local.pkg *-Local-Uninstall.pkg > "VPN-Navigator-$VERSION-$(uname -m)-Local-SHA256.txt")

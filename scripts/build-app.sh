@@ -7,7 +7,17 @@ cd "${0:A:h}/.."
 # CI may opt in to a universal UI-only developer bundle. Production
 # builds retain the ordinary host architecture unless explicitly requested.
 CHANNEL="${VPNNAV_CHANNEL:-preview}"
+if [[ -z "${VPNNAV_CHANNEL:-}" && -n "${DEVELOPER_ID_APPLICATION:-}" ]]; then CHANNEL=signed-release; fi
+case "$CHANNEL" in
+  preview) [[ -z "${DEVELOPER_ID_APPLICATION:-}" ]] || { echo 'Choose signed-release for a Developer ID build'; exit 1; } ;;
+  local-test) ;;
+  signed-release) : "${DEVELOPER_ID_APPLICATION:?Signed channel requires Developer ID}" ;;
+  *) echo "Unknown VPNNAV_CHANNEL"; exit 1 ;;
+esac
 BUILD_FLAGS=(-c release)
+if [[ "$CHANNEL" == signed-release ]]; then
+  BUILD_FLAGS+=(--scratch-path .build/signed-release -Xswiftc -DVPNNAV_SIGNED_RELEASE)
+fi
 if [[ "$CHANNEL" == local-test ]]; then
   [[ -z "${DEVELOPER_ID_APPLICATION:-}" && "${VPNNAV_BUILD_UNIVERSAL:-0}" != 1 ]] || exit 1
   BUILD_FLAGS+=(--scratch-path .build/local-test -Xswiftc -DVPNNAV_LOCAL_TEST)
@@ -28,6 +38,7 @@ if [[ "$CHANNEL" == local-test ]]; then
   cp "$BIN/VPNNavigatorLocalSetup" "$APP/Contents/Resources/"
 fi
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :VPNNavigatorBuildChannel string $CHANNEL" "$APP/Contents/Info.plist"
 cp Resources/Engine/macos-dns-updown.sh "$APP/Contents/Resources/macos-dns-updown.sh"
 chmod 755 "$APP/Contents/Resources/macos-dns-updown.sh"
 mkdir -p "$APP/Contents/Resources/LICENSES"

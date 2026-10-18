@@ -7,7 +7,7 @@ swift test
 zsh scripts/build-app.sh
 ```
 
-Without OPENVPN_BIN this produces UI-only preview software. Real privileged operations deliberately require Developer ID identity and a protected `/Applications/VPN Navigator.app` installed through its signed PKG.
+Without OPENVPN_BIN this produces UI-only preview software. For real VPN operations choose the administrator-approved [local test channel](LOCAL_TEST_INSTALLATION.md) or the Developer ID signed channel below. A preview build cannot register the privileged VPN helper.
 
 ## Source-built engine
 

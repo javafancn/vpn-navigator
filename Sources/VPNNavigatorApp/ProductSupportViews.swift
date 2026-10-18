@@ -117,7 +117,7 @@ struct SetupAssistantView: View {
                 BrandMark(size: 48)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("连接前检查").font(.system(size: 24, weight: .bold))
-                    Text("准备应用、权限与配置，完成后即可开始使用。")
+                    Text(BuildChannel.label + " · 准备应用、权限与配置")
                         .font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 Spacer()

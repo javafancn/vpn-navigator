@@ -642,8 +642,9 @@ final class AppModel: ObservableObject {
         panel.allowedContentTypes = [.init(filenameExtension: "pkg")!]
         panel.message = "选择可信来源、与本机架构一致的 Local.pkg。此通道不验证发布者证书，请先核对来源及 SHA-256。系统安装器将请求管理员授权。"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard url.lastPathComponent.hasSuffix("-Local.pkg") else {
-            message = "请选择本地版安装包（-Local.pkg）。"; return
+        guard url.lastPathComponent.hasSuffix("-Local.pkg"),
+              url.lastPathComponent.contains("-" + LocalInstallation.nativeArchitecture + "-") else {
+            message = "请选择与本机架构一致的本地版安装包（-Local.pkg）。"; return
         }
         if NSWorkspace.shared.open(url) { NSApplication.shared.terminate(nil) }
         else { message = "无法打开安装包，请在 Finder 中打开。" }

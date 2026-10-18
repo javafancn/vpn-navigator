@@ -4,14 +4,24 @@ import CryptoKit
 import Darwin
 
 public enum BuildChannel {
-    public static var isLocal: Bool {
+    public enum Kind: String { case preview, localTest = "local-test", signedRelease = "signed-release" }
+    public static var kind: Kind {
         #if VPNNAV_LOCAL_TEST
-        return true
+        return .localTest
+        #elseif VPNNAV_SIGNED_RELEASE
+        return .signedRelease
         #else
-        return false
+        return .preview
         #endif
     }
-    public static var label: String { isLocal ? "本地测试版（未公证）" : "签名发布 / UI 预览" }
+    public static var isLocal: Bool { kind == .localTest }
+    public static var label: String {
+        switch kind {
+        case .preview: return "开发预览版（特权连接不可用）"
+        case .localTest: return "本地测试版（未公证）"
+        case .signedRelease: return "Developer ID 发布构建"
+        }
+    }
 }
 
 public enum LocalRole: String, Codable, CaseIterable, Sendable {
@@ -91,6 +101,13 @@ public enum LocalInstallError: Error, LocalizedError {
     }
 }
 public enum LocalInstallation {
+    public static var nativeArchitecture: String {
+        #if arch(arm64)
+        return "arm64"
+        #else
+        return "x86_64"
+        #endif
+    }
     public static let root = URL(fileURLWithPath: "/Library/Application Support/VPNNavigator/Local", isDirectory: true)
     public static let payload = root.appendingPathComponent("Payload", isDirectory: true)
     public static let manifest = root.appendingPathComponent("manifest.json")
@@ -147,13 +164,14 @@ public enum LocalInstallation {
         guard BuildChannel.isLocal, FileManager.default.fileExists(atPath: record.path) else { throw LocalInstallError.notInstalled }
         try protectedRoot()
         let value = try decode(record)
+        guard value.architecture == nativeArchitecture else { throw LocalInstallError.invalid }
         for role in LocalRole.allCases where role != .app {
             let path = executable(role); try protected(path)
             guard try binary(path, role: role) == value.binaries[role.rawValue] else { throw LocalInstallError.altered }
         }
         let dns = payload.appendingPathComponent("macos-dns-updown.sh"); try protected(dns)
         try protected(uninstaller)
-        guard try hash(dns) == value.dnsSHA256, hash(uninstaller) == value.uninstallerSHA256 else { throw LocalInstallError.altered }
+        guard try hash(dns) == value.dnsSHA256, try hash(uninstaller) == value.uninstallerSHA256 else { throw LocalInstallError.altered }
         return value
     }
     public static func selfMatches(_ roles: [LocalRole], approval: LocalApproval) -> Bool {

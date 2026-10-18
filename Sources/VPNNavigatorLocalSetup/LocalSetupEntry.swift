@@ -75,6 +75,7 @@ import VPNNavigatorCore
         guard !LocalInstallation.hasRecoveryEvidence else { throw LocalInstallError.recoveryRequired }
         try LocalInstallation.protectedRoot()
         var approval = try LocalInstallation.decode(LocalInstallation.template)
+        guard approval.architecture == LocalInstallation.nativeArchitecture else { throw LocalInstallError.invalid }
         approval.ownerUID = uid
         for role in LocalRole.allCases {
             let path = LocalInstallation.executable(role); try LocalInstallation.protected(path)
@@ -82,7 +83,7 @@ import VPNNavigatorCore
         }
         let dns = LocalInstallation.payload.appendingPathComponent("macos-dns-updown.sh"); try LocalInstallation.protected(dns)
         try LocalInstallation.protected(LocalInstallation.uninstaller)
-        guard try LocalInstallation.hash(dns) == approval.dnsSHA256, LocalInstallation.hash(LocalInstallation.uninstaller) == approval.uninstallerSHA256 else { throw LocalInstallError.altered }
+        guard try LocalInstallation.hash(dns) == approval.dnsSHA256, try LocalInstallation.hash(LocalInstallation.uninstaller) == approval.uninstallerSHA256 else { throw LocalInstallError.altered }
         // A signed SMAppService deployment cannot be silently replaced.
         if (try? run(["print", "system/" + HelperIdentity.machService])) != nil { throw LocalInstallError.unsafe }
         _ = try? run(["bootout", "system/" + LocalInstallation.daemonLabel])

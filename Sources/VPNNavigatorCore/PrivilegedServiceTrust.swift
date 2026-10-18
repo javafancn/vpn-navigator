@@ -1,9 +1,8 @@
 import Foundation
 import Security
 
-/// A connection to the root service is only permitted when the client has
-/// a real Apple Developer Team, and the server code matches the bundled
-/// helper's exact signing identifier.
+/// The compile-time channel selects either administrator-approved local code
+/// hashes or the existing Developer ID Team requirement. No runtime fallback.
 public enum PrivilegedServiceTrust {
     public static func helperRequirement() -> String? {
         if BuildChannel.isLocal {

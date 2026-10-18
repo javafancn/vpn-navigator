@@ -891,7 +891,7 @@ struct SystemSettingsPane: View {
                 }
 
                 settingsRow("关于",
-                    subtitle: "VPN Navigator · 版本 \(version) (Build \(build))",
+                    subtitle: "VPN Navigator · \(version) (Build \(build)) · \(BuildChannel.label)",
                     symbol: "info.circle.fill") {
                     Menu {
                         Text("macOS 13+")

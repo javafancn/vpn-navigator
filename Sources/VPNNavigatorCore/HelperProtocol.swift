@@ -3,6 +3,7 @@ import Foundation
 /// IPC contract shared by the unprivileged app and the privileged macOS launch daemon.
 /// No file paths or arbitrary shell commands are accepted from the GUI.
 @objc public protocol VPNNavigatorHelperAPI {
+    func prepareLocalMaintenance(reply: @escaping (String) -> Void)
     func health(reply: @escaping (String) -> Void)
     func connect(profile: String, profileID: String, mode: String, rules: String,
                  username: String, password: String, preferences: String, attemptID: String,

@@ -43,7 +43,9 @@ public enum ReleaseAssetPolicy {
     public static func isApprovedInstaller(_ url: URL) -> Bool {
         url.scheme == "https" && url.host == "github.com" &&
         url.path.hasPrefix("/javafancn/vpn-navigator/releases/download/") &&
-        url.pathExtension.lowercased() == "pkg"
+        url.pathExtension.lowercased() == "pkg" &&
+        !url.lastPathComponent.lowercased().contains("-local") &&
+        !url.lastPathComponent.lowercased().contains("uninstall")
     }
 }
 

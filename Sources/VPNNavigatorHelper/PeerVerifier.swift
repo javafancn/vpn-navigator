@@ -1,12 +1,17 @@
 import Foundation
 import Security
+import VPNNavigatorCore
 
 /// Build an OS-enforced designated-requirement for privileged XPC callers.
 ///
 /// Do not validate clients by looking up their PID: another process could take
 /// that PID after the lookup. macOS 13+ checks this requirement per connection.
 enum PeerVerifier {
-    static func clientRequirement() -> String? {
+    static func clientRequirement(uid: UInt32) -> String? {
+        if BuildChannel.isLocal {
+            guard let approval = try? LocalInstallation.load(), uid == approval.ownerUID || uid == 0 else { return nil }
+            return try? approval.requirement(for: uid == 0 ? [.setup] : [.app, .agent])
+        }
         var own: SecCode?
         var staticCode: SecStaticCode?
         guard SecCodeCopySelf([], &own) == errSecSuccess, let own,
@@ -25,3 +30,4 @@ enum PeerVerifier {
         return requirement
     }
 }
+

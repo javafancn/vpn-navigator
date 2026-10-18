@@ -2,6 +2,7 @@ import SwiftUI
 import VPNNavigatorCore
 import ServiceManagement
 import Darwin
+import UniformTypeIdentifiers
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -77,8 +78,8 @@ final class AppModel: ObservableObject {
         store = ProfileStore(root: root.appendingPathComponent("Profiles"))
         updater = RuleUpdater(folder: root.appendingPathComponent("Rules"))
         ipv6Updater = APNICIPv6PreviewStore(root: root.appendingPathComponent("Rules"))
-        helperStateVerified = helper.installationStatus != .enabled
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") { return }
+        helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") { return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -102,6 +103,15 @@ final class AppModel: ObservableObject {
         }
         Task {
             await load()
+            if BuildChannel.isLocal, helper.installationStatus == .enabled,
+               let approval = try? LocalInstallation.load(),
+               let installedHash = approval.binaries[LocalRole.app.rawValue]?.sha256,
+               UserDefaults.standard.string(forKey: "localRulesBuild") != installedHash {
+                do {
+                    try UserServices.enableRules()
+                    UserDefaults.standard.set(installedHash, forKey: "localRulesBuild")
+                } catch { message = "规则后台更新未启用：\(error.localizedDescription)" }
+            }
             eventHistory = localEvents.events()
             if !UserDefaults.standard.bool(forKey: "setupAssistantDismissed") {
                 showingSetup = true
@@ -271,6 +281,11 @@ final class AppModel: ObservableObject {
     }
 
     func checkForUpdates() async {
+        if BuildChannel.isLocal {
+            message = "本地版通过可信来源的同架构 Local.pkg 手动更新；请先打开升级与卸载准备。"
+            showingMaintenance = true
+            return
+        }
         do {
             let release = try await UpdateChecker.latestRelease()
             guard ReleaseAssetPolicy.isApprovedReleasePage(release.html_url) else {
@@ -297,6 +312,7 @@ final class AppModel: ObservableObject {
         }
     }
     func downloadVerifiedUpdate() async {
+        guard !BuildChannel.isLocal else { return }
         guard !busy, let url = availableInstaller else { return }
         guard !connected && !connecting, helper.installationStatus != .enabled else {
             message = "请先准备升级：断开 VPN 并停用后台服务。"
@@ -347,11 +363,11 @@ final class AppModel: ObservableObject {
             }
         }
         do {
-            let agent = SMAppService.agent(plistName: "com.javafancn.vpn-navigator.rules.plist")
-            if agent.status != .notRegistered && agent.status != .notFound { try await agent.unregister() }
-            if helper.installationStatus != .notRegistered && helper.installationStatus != .notFound { try helper.unregister() }
+            try await UserServices.disableRules()
+            if BuildChannel.isLocal { try UserServices.setLogin(false) }
+            if helper.installationStatus != .notRegistered && helper.installationStatus != .notFound { try await helper.unregister() }
             await refreshConnectionStatus()
-            guard [agent.status, helper.installationStatus].allSatisfy({ $0 == .notRegistered || $0 == .notFound }) else {
+            guard [UserServices.rulesStatus, helper.installationStatus].allSatisfy({ $0 == .notRegistered || $0 == .notFound }) else {
                 message = "后台服务尚未完全停用，请检查系统设置。"; return false
             }
             message = "VPN Navigator background services have been unregistered."
@@ -392,7 +408,7 @@ final class AppModel: ObservableObject {
         switch status {
         case .enabled: return "已启用"
         case .notRegistered: return "未注册"
-        case .requiresApproval: return "等待系统授权"
+        case .requiresApproval: return BuildChannel.isLocal ? "安装需修复或非安装用户" : "等待系统授权"
         case .notFound: return "服务未安装"
         @unknown default: return "状态未知"
         }
@@ -400,9 +416,16 @@ final class AppModel: ObservableObject {
 
     func requestHelper() {
         guard !maintenanceInProgress else { return }
+        if BuildChannel.isLocal {
+            if helper.installationStatus == .enabled {
+                do { try UserServices.enableRules(); message = "本地助手已批准，规则后台更新已启用。" }
+                catch { message = error.localizedDescription }
+            } else { openLocalInstaller() }
+            return
+        }
         do {
             try helper.requestRegistration()
-            try SMAppService.agent(plistName: "com.javafancn.vpn-navigator.rules.plist").register()
+            try UserServices.enableRules()
             helperStatus = displayHelperStatus(helper.installationStatus)
             message = "Enable the background helper in System Settings if requested. A signed .app distribution is required."
         } catch { message = "Helper registration failed: \(error.localizedDescription)" }
@@ -439,8 +462,9 @@ final class AppModel: ObservableObject {
                 sendTrend.reset()
             }
         } else {
-            helperStateVerified = true
-            connectionStatus = "disconnected: Privileged helper not enabled"
+            let unresolved = BuildChannel.isLocal && (helper.installationStatus == .requiresApproval || LocalInstallation.hasRecoveryEvidence)
+            helperStateVerified = !unresolved
+            connectionStatus = unresolved ? "failed: 本地安装未通过校验，请先恢复网络并修复安装" : "disconnected: Privileged helper not enabled"
             activeProfileID = nil
             authenticationChallenge = nil
             traffic = nil
@@ -588,11 +612,8 @@ final class AppModel: ObservableObject {
         guard canQuit else { message = "会话或网络恢复尚未完成，不能准备升级或卸载。"; return false }
         guard await unregisterNetworkServices() else { return false }
         do {
-            let login = SMAppService.mainApp
-            if login.status != .notRegistered && login.status != .notFound { try await login.unregister() }
-            let statuses = [helper.installationStatus,
-                            SMAppService.agent(plistName: "com.javafancn.vpn-navigator.rules.plist").status,
-                            login.status]
+            try UserServices.setLogin(false)
+            let statuses = [helper.installationStatus, UserServices.rulesStatus, UserServices.loginStatus]
             guard statuses.allSatisfy({ $0 == .notRegistered || $0 == .notFound }) else {
                 message = "后台助手、规则更新或登录启动仍未完全停用。"; return false
             }
@@ -607,8 +628,36 @@ final class AppModel: ObservableObject {
         } catch {
             message = "维护准备尚未完成：\(error.localizedDescription)"; return false
         }
-        message = "后台助手、规则更新与登录启动均已停用，可以升级或在 Finder 中移除应用。"
+        message = BuildChannel.isLocal ? "后台服务已停用。可选择可信本地安装包升级，或运行管理员卸载包移除系统组件。默认保留配置。" : "后台助手、规则更新与登录启动均已停用，可以升级或在 Finder 中移除应用。"
         return true
+    }
+    /// Local packages have no publisher certificate. Selection is an explicit
+    /// user action; only macOS Installer can grant administrator authorization.
+    func openLocalInstaller() {
+        guard BuildChannel.isLocal, !maintenanceInProgress, canQuit,
+              helper.installationStatus != .enabled else {
+            message = "请先完成升级与卸载准备。"; showingMaintenance = true; return
+        }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.init(filenameExtension: "pkg")!]
+        panel.message = "选择可信来源、与本机架构一致的 Local.pkg。此通道不验证发布者证书，请先核对来源及 SHA-256。系统安装器将请求管理员授权。"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard url.lastPathComponent.hasSuffix("-Local.pkg"),
+              url.lastPathComponent.contains("-" + LocalInstallation.nativeArchitecture + "-") else {
+            message = "请选择与本机架构一致的本地版安装包（-Local.pkg）。"; return
+        }
+        if NSWorkspace.shared.open(url) { NSApplication.shared.terminate(nil) }
+        else { message = "无法打开安装包，请在 Finder 中打开。" }
+    }
+    func openLocalUninstaller() {
+        guard BuildChannel.isLocal, !maintenanceInProgress, canQuit,
+              helper.installationStatus != .enabled else { return }
+        do {
+            let approval = try LocalInstallation.load(allowRetired: true)
+            guard approval.ownerUID == getuid() else { throw LocalInstallError.unsafe }
+            if NSWorkspace.shared.open(LocalInstallation.uninstaller) { NSApplication.shared.terminate(nil) }
+            else { throw LocalInstallError.command }
+        } catch { message = "无法打开卸载包：\(error.localizedDescription)" }
     }
     func exportPreview() async {
         guard let profile = selected else { return }
@@ -629,6 +678,27 @@ struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
     @StateObject private var model = AppModel()
     init() {
+        if BuildChannel.isLocal && ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") {
+            Task { let result = await HelperClient.shared.ping(); print(result); Darwin.exit(result.hasPrefix("VPN Navigator Helper") ? 0 : 1) }
+        }
+        if BuildChannel.isLocal && ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") {
+            Task {
+                do {
+                    guard await HelperClient.shared.ping() == "VPN Navigator Helper (local)" else { throw LocalInstallError.command }
+                    try UserServices.enableRules()
+                    try UserServices.setLogin(true)
+                    guard UserServices.rulesStatus == .enabled, UserServices.loginStatus == .enabled else { throw LocalInstallError.command }
+                    try UserServices.setLogin(false)
+                    try await UserServices.disableRules()
+                    try await HelperClient.shared.unregister()
+                    guard UserServices.rulesStatus == .notRegistered, UserServices.loginStatus == .notRegistered,
+                          HelperClient.shared.installationStatus == .notRegistered else { throw LocalInstallError.command }
+                    _ = try LocalInstallation.load(allowRetired: true)
+                    print("Local user services and authenticated maintenance passed.")
+                    Darwin.exit(0)
+                } catch { print("Local maintenance self-test failed: \(error.localizedDescription)"); Darwin.exit(1) }
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") {
             Task {
                 do {

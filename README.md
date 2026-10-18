@@ -2,7 +2,7 @@
 
 原生 macOS OpenVPN 客户端，提供配置管理、Original / 全局 VPN / 中国 IPv4 直连策略、菜单栏控制与网络诊断。
 
-当前开发版本：**0.2.0**。引擎、安全和 UI 分支已整合至 `main`。正式分发仍须完成 Developer ID 签名、公证和真实 VPN 网络验收；CI 的 UI 体验包不包含连接引擎，也不能注册特权助手。
+当前开发版本：**0.2.0**。提供开发预览、本地测试及 Developer ID 发布构建三种通道。本地测试通道无需付费开发者证书，包含引擎并经管理员批准固定程序身份；尚待真实网络及用户 Mac 安装验收。正式分发仍须签名、公证及发布验收。
 
 ## 已实现
 
@@ -29,7 +29,7 @@ swift test
 zsh scripts/build-app.sh
 ```
 
-未提供 `OPENVPN_BIN` 的构建是 UI-only。真实连接还需要符合签名要求的引擎、Developer ID 签名、通过 PKG 安装到 `/Applications` 的受保护应用，以及用户授权后台助手。应用不会要求最终用户安装 Homebrew。
+未提供 `OPENVPN_BIN` 的构建是 UI-only。本地连接请使用[本地测试安装包](docs/LOCAL_TEST_INSTALLATION.md)，由管理员批准并核验固定代码身份；正式分发使用 Developer ID 签名安装包。两种通道均需受保护程序及后台助手。应用不会要求最终用户安装 Homebrew。
 
 源码引擎与签名分发步骤见 [安装与发布](docs/INSTALL_AND_RELEASE.md) 和 [手动签名工作流](docs/SIGNED_RELEASE_WORKFLOW.md)。
 

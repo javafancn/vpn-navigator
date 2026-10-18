@@ -39,8 +39,13 @@ if CommandLine.arguments.dropFirst().first == "--self-test-dns-journal" {
 }
 #endif
 
+if BuildChannel.isLocal {
+    guard let approval = try? LocalInstallation.load(), LocalInstallation.selfMatches([.helper], approval: approval) else { exit(1) }
+}
+
 final class HelperService: NSObject, VPNNavigatorHelperAPI {
     private let engine = ManagedTunnel()
+    private var retiring = false
     // All tunnel actions and state transitions use one serial queue.
     private var queue: DispatchQueue { engine.queue }
     private var networkMonitor: NetworkChangeMonitor?
@@ -59,14 +64,35 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
         terminationSignal = termination; termination.resume()
     }
 
+    func prepareLocalMaintenance(reply: @escaping (String) -> Void) {
+        guard BuildChannel.isLocal else { reply("ERROR: Local maintenance is unavailable in this channel"); return }
+        engine.cancellation.cancel(nil)
+        queue.async {
+            guard BuildChannel.isLocal, self.engine.state == .disconnected, !self.engine.networkRecoveryRequired else {
+                reply("ERROR: 请先断开并完成网络恢复。"); return
+            }
+            do {
+                try LocalInstallation.removeApproval()
+                self.retiring = true
+                reply("Local services disabled")
+                self.queue.asyncAfter(deadline: .now() + 0.2) {
+                    let task = Process()
+                    task.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+                    task.arguments = ["bootout", "system/" + LocalInstallation.daemonLabel]
+                    try? task.run()
+                }
+            } catch { reply("ERROR: " + error.localizedDescription) }
+        }
+    }
     func health(reply: @escaping (String) -> Void) {
-        reply("VPN Navigator Helper (signed)")
+        reply(BuildChannel.isLocal ? "VPN Navigator Helper (local)" : "VPN Navigator Helper (signed)")
     }
     func connect(profile: String, profileID: String, mode: String, rules: String,
                  username: String, password: String, preferences: String, attemptID: String,
                  reply: @escaping (String) -> Void) {
         let generation = engine.cancellation.snapshot()
         queue.async {
+            guard !self.retiring else { reply("ERROR: Local services are retiring"); return }
             guard let requestID = UUID(uuidString: attemptID) else { reply("ERROR: Invalid connection attempt"); return }
             guard let profileUUID = UUID(uuidString: profileID) else {
                 reply("ERROR: Invalid profile identifier"); return
@@ -158,7 +184,7 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
 final class HelperDelegate: NSObject, NSXPCListenerDelegate {
     private let service = HelperService()
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
-        guard let requirement = PeerVerifier.clientRequirement() else { return false }
+        guard let requirement = PeerVerifier.clientRequirement(uid: connection.effectiveUserIdentifier) else { return false }
         // macOS enforces this requirement against every incoming XPC message.
         connection.setCodeSigningRequirement(requirement)
         connection.exportedInterface = NSXPCInterface(with: VPNNavigatorHelperAPI.self)

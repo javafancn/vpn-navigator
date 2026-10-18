@@ -9,6 +9,7 @@ let package = Package(
         .executable(name: "VPNNavigatorApp", targets: ["VPNNavigatorApp"]),
         .executable(name: "VPNNavigatorHelper", targets: ["VPNNavigatorHelper"]),
         .executable(name: "VPNNavigatorRuleAgent", targets: ["VPNNavigatorRuleAgent"]),
+        .executable(name: "VPNNavigatorLocalSetup", targets: ["VPNNavigatorLocalSetup"]),
         .executable(name: "VPNNavigatorPFPreview", targets: ["VPNNavigatorPFPreview"])
     ],
     targets: [
@@ -16,7 +17,9 @@ let package = Package(
         .executableTarget(name: "VPNNavigatorApp", dependencies: ["VPNNavigatorCore"]),
         .executableTarget(name: "VPNNavigatorHelper", dependencies: ["VPNNavigatorCore"]),
         .executableTarget(name: "VPNNavigatorRuleAgent", dependencies: ["VPNNavigatorCore"]),
+        .executableTarget(name: "VPNNavigatorLocalSetup", dependencies: ["VPNNavigatorCore"]),
         .executableTarget(name: "VPNNavigatorPFPreview", dependencies: ["VPNNavigatorCore"]),
         .testTarget(name: "VPNNavigatorCoreTests", dependencies: ["VPNNavigatorCore"])
     ]
 )
+

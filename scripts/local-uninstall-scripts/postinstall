@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+[[ "${3:-/}" == / ]] || exit 1
+for name in VPNNavigatorApp VPNNavigatorHelper VPNNavigatorRuleAgent; do
+  if /usr/bin/pgrep -x "$name" >/dev/null 2>&1; then
+    echo 'Prepare maintenance and quit VPN Navigator before uninstalling.' >&2; exit 1
+  fi
+done
+SETUP='/Library/Application Support/VPNNavigator/Local/Payload/VPNNavigatorLocalSetup'
+[[ -e "$SETUP" ]] || exit 0
+source "$(/usr/bin/dirname "$0")/guard"
+check_local_setup
+"$SETUP" uninstall

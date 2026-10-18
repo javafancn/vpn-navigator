@@ -32,7 +32,7 @@ struct MaintenanceAssistantView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("升级与卸载准备").font(.system(size: 24, weight: .bold))
-            Text("先停止 VPN、恢复网络并停用本应用后台服务及登录启动，再交由系统安装器升级或 Finder 移除应用。")
+            Text(BuildChannel.isLocal ? "先恢复网络并停用后台服务，再通过系统安装器升级或完整卸载。直接将应用拖入废纸篓会保留系统组件。" : "先停止 VPN、恢复网络并停用本应用后台服务及登录启动，再交由系统安装器升级或 Finder 移除应用。")
                 .font(.system(size: 14)).fixedSize(horizontal: false, vertical: true)
             Toggle("同时删除全部连接配置、历史版本与已保存凭据", isOn: $removeProfiles)
                 .disabled(preparing || prepared)
@@ -47,11 +47,18 @@ struct MaintenanceAssistantView: View {
                 Spacer()
             }
             HStack {
+                if BuildChannel.isLocal {
+                    Button("选择本地更新包…") { model.openLocalInstaller() }
+                        .buttonStyle(ReferenceSecondaryButton()).disabled(!prepared)
+                    Button("卸载本地程序…") { model.openLocalUninstaller() }
+                        .buttonStyle(ReferenceSecondaryButton()).disabled(!prepared)
+                } else {
                 Button("在 Finder 中显示应用") { NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL]) }
                     .buttonStyle(ReferenceSecondaryButton()).disabled(!prepared)
                 Button("下载已验证的更新…") {
                     dismiss(); Task { await model.downloadVerifiedUpdate() }
                 }.buttonStyle(ReferenceSecondaryButton()).disabled(!prepared || model.availableInstaller == nil)
+                }
                 Spacer()
                 Button("完成") { dismiss() }.buttonStyle(ReferenceSecondaryButton()).disabled(preparing)
             }
@@ -110,13 +117,13 @@ struct SetupAssistantView: View {
                 BrandMark(size: 48)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("连接前检查").font(.system(size: 24, weight: .bold))
-                    Text("准备应用、权限与配置，完成后即可开始使用。")
+                    Text(BuildChannel.label + " · 准备应用、权限与配置")
                         .font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
             VStack(spacing: 0) {
-                checkRow("应用签名", detail: signed ? "已检测到开发者团队身份" : "当前为开发预览包，请安装正式签名版本", ready: signed)
+                checkRow(BuildChannel.isLocal ? "本地安装批准" : "应用签名", detail: BuildChannel.isLocal ? (signed ? "管理员已批准此版本；本地运行时签名，未公证" : "请用可信 Local.pkg 安装或修复") : (signed ? "已检测到开发者团队身份" : "当前为开发预览包，请安装正式签名版本"), ready: signed)
                 Divider().opacity(0.25)
                 checkRow("OpenVPN 引擎", detail: engine ? "已找到内置引擎；连接时会核验签名" : "当前安装包未包含引擎，暂不能连接 VPN", ready: engine)
                 Divider().opacity(0.25)
@@ -124,8 +131,8 @@ struct SetupAssistantView: View {
                 Divider().opacity(0.25)
                 HStack {
                     checkRow("后台助手", detail: model.helperStatus, ready: model.helperStatus == "已启用")
-                    Button("启用…") { model.requestHelper() }
-                        .buttonStyle(ReferenceSecondaryButton()).disabled(!signed || !engine)
+                    Button(BuildChannel.isLocal ? "安装 / 启用…" : "启用…") { model.requestHelper() }
+                        .buttonStyle(ReferenceSecondaryButton()).disabled(!BuildChannel.isLocal && (!signed || !engine))
                     Button("系统授权…") { SMAppService.openSystemSettingsLoginItems() }
                         .buttonStyle(ReferenceSecondaryButton())
                 }.padding(.trailing, 14)
@@ -172,7 +179,7 @@ struct SetupAssistantView: View {
 struct ClientPreferencesView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var launchAtLogin = UserServices.loginStatus == .enabled
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("连接偏好").font(.system(size: 24, weight: .bold))
@@ -197,10 +204,9 @@ struct ClientPreferencesView: View {
                 Toggle("登录时启动 VPN Navigator", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { enabled in
                         do {
-                            if enabled { try SMAppService.mainApp.register() }
-                            else { try SMAppService.mainApp.unregister() }
+                            try UserServices.setLogin(enabled)
                         } catch {
-                            launchAtLogin = SMAppService.mainApp.status == .enabled
+                            launchAtLogin = UserServices.loginStatus == .enabled
                             model.message = "登录启动设置失败：\(error.localizedDescription)"
                         }
                     }

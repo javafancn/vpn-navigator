@@ -9,6 +9,11 @@ final class ReleasePolicyTests: XCTestCase {
         XCTAssertFalse(ReleaseAssetPolicy.supportsArchitecture("VPN-Navigator-0.1.0-x86_64.pkg", architecture: "arm64"))
         XCTAssertTrue(ReleaseAssetPolicy.supportsArchitecture("VPN-Navigator-0.1.0-Universal.pkg", architecture: "arm64"))
     }
+    func testLocalAndUninstallPackagesCannotEnterSignedUpdater() {
+        for name in ["VPN-Navigator-arm64-Local.pkg", "VPN-Navigator-Local-Uninstall.pkg", "VPN-Navigator-uninstall.pkg"] {
+            XCTAssertFalse(ReleaseAssetPolicy.isApprovedInstaller(URL(string: "https://github.com/javafancn/vpn-navigator/releases/download/v0.2.0/" + name)!))
+        }
+    }
     func testStableVersionsAndSorting() throws {
         XCTAssertEqual(ReleaseVersion("v1.2.3"), ReleaseVersion("1.2.3"))
         XCTAssertTrue(try XCTUnwrap(ReleaseVersion("1.3.0")) > XCTUnwrap(ReleaseVersion("1.2.9")))

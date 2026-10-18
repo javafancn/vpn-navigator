@@ -34,6 +34,20 @@ def main():
     folder = pathlib.Path(tempfile.mkdtemp(prefix='vpnnav-local-fixture-', dir='/tmp'))
     try:
         health()
+        manifest = BASE / 'manifest.json'
+        saved_manifest = folder / 'manifest-backup.json'
+        run(['cp', manifest, saved_manifest])
+        run(['sudo', 'python3', '-c', 'import json;from pathlib import Path;p=Path("/Library/Application Support/VPNNavigator/Local/manifest.json");s=json.loads(p.read_text());s["ownerUID"]+=1;p.write_text(json.dumps(s))'])
+        health(False)
+        run(['sudo', 'cp', saved_manifest, manifest])
+        run(['sudo', 'mv', manifest, BASE / 'manifest-held.json'])
+        health(False)
+        run(['sudo', 'ln', '-s', BASE / 'manifest-held.json', manifest])
+        health(False)
+        run(['sudo', 'rm', manifest])
+        run(['sudo', 'mv', BASE / 'manifest-held.json', manifest])
+        health()
+        print('PASS: wrong approved user, missing approval and symlink approval rejected.')
         source = folder / 'unapproved.swift'
         source.write_text('''import Foundation
 @objc protocol Probe { func health(reply: @escaping (String) -> Void) }
@@ -115,6 +129,22 @@ let delegate = Delegate(); listener.delegate = delegate; listener.resume(); RunL
         finally:
             run(['sudo', 'rm', journal])
         print('PASS: unresolved recovery blocks update/uninstall and preserves evidence.')
+        run(['sudo', 'chmod', 'g+w', PAYLOAD])
+        try:
+            assert run(['sudo', '/usr/sbin/installer', '-pkg', installer, '-target', '/'], ok=False).returncode != 0
+            assert run(['sudo', '/usr/sbin/installer', '-pkg', uninstaller, '-target', '/'], ok=False).returncode != 0
+        finally:
+            run(['sudo', 'chmod', 'g-w', PAYLOAD])
+        setup_backup = folder / 'setup-backup'
+        run(['sudo', 'cp', PAYLOAD / 'VPNNavigatorLocalSetup', setup_backup])
+        run(['sudo', 'python3', '-c', 'from pathlib import Path;p=Path("/Library/Application Support/VPNNavigator/Local/Payload/VPNNavigatorLocalSetup");s=bytearray(p.read_bytes());s[-1]^=1;p.write_bytes(s)'])
+        try:
+            assert run(['sudo', '/usr/sbin/installer', '-pkg', uninstaller, '-target', '/'], ok=False).returncode != 0
+            assert BASE.exists() and APP.exists()
+        finally:
+            run(['sudo', 'cp', setup_backup, PAYLOAD / 'VPNNavigatorLocalSetup'])
+            run(['sudo', 'chmod', '755', PAYLOAD / 'VPNNavigatorLocalSetup'])
+        print('PASS: installer guards reject writable payload and altered setup before execution.')
         run(['sudo', '/usr/sbin/installer', '-pkg', installer, '-target', '/'])
         health()
         print('PASS: actual administrator-approved reinstall after maintenance.')

@@ -8,4 +8,6 @@ for name in VPNNavigatorApp VPNNavigatorHelper VPNNavigatorRuleAgent; do
 done
 SETUP='/Library/Application Support/VPNNavigator/Local/Payload/VPNNavigatorLocalSetup'
 [[ -e "$SETUP" ]] || exit 0
+source "$(/usr/bin/dirname "$0")/guard"
+check_local_setup
 "$SETUP" uninstall

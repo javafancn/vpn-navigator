@@ -65,6 +65,7 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
     }
 
     func prepareLocalMaintenance(reply: @escaping (String) -> Void) {
+        guard BuildChannel.isLocal else { reply("ERROR: Local maintenance is unavailable in this channel"); return }
         engine.cancellation.cancel(nil)
         queue.async {
             guard BuildChannel.isLocal, self.engine.state == .disconnected, !self.engine.networkRecoveryRequired else {

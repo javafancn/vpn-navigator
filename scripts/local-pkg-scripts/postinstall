@@ -1,3 +1,5 @@
 #!/bin/bash
 set -euo pipefail
+source "$(/usr/bin/dirname "$0")/guard"
+check_local_setup
 '/Library/Application Support/VPNNavigator/Local/Payload/VPNNavigatorLocalSetup' install

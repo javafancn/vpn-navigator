@@ -152,9 +152,10 @@ public enum LocalInstallation {
         return value
     }
     public static func selfMatches(_ roles: [LocalRole], approval: LocalApproval) -> Bool {
-        var code: SecCode?, info: CFDictionary?
+        var code: SecCode?, staticCode: SecStaticCode?, info: CFDictionary?
         guard SecCodeCopySelf([], &code) == errSecSuccess, let code,
-              SecCodeCopySigningInformation(code, [], &info) == errSecSuccess,
+              SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
+              SecCodeCopySigningInformation(staticCode, [], &info) == errSecSuccess,
               let values = info as? [String: Any], let hash = values[kSecCodeInfoUnique as String] as? Data else { return false }
         let hex = hash.map { String(format: "%02x", $0) }.joined()
         return roles.contains { approval.binaries[$0.rawValue]?.cdhash == hex && values[kSecCodeInfoIdentifier as String] as? String == $0.identifier }

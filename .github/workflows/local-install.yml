@@ -41,9 +41,12 @@ jobs:
       - name: Install through macOS Installer (disposable runner only)
         run: |
           stat -f 'Console UID %u' /dev/console
-          sudo /usr/sbin/installer -pkg dist/*-Local.pkg -target /
+          sudo /usr/sbin/installer -verboseR -dumplog -pkg dist/*-Local.pkg -target /
       - name: Test actual root service and both sides of XPC authentication
         run: python3 scripts/local-tests/test-installed.py
+      - name: Diagnose failed local installation
+        if: failure()
+        run: sudo tail -n 180 /var/log/install.log
       - uses: actions/upload-artifact@v4
         with:
           name: VPNNavigator-Local-${{ runner.arch }}

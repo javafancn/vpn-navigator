@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import VPNNavigatorCore
 
 /// Build an OS-enforced designated-requirement for privileged XPC callers.
 ///

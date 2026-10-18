@@ -131,6 +131,31 @@ verb 3
         assert result.returncode == 0, 'Installed helper TLS fixture failed: ' + result.stderr
         log.flush()
         assert 'unknown ca' in (folder / 'server.log').read_text().lower(), 'TLS server did not observe the controlled wrong-CA rejection'
+        # Prove parent loss does not leave the privileged VPN engine alive.
+        # launchctl addresses the exact daemon job, without a numeric PID kill.
+        run([probe, '--connect-only', valid])
+        record = json.loads(run(['sudo', 'cat', '/var/run/vpn-navigator/openvpn-child.json']).stdout)
+        child_pid = int(record['pid'])
+        assert child_pid > 1
+        run(['sudo', '/bin/launchctl', 'kill', 'SIGKILL', 'system/com.javafancn.vpn-navigator.local-helper'])
+        for _ in range(100):
+            if run(['sudo', '/bin/kill', '-0', str(child_pid)], ok=False).returncode != 0:
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError('Engine outlived its crashed controller')
+        # A restarted helper must preserve evidence until explicit typed recovery.
+        assert run(['sudo', '/bin/test', '-e', '/var/run/vpn-navigator/active.ovpn'], ok=False).returncode == 0
+        for _ in range(4):
+            recovery = run([probe, '--recover'], ok=False)
+            if recovery.returncode == 0:
+                print(recovery.stdout, end='')
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError('Explicit recovery after controller crash failed: ' + recovery.stdout)
+        run([probe, valid, invalid], timeout=120)
+        print('PASS: crashed controller closes its child, preserves evidence, recovers and reconnects.')
         for name in ['active.ovpn', 'routes.journal', 'dns.journal', 'pf-guard.json', 'openvpn-child.json']:
             assert run(['sudo', '/bin/test', '-e', '/var/run/vpn-navigator/' + name], ok=False).returncode != 0, 'Unresolved owned session: ' + name
         assert default_path() == before_route, 'Loopback TLS fixture changed the default network path'

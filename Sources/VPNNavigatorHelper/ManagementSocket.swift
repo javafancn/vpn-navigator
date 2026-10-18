@@ -54,6 +54,22 @@ final class ManagementSocket {
         readerRunning = true
         queue.async { self.readLoop(fd: fd) }
     }
+    func accept(from listener: ManagementListener) throws -> Bool {
+        ioLock.lock(); defer { ioLock.unlock() }
+        guard !closed, !readerRunning, descriptor < 0 else { throw ManagementError.socket }
+        guard let fd = try listener.accept() else { return false }
+        descriptor = fd
+        var noSigPipe: Int32 = 1
+        var writeTimeout = timeval(tv_sec: 2, tv_usec: 0)
+        do {
+            guard withUnsafePointer(to: &noSigPipe, { Darwin.setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, $0, socklen_t(MemoryLayout<Int32>.size)) }) == 0,
+                  withUnsafePointer(to: &writeTimeout, { Darwin.setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, $0, socklen_t(MemoryLayout<timeval>.size)) }) == 0 else { throw ManagementError.socket }
+            try send("state on"); try send("bytecount 3"); try send("hold release")
+            readerRunning = true
+            queue.async { self.readLoop(fd: fd) }
+            return true
+        } catch { close(); throw error }
+    }
     func send(_ command: String) throws {
         ioLock.lock(); defer { ioLock.unlock() }
         guard !closed, descriptor >= 0, command.utf8.count < 16_384,

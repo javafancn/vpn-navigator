@@ -45,6 +45,7 @@ if BuildChannel.isLocal {
 
 final class HelperService: NSObject, VPNNavigatorHelperAPI {
     private let engine = ManagedTunnel()
+    private var retiring = false
     // All tunnel actions and state transitions use one serial queue.
     private var queue: DispatchQueue { engine.queue }
     private var networkMonitor: NetworkChangeMonitor?
@@ -63,6 +64,25 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
         terminationSignal = termination; termination.resume()
     }
 
+    func prepareLocalMaintenance(reply: @escaping (String) -> Void) {
+        engine.cancellation.cancel(nil)
+        queue.async {
+            guard BuildChannel.isLocal, self.engine.state == .disconnected, !self.engine.networkRecoveryRequired else {
+                reply("ERROR: 请先断开并完成网络恢复。"); return
+            }
+            do {
+                try LocalInstallation.removeApproval()
+                self.retiring = true
+                reply("Local services disabled")
+                self.queue.asyncAfter(deadline: .now() + 0.2) {
+                    let task = Process()
+                    task.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+                    task.arguments = ["bootout", "system/" + LocalInstallation.daemonLabel]
+                    try? task.run()
+                }
+            } catch { reply("ERROR: " + error.localizedDescription) }
+        }
+    }
     func health(reply: @escaping (String) -> Void) {
         reply(BuildChannel.isLocal ? "VPN Navigator Helper (local)" : "VPN Navigator Helper (signed)")
     }
@@ -71,6 +91,7 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
                  reply: @escaping (String) -> Void) {
         let generation = engine.cancellation.snapshot()
         queue.async {
+            guard !self.retiring else { reply("ERROR: Local services are retiring"); return }
             guard let requestID = UUID(uuidString: attemptID) else { reply("ERROR: Invalid connection attempt"); return }
             guard let profileUUID = UUID(uuidString: profileID) else {
                 reply("ERROR: Invalid profile identifier"); return

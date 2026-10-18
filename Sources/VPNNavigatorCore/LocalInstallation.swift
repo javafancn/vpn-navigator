@@ -49,15 +49,16 @@ public struct LocalApproval: Codable, Equatable, Sendable {
     public let architecture: String
     public var ownerUID: UInt32
     public let binaries: [String: LocalBinary]
+    public let uninstallerSHA256: String
     public let dnsSHA256: String
-    public init(version: String, architecture: String, ownerUID: UInt32, binaries: [String: LocalBinary], dnsSHA256: String) {
+    public init(version: String, architecture: String, ownerUID: UInt32, binaries: [String: LocalBinary], dnsSHA256: String, uninstallerSHA256: String) {
         schema = 1; self.version = version; self.architecture = architecture; self.ownerUID = ownerUID
-        self.binaries = binaries; self.dnsSHA256 = dnsSHA256
+        self.binaries = binaries; self.dnsSHA256 = dnsSHA256; self.uninstallerSHA256 = uninstallerSHA256
     }
     public func validate() throws {
         guard schema == 1, version.range(of: "^[0-9]+\\.[0-9]+\\.[0-9]+$", options: .regularExpression) != nil,
               version.count < 32, ["arm64", "x86_64"].contains(architecture), ownerUID >= 500,
-              Set(binaries.keys) == Set(LocalRole.allCases.map(\.rawValue)), Self.hex(dnsSHA256, 64) else { throw LocalInstallError.invalid }
+              Set(binaries.keys) == Set(LocalRole.allCases.map(\.rawValue)), Self.hex(dnsSHA256, 64), Self.hex(uninstallerSHA256, 64) else { throw LocalInstallError.invalid }
         for role in LocalRole.allCases {
             guard let binary = binaries[role.rawValue], binary.identifier == role.identifier,
                   Self.hex(binary.sha256, 64), Self.hex(binary.cdhash, 40) else { throw LocalInstallError.invalid }
@@ -93,6 +94,8 @@ public enum LocalInstallation {
     public static let root = URL(fileURLWithPath: "/Library/Application Support/VPNNavigator/Local", isDirectory: true)
     public static let payload = root.appendingPathComponent("Payload", isDirectory: true)
     public static let manifest = root.appendingPathComponent("manifest.json")
+    public static let retired = root.appendingPathComponent("retired-approval.json")
+    public static let uninstaller = payload.appendingPathComponent("VPNNavigator-Uninstall.pkg")
     public static let template = payload.appendingPathComponent("approval-template.json")
     public static let daemonLabel = "com.javafancn.vpn-navigator.local-helper"
     public static let daemonPlist = URL(fileURLWithPath: "/Library/LaunchDaemons/\(daemonLabel).plist")
@@ -139,16 +142,18 @@ public enum LocalInstallation {
         guard ((attrs[.size] as? NSNumber)?.intValue ?? Int.max) < 32_768 else { throw LocalInstallError.invalid }
         let value = try JSONDecoder().decode(LocalApproval.self, from: Data(contentsOf: path)); try value.validate(); return value
     }
-    public static func load() throws -> LocalApproval {
-        guard BuildChannel.isLocal, FileManager.default.fileExists(atPath: manifest.path) else { throw LocalInstallError.notInstalled }
+    public static func load(allowRetired: Bool = false) throws -> LocalApproval {
+        let record = FileManager.default.fileExists(atPath: manifest.path) ? manifest : (allowRetired ? retired : manifest)
+        guard BuildChannel.isLocal, FileManager.default.fileExists(atPath: record.path) else { throw LocalInstallError.notInstalled }
         try protectedRoot()
-        let value = try decode(manifest)
+        let value = try decode(record)
         for role in LocalRole.allCases where role != .app {
             let path = executable(role); try protected(path)
             guard try binary(path, role: role) == value.binaries[role.rawValue] else { throw LocalInstallError.altered }
         }
         let dns = payload.appendingPathComponent("macos-dns-updown.sh"); try protected(dns)
-        guard try hash(dns) == value.dnsSHA256 else { throw LocalInstallError.altered }
+        try protected(uninstaller)
+        guard try hash(dns) == value.dnsSHA256, hash(uninstaller) == value.uninstallerSHA256 else { throw LocalInstallError.altered }
         return value
     }
     public static func selfMatches(_ roles: [LocalRole], approval: LocalApproval) -> Bool {
@@ -183,6 +188,7 @@ public enum LocalInstallation {
             guard try Data(contentsOf: daemonPlist) == daemonData() else { throw LocalInstallError.altered }
             try FileManager.default.removeItem(at: daemonPlist)
         }
-        try FileManager.default.removeItem(at: manifest)
+        if FileManager.default.fileExists(atPath: retired.path) { try protected(retired); try FileManager.default.removeItem(at: retired) }
+        try FileManager.default.moveItem(at: manifest, to: retired)
     }
 }

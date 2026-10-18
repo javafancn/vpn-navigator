@@ -18,7 +18,7 @@ enum RuleAgent {
             }
             // If the signed root helper has an active split-tunnel, use its typed update API.
             // Inactive/uninstalled helpers do not prevent caching for a future connection.
-            let enabled = SMAppService.daemon(plistName: HelperIdentity.plistName).status == .enabled
+            let enabled = BuildChannel.isLocal ? FileManager.default.fileExists(atPath: LocalInstallation.manifest.path) : SMAppService.daemon(plistName: HelperIdentity.plistName).status == .enabled
             let status: String
             if enabled {
                 status = await HelperMessage.request { api, reply in api.connectionStatus(reply: reply) }

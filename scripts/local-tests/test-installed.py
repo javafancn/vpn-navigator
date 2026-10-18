@@ -17,7 +17,7 @@ SERVICE = 'com.javafancn.vpn-navigator.helper'
 
 
 def run(args, ok=True):
-    result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=40)
+    result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=120)
     if ok and result.returncode:
         raise AssertionError('Fixture command failed: ' + str(args[0]) + '\n' + result.stdout + result.stderr)
     return result
@@ -91,7 +91,35 @@ let delegate = Delegate(); listener.delegate = delegate; listener.resume(); RunL
             run(['sudo', 'launchctl', 'bootstrap', 'system', PLIST])
         health()
         print('PASS: impostor root service rejected by app, approved helper restored.')
-        run(['sudo', PAYLOAD / 'VPNNavigatorLocalSetup', 'uninstall'])
+        # Maintenance is authenticated XPC, not a root shell from the app.
+        # User jobs must be installed/loaded, then fully removed before root
+        # approval is retired. A retired approval cannot authorize XPC.
+        health()
+        run([APP / 'Contents/MacOS/VPNNavigatorApp', '--vpnnav-local-services-self-test'])
+        assert not (BASE / 'manifest.json').exists() and (BASE / 'retired-approval.json').exists()
+        assert run(['launchctl', 'print', 'system/' + LABEL], ok=False).returncode != 0
+        health(False)
+        print('PASS: per-user rules/login services and authenticated root retirement.')
+        # A journal created by this fixture must block both update and uninstall.
+        # Never delete unknown recovery evidence, even on a CI runner.
+        journal = pathlib.Path('/var/run/vpn-navigator/routes.journal')
+        assert not journal.exists()
+        run(['sudo', 'mkdir', '-p', journal.parent])
+        run(['sudo', 'touch', journal])
+        installer = next(pathlib.Path('dist').glob('*-Local.pkg'))
+        uninstaller = next(pathlib.Path('dist').glob('*-Local-Uninstall.pkg'))
+        try:
+            assert run(['sudo', '/usr/sbin/installer', '-pkg', installer, '-target', '/'], ok=False).returncode != 0
+            assert run(['sudo', '/usr/sbin/installer', '-pkg', uninstaller, '-target', '/'], ok=False).returncode != 0
+            assert BASE.exists() and APP.exists() and journal.exists()
+        finally:
+            run(['sudo', 'rm', journal])
+        print('PASS: unresolved recovery blocks update/uninstall and preserves evidence.')
+        run(['sudo', '/usr/sbin/installer', '-pkg', installer, '-target', '/'])
+        health()
+        print('PASS: actual administrator-approved reinstall after maintenance.')
+        run([APP / 'Contents/MacOS/VPNNavigatorApp', '--vpnnav-local-services-self-test'])
+        run(['sudo', '/usr/sbin/installer', '-pkg', uninstaller, '-target', '/'])
         assert not BASE.exists() and not PLIST.exists() and not APP.exists()
         assert run(['launchctl', 'print', 'system/' + LABEL], ok=False).returncode != 0
         print('PASS: actual local install, bidirectional XPC trust and complete system uninstall.')

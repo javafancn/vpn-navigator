@@ -7,7 +7,7 @@ final class LocalApprovalTests: XCTestCase {
         let binaries = Dictionary(uniqueKeysWithValues: LocalRole.allCases.map {
             ($0.rawValue, LocalBinary(sha256: String(repeating: "a", count: 64), cdhash: String(repeating: "b", count: 40), identifier: $0.identifier))
         })
-        return LocalApproval(version: version, architecture: architecture, ownerUID: uid, binaries: binaries, dnsSHA256: String(repeating: "c", count: 64))
+        return LocalApproval(version: version, architecture: architecture, ownerUID: uid, binaries: binaries, dnsSHA256: String(repeating: "c", count: 64), uninstallerSHA256: String(repeating: "d", count: 64))
     }
     func testApprovalRoundTripAndExactIdentityRequirement() throws {
         let value = approval(), decoded = try JSONDecoder().decode(LocalApproval.self, from: JSONEncoder().encode(value))

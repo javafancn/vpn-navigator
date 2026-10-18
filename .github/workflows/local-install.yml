@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-15, macos-15-intel]
+        runner: [macos-15, macos-15-intel, macos-26]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     steps:
@@ -46,6 +46,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: VPNNavigator-Local-${{ runner.arch }}
-          path: dist/*-Local.pkg
+          path: |
+            dist/*-Local.pkg
+            dist/*-Local-Uninstall.pkg
+            dist/*-Local-SHA256.txt
+            dist/*-Local-manifest.json
           if-no-files-found: error
           retention-days: 14

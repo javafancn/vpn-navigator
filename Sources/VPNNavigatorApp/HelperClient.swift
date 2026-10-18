@@ -9,14 +9,31 @@ final class HelperClient {
     private init() {}
 
     var installationStatus: SMAppService.Status {
-        SMAppService.daemon(plistName: HelperIdentity.plistName).status
+        if BuildChannel.isLocal {
+            if FileManager.default.fileExists(atPath: LocalInstallation.manifest.path) {
+                guard let value = try? LocalInstallation.load(), value.ownerUID == getuid() else { return .requiresApproval }
+                return .enabled
+            }
+            return FileManager.default.fileExists(atPath: LocalInstallation.retired.path) ? .notRegistered : .notFound
+        }
+        return SMAppService.daemon(plistName: HelperIdentity.plistName).status
     }
 
     func requestRegistration() throws {
+        guard !BuildChannel.isLocal else { throw LocalInstallError.notInstalled }
         try SMAppService.daemon(plistName: HelperIdentity.plistName).register()
     }
-    func unregister() throws {
-        try SMAppService.daemon(plistName: HelperIdentity.plistName).unregister()
+    func unregister() async throws {
+        if BuildChannel.isLocal {
+            let result = await ask { api, reply in api.prepareLocalMaintenance(reply: reply) }
+            guard result == "Local services disabled" else { throw LocalInstallError.recoveryRequired }
+            for _ in 0..<30 {
+                if (try? UserServices.launchctl(["print", "system/" + LocalInstallation.daemonLabel])) == nil { return }
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
+            throw LocalInstallError.command
+        }
+        try await SMAppService.daemon(plistName: HelperIdentity.plistName).unregister()
     }
 
     private func ask(timeout: TimeInterval = 12, _ call: @escaping (VPNNavigatorHelperAPI, @escaping (String) -> Void) -> Void) async -> String {
@@ -30,7 +47,7 @@ final class HelperClient {
             // Validate the *server* identity as well as the server's incoming
             // client requirement. Never send VPN credentials to a fake daemon.
             guard let requirement = PrivilegedServiceTrust.helperRequirement() else {
-                completion.finish("ERROR: App is not Developer ID signed")
+                completion.finish("ERROR: 当前程序身份或安装批准未通过检查，请安装或修复对应通道的安装包")
                 return
             }
             connection.setCodeSigningRequirement(requirement)

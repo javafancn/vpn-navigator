@@ -27,7 +27,10 @@ import VPNNavigatorCore
             } else if args == ["uninstall"], getuid() == 0 {
                 try LocalInstallation.protectedRoot()
                 guard !LocalInstallation.hasRecoveryEvidence else { throw LocalInstallError.recoveryRequired }
-                let approval = try LocalInstallation.decode(LocalInstallation.manifest)
+                // The user process must remove its own login/rule jobs and
+                // retire the root service before system payload removal.
+                guard !FileManager.default.fileExists(atPath: LocalInstallation.manifest.path) else { throw LocalInstallError.recoveryRequired }
+                let approval = try LocalInstallation.decode(LocalInstallation.retired)
                 _ = try? run(["bootout", "system/" + LocalInstallation.daemonLabel])
                 guard !LocalInstallation.hasRecoveryEvidence else { throw LocalInstallError.recoveryRequired }
                 if FileManager.default.fileExists(atPath: LocalInstallation.daemonPlist.path) {
@@ -63,7 +66,8 @@ import VPNNavigatorCore
         let arch = "x86_64"
         #endif
         let approval = LocalApproval(version: version, architecture: arch, ownerUID: 501, binaries: binaries,
-                                     dnsSHA256: try LocalInstallation.hash(payload.appendingPathComponent("macos-dns-updown.sh")))
+                                     dnsSHA256: try LocalInstallation.hash(payload.appendingPathComponent("macos-dns-updown.sh")),
+                                     uninstallerSHA256: try LocalInstallation.hash(payload.appendingPathComponent("VPNNavigator-Uninstall.pkg")))
         try approval.validate()
         try JSONEncoder().encode(approval).write(to: payload.appendingPathComponent("approval-template.json"), options: .atomic)
     }
@@ -77,7 +81,8 @@ import VPNNavigatorCore
             guard try LocalInstallation.binary(path, role: role) == approval.binaries[role.rawValue] else { throw LocalInstallError.altered }
         }
         let dns = LocalInstallation.payload.appendingPathComponent("macos-dns-updown.sh"); try LocalInstallation.protected(dns)
-        guard try LocalInstallation.hash(dns) == approval.dnsSHA256 else { throw LocalInstallError.altered }
+        try LocalInstallation.protected(LocalInstallation.uninstaller)
+        guard try LocalInstallation.hash(dns) == approval.dnsSHA256, LocalInstallation.hash(LocalInstallation.uninstaller) == approval.uninstallerSHA256 else { throw LocalInstallError.altered }
         // A signed SMAppService deployment cannot be silently replaced.
         if (try? run(["print", "system/" + HelperIdentity.machService])) != nil { throw LocalInstallError.unsafe }
         _ = try? run(["bootout", "system/" + LocalInstallation.daemonLabel])
@@ -85,6 +90,8 @@ import VPNNavigatorCore
         try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: LocalInstallation.manifest.path)
         try LocalInstallation.daemonData().write(to: LocalInstallation.daemonPlist, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: LocalInstallation.daemonPlist.path)
+        if FileManager.default.fileExists(atPath: LocalInstallation.retired.path) { try LocalInstallation.protected(LocalInstallation.retired); try FileManager.default.removeItem(at: LocalInstallation.retired) }
+        _ = try run(["enable", "system/" + LocalInstallation.daemonLabel])
         _ = try run(["bootstrap", "system", LocalInstallation.daemonPlist.path])
     }
     @discardableResult static func run(_ args: [String]) throws -> String {

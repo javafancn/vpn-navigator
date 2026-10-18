@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+      - name: Check integration fixture syntax
+        run: python3 -m py_compile scripts/local-tests/test-upgrade.py scripts/local-tests/test-tls-loopback.py scripts/local-tests/test-installed.py
       - name: Fetch verified sources
         run: python3 scripts/fetch-engine-sources.py "$RUNNER_TEMP/local-engine-sources"
       - uses: actions/cache@v4

@@ -12,6 +12,8 @@ M0 原型 b774342 在 macOS 15 Apple Silicon / Intel 上通过实际 PKG 安装�
 
 完整实现 e5eaf72 已在 macOS 15 Apple Silicon / Intel 及 26 通过实际安装、用户服务、维护撤销、恢复记录/不安全路径阻止替换、管理员重装及卸载（[run 39137296514](https://github.com/javafancn/vpn-navigator/actions/runs/39137296514)）。该提交四组核心回归共 119 项测试及 UI 构建通过。后续新增的旧身份撤销、部分 payload 修复、原位置卸载 PKG 和 macOS 14 矩阵仍以最新 PR 检查为准。
 
+真实回环 TLS 与 DNS 命令路径修复已在四组安装环境通过并合并 main（PR #15；[run 39139704125](https://github.com/javafancn/vpn-navigator/actions/runs/39139704125)），核心测试增至 122 项。覆盖实际证书握手、utun、两次断开重连、错误 CA 拒绝与恢复记录清理。0.3.0 / Build 3 的控制器崩溃收束、失败状态保留和版本升级验收由 PR #16 继续检查，见 LOCAL_CRASH_RECOVERY.md。
+
 ## 任务对应
 
 | 任务 | 代码交付与当前验收边界 |
@@ -32,7 +34,7 @@ M0 原型 b774342 在 macOS 15 Apple Silicon / Intel 上通过实际 PKG 安装�
 | L22–L23 | 用户服务停用 → 认证 XPC 撤销批准及卸载 root 服务 → 管理员卸载 PKG；默认保留配置，可显式清除本应用配置/Keychain。保留未解决恢复证据。 |
 | L24 | 现有核心及网络管理测试，加完整性、双方冒充、错误批准用户、记录缺失/符号链接、停用后拒绝、安装脚本拒绝不安全权限/被修改 setup。补测曾获批准的客户端哈希在批准更新后被 OS 拒绝，及缺失 DNS payload 后的管理员重装修复；更多中断注入仍需扩展。 |
 | L25 | 隔离 CI 实际安装、用户三类服务、维护、恢复证据阻止更新/卸载、管理员重装与卸载；取消/重启/跨通道完整实机演练待验收。 |
-| L26–L28 | 真实 TLS/MFA、出口/DNS/IPv4/IPv6 抓包、异常网络/睡眠/崩溃、macOS 13 真机及长时性能尚未验收。 |
+| L26–L28 | 真实外部 TLS/MFA、出口/DNS/IPv4/IPv6 抓包、异常网络/睡眠/崩溃、macOS 13 真机及长时性能尚未验收。 |
 | L29–L30 | CI 产出双架构候选安装/卸载包、SHA-256、批准与兼容审计 manifest；源码/许可证在应用内。成功的具体运行记录才是交付依据。 |
 | L31 | 未公开发布 Beta/Release。M5 真机门槛尚未通过。 |
 

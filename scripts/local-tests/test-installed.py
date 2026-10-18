@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Disposable CI Macs only: real launchd/XPC trust, no VPN/network changes."""
+import os
+import pathlib
+import plistlib
+import subprocess
+import sys
+import tempfile
+import time
+
+APP = pathlib.Path('/Applications/VPN Navigator.app')
+BASE = pathlib.Path('/Library/Application Support/VPNNavigator/Local')
+PAYLOAD = BASE / 'Payload'
+LABEL = 'com.javafancn.vpn-navigator.local-helper'
+PLIST = pathlib.Path('/Library/LaunchDaemons/' + LABEL + '.plist')
+SERVICE = 'com.javafancn.vpn-navigator.helper'
+
+
+def run(args, ok=True):
+    result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=40)
+    if ok and result.returncode:
+        raise AssertionError('Fixture command failed: ' + str(args[0]) + '\n' + result.stdout + result.stderr)
+    return result
+
+
+def health(expected=True):
+    result = run([APP / 'Contents/MacOS/VPNNavigatorApp', '--vpnnav-local-health-check'], ok=False)
+    assert (result.returncode == 0) == expected, 'Local app trust result did not match expected state\n' + result.stdout + result.stderr
+
+
+def main():
+    assert sys.platform == 'darwin' and os.getuid() != 0
+    assert BASE.exists() and APP.exists()
+    folder = pathlib.Path(tempfile.mkdtemp(prefix='vpnnav-local-fixture-', dir='/tmp'))
+    try:
+        health()
+        source = folder / 'unapproved.swift'
+        source.write_text('''import Foundation
+@objc protocol Probe { func health(reply: @escaping (String) -> Void) }
+let c = NSXPCConnection(machServiceName: "com.javafancn.vpn-navigator.helper", options: .privileged)
+c.remoteObjectInterface = NSXPCInterface(with: Probe.self)
+c.invalidationHandler = { exit(0) }; c.interruptionHandler = { exit(0) }; c.resume()
+DispatchQueue.global().asyncAfter(deadline: .now() + 4) { exit(0) }
+let p = c.remoteObjectProxyWithErrorHandler { _ in exit(0) } as! Probe
+p.health { value in exit(value.hasPrefix("VPN Navigator Helper") ? 1 : 0) }
+RunLoop.current.run()
+''')
+        run(['swiftc', source, '-o', folder / 'unapproved'])
+        run(['codesign', '--force', '--options', 'runtime', '--sign', '-', '--identifier', 'com.javafancn.vpn-navigator', folder / 'unapproved'])
+        run([folder / 'unapproved'])
+        print('PASS: different code hash rejected even with the same bundle identifier.')
+        backup = folder / 'engine-backup'
+        run(['cp', PAYLOAD / 'openvpn', backup])
+        run(['sudo', 'chmod', 'o+w', PAYLOAD / 'openvpn'])
+        health(False)
+        run(['sudo', 'chmod', 'o-w', PAYLOAD / 'openvpn'])
+        run(['sudo', 'python3', '-c', 'from pathlib import Path;p=Path("/Library/Application Support/VPNNavigator/Local/Payload/openvpn");s=bytearray(p.read_bytes());s[-1]^=1;p.write_bytes(s)'])
+        health(False)
+        run(['sudo', 'cp', backup, PAYLOAD / 'openvpn'])
+        run(['sudo', 'chmod', '755', PAYLOAD / 'openvpn'])
+        health()
+        print('PASS: unsafe permissions and modified engine rejected, then repaired.')
+        # A different root service with the same Mach name must not impersonate
+        # the installed helper. No credentials are ever used by this fixture.
+        fake = folder / 'fake.swift'
+        fake.write_text('''import Foundation
+@objc protocol Probe { func health(reply: @escaping (String) -> Void) }
+class Service: NSObject, Probe { func health(reply: @escaping (String) -> Void) { reply("VPN Navigator Helper (impostor)") } }
+class Delegate: NSObject, NSXPCListenerDelegate {
+ let service = Service()
+ func listener(_ listener: NSXPCListener, shouldAcceptNewConnection c: NSXPCConnection) -> Bool {
+ c.exportedInterface = NSXPCInterface(with: Probe.self); c.exportedObject = service; c.resume(); return true
+ }
+}
+let listener = NSXPCListener(machServiceName: "com.javafancn.vpn-navigator.helper")
+let delegate = Delegate(); listener.delegate = delegate; listener.resume(); RunLoop.current.run()
+''')
+        run(['swiftc', fake, '-o', folder / 'fake'])
+        run(['codesign', '--force', '--options', 'runtime', '--sign', '-', folder / 'fake'])
+        fake_label = 'com.javafancn.vpn-navigator.local-fixture'
+        fake_plist = folder / 'fake.plist'
+        fake_plist.write_bytes(plistlib.dumps({'Label': fake_label, 'ProgramArguments': [str(folder / 'fake')], 'MachServices': {SERVICE: True}}))
+        run(['sudo', 'chown', '-R', 'root:wheel', folder])
+        run(['sudo', 'chmod', '755', folder])
+        run(['sudo', 'launchctl', 'bootout', 'system/' + LABEL])
+        try:
+            run(['sudo', 'launchctl', 'bootstrap', 'system', fake_plist])
+            health(False)
+        finally:
+            run(['sudo', 'launchctl', 'bootout', 'system/' + fake_label], ok=False)
+            run(['sudo', 'launchctl', 'bootstrap', 'system', PLIST])
+        health()
+        print('PASS: impostor root service rejected by app, approved helper restored.')
+        run(['sudo', PAYLOAD / 'VPNNavigatorLocalSetup', 'uninstall'])
+        assert not BASE.exists() and not PLIST.exists() and not APP.exists()
+        assert run(['launchctl', 'print', 'system/' + LABEL], ok=False).returncode != 0
+        print('PASS: actual local install, bidirectional XPC trust and complete system uninstall.')
+    finally:
+        run(['sudo', 'launchctl', 'bootout', 'system/' + LABEL], ok=False)
+        run(['sudo', 'launchctl', 'bootout', 'system/com.javafancn.vpn-navigator.local-fixture'], ok=False)
+        run(['sudo', 'rm', '-rf', folder])
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,3 @@
+#!/bin/bash
+set -euo pipefail
+'/Library/Application Support/VPNNavigator/Local/Payload/VPNNavigatorLocalSetup' install

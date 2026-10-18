@@ -6,6 +6,11 @@ import Security
 /// helper's exact signing identifier.
 public enum PrivilegedServiceTrust {
     public static func helperRequirement() -> String? {
+        if BuildChannel.isLocal {
+            guard let approval = try? LocalInstallation.load(),
+                  LocalInstallation.selfMatches([.app, .agent, .setup], approval: approval) else { return nil }
+            return try? approval.requirement(for: [.helper])
+        }
         var selfCode: SecCode?
         var staticCode: SecStaticCode?
         guard SecCodeCopySelf([], &selfCode) == errSecSuccess, let selfCode,
@@ -24,3 +29,4 @@ public enum PrivilegedServiceTrust {
         return requirement
     }
 }
+

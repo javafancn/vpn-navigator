@@ -1,0 +1,12 @@
+#!/bin/bash
+set -euo pipefail
+for name in VPNNavigatorApp VPNNavigatorHelper VPNNavigatorRuleAgent; do
+  if /usr/bin/pgrep -x "$name" >/dev/null 2>&1; then
+    echo 'Quit VPN Navigator and prepare maintenance before installing.' >&2; exit 1
+  fi
+done
+for name in routes.journal dns.journal pf-guard.json active.ovpn openvpn-child.json; do
+  if [[ -e "/var/run/vpn-navigator/$name" ]]; then
+    echo 'Unresolved VPN session or network recovery. Preserve evidence and recover first.' >&2; exit 1
+  fi
+done

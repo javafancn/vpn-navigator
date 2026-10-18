@@ -78,7 +78,7 @@ final class AppModel: ObservableObject {
         updater = RuleUpdater(folder: root.appendingPathComponent("Rules"))
         ipv6Updater = APNICIPv6PreviewStore(root: root.appendingPathComponent("Rules"))
         helperStateVerified = helper.installationStatus != .enabled
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") { return }
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") { return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -629,6 +629,9 @@ struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
     @StateObject private var model = AppModel()
     init() {
+        if BuildChannel.isLocal && ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") {
+            Task { let result = await HelperClient.shared.ping(); print(result); Darwin.exit(result.hasPrefix("VPN Navigator Helper") ? 0 : 1) }
+        }
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") {
             Task {
                 do {

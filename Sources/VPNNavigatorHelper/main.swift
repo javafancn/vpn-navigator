@@ -39,6 +39,10 @@ if CommandLine.arguments.dropFirst().first == "--self-test-dns-journal" {
 }
 #endif
 
+if BuildChannel.isLocal {
+    guard let approval = try? LocalInstallation.load(), LocalInstallation.selfMatches([.helper], approval: approval) else { exit(1) }
+}
+
 final class HelperService: NSObject, VPNNavigatorHelperAPI {
     private let engine = ManagedTunnel()
     // All tunnel actions and state transitions use one serial queue.
@@ -60,7 +64,7 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
     }
 
     func health(reply: @escaping (String) -> Void) {
-        reply("VPN Navigator Helper (signed)")
+        reply(BuildChannel.isLocal ? "VPN Navigator Helper (local)" : "VPN Navigator Helper (signed)")
     }
     func connect(profile: String, profileID: String, mode: String, rules: String,
                  username: String, password: String, preferences: String, attemptID: String,
@@ -158,7 +162,7 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
 final class HelperDelegate: NSObject, NSXPCListenerDelegate {
     private let service = HelperService()
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
-        guard let requirement = PeerVerifier.clientRequirement() else { return false }
+        guard let requirement = PeerVerifier.clientRequirement(uid: connection.effectiveUserIdentifier) else { return false }
         // macOS enforces this requirement against every incoming XPC message.
         connection.setCodeSigningRequirement(requirement)
         connection.exportedInterface = NSXPCInterface(with: VPNNavigatorHelperAPI.self)

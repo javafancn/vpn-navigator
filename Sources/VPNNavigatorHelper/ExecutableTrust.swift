@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import VPNNavigatorCore
 
 /// The privileged launchd executable lives at:
 /// /Applications/VPN Navigator.app/Contents/Resources/VPNNavigatorHelper
@@ -20,6 +21,11 @@ enum ExecutableTrust {
     }
 
     static func trustedOpenVPN() throws -> URL {
+        if BuildChannel.isLocal {
+            let approval = try LocalInstallation.load()
+            guard LocalInstallation.selfMatches([.helper], approval: approval) else { throw LocalInstallError.altered }
+            return LocalInstallation.executable(.engine)
+        }
         guard let executable = Bundle.main.executableURL?.standardizedFileURL.resolvingSymlinksInPath() else {
             throw TrustError.mustInstallToApplications
         }
@@ -94,3 +100,4 @@ enum TrustError: Error, LocalizedError {
         }
     }
 }
+

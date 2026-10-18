@@ -79,7 +79,7 @@ dh none
 remote-cert-tls client
 tls-version-min 1.2
 data-ciphers AES-256-GCM:AES-128-GCM
-script-security 0
+script-security 1
 verb 3
 """)
         profile = f"""client

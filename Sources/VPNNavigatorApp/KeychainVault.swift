@@ -40,6 +40,15 @@ enum KeychainVault {
         let insertStatus = SecItemAdd(toInsert as CFDictionary, nil)
         guard insertStatus == errSecSuccess else { throw VaultError.keychain(insertStatus) }
     }
+    /// Explicit maintenance action scoped to this app, including credentials
+    /// whose profile was removed by an earlier app version.
+    static func removeAll() throws {
+        let identity: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                      kSecAttrService as String: service]
+        let status = SecItemDelete(identity as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw VaultError.keychain(status) }
+    }
+
     static func remove(id: UUID) {
         let identity: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -53,3 +62,4 @@ enum VaultError: Error, LocalizedError {
     case keychain(OSStatus)
     var errorDescription: String? { "macOS Keychain operation failed." }
 }
+

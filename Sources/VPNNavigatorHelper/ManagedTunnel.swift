@@ -43,6 +43,10 @@ final class ManagedTunnel {
     private var protectionTeardownBlocked = false
     var firewallActive: Bool { packetGuard.active }
     var firewallRecoveryRequired: Bool { packetGuard.requiresRecovery }
+    var networkRecoveryRequired: Bool {
+        dnsRecovery.exists || packetGuard.requiresRecovery || hasPersistentSessionEvidence ||
+        FileManager.default.fileExists(atPath: workdir.appendingPathComponent("routes.journal").path)
+    }
     private var activeMode: RoutingMode = .original
     private(set) var activeProfileID: UUID?
     private var rules: RuleSet?
@@ -176,6 +180,7 @@ final class ManagedTunnel {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configFile.path)
         var options = ["--config", configFile.path]
         options += ManagedRoutingPolicy.openVPNArguments(mode: mode)
+        if validated.requestsCredentials { options += ManagementAuthentication.openVPNArguments }
         let managementPath = workdir.appendingPathComponent("management.sock").path
         try? FileManager.default.removeItem(atPath: managementPath)
         options += ["--management", managementPath, "unix", "--management-hold", "--management-up-down", "--management-query-passwords"]

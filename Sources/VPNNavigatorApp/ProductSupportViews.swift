@@ -32,7 +32,7 @@ struct MaintenanceAssistantView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("升级与卸载准备").font(.system(size: 24, weight: .bold))
-            Text("先停止 VPN、恢复网络并停用本应用后台服务，再交由系统安装器升级或 Finder 移除应用。")
+            Text("先停止 VPN、恢复网络并停用本应用后台服务及登录启动，再交由系统安装器升级或 Finder 移除应用。")
                 .font(.system(size: 14)).fixedSize(horizontal: false, vertical: true)
             Toggle("同时删除全部连接配置、历史版本与已保存凭据", isOn: $removeProfiles)
                 .disabled(preparing || prepared)
@@ -69,8 +69,13 @@ struct AuthenticationChallengeView: View {
             Text(challenge.kind == .privateKey ? "解锁私钥" : "额外身份验证")
                 .font(.system(size: 24, weight: .bold))
             Text(challenge.prompt).font(.system(size: 14)).textSelection(.enabled)
-            SecureField(challenge.kind == .privateKey ? "私钥密码" : "一次性验证码", text: $response)
-                .textFieldStyle(.plain).referenceInput()
+            if challenge.responseRequired {
+                SecureField(challenge.kind == .privateKey ? "私钥密码" : "一次性验证码", text: $response)
+                    .textFieldStyle(.plain).referenceInput()
+            } else {
+                Text("请先完成服务端要求的验证，再点击继续。无需输入验证码。")
+                    .font(.system(size: 13)).foregroundStyle(.secondary)
+            }
             Text("本次输入仅用于当前认证，不保存至 Keychain 或诊断报告。")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             HStack {
@@ -81,7 +86,7 @@ struct AuthenticationChallengeView: View {
                     submitting = true
                     let secret = response; response = ""
                     Task { await model.respondToChallenge(challenge, value: secret); submitting = false }
-                }.buttonStyle(ReferencePrimaryButton()).disabled(response.isEmpty || submitting)
+                }.buttonStyle(ReferencePrimaryButton()).disabled((challenge.responseRequired && response.isEmpty) || submitting)
             }
         }.padding(24).frame(width: 460).background(GlassAtmosphere())
             .interactiveDismissDisabled()
@@ -199,7 +204,7 @@ struct ClientPreferencesView: View {
                             model.message = "登录启动设置失败：\(error.localizedDescription)"
                         }
                     }
-            }.padding(20).glassCard(cornerRadius: 16)
+            }.padding(20).glassCard(cornerRadius: 16).disabled(model.maintenanceInProgress)
             Text("连接偏好在下一次连接时生效。登录启动不会自动建立 VPN 连接。")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             HStack { Spacer(); Button("完成") { dismiss() }.buttonStyle(ReferencePrimaryButton()) }

@@ -36,4 +36,4 @@ PF protection changes intentionally reset current network states, including othe
 
 ## Explicit compatibility limits
 
-The first release scope is managed IPv4. Protected mode blocks physical IPv6; it does not implement IPv6 country routing. Dynamic CRV1, browser/SAML auth, TAP, arbitrary scripts/plugins and hardware PKCS11 are not supported and must not be represented as completed features. The source-built engine intentionally disables compression.
+The first release scope is managed IPv4. Protected mode blocks physical IPv6; it does not implement IPv6 country routing. Post-connect CRV1 reauthentication, browser/SAML auth, TAP, arbitrary scripts/plugins and hardware PKCS11 are not supported and must not be represented as completed features. The source-built engine intentionally disables compression. Initial-authentication CRV1 and static flags 2/3 were added in the [2026-10-18 follow-up](AUTH_AND_MAINTENANCE_2026_10_18.md).

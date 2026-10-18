@@ -46,13 +46,13 @@ See SIGNED_RELEASE_WORKFLOW.md for the manual two-architecture workflow. It can 
 1. Install the signed PKG into Applications and launch the app.
 2. Complete the built-in check for app identity, bundled engine, location, helper approval and profiles.
 3. Import .ovpn; nearby certificate files are materialized into a self-contained runtime copy.
-4. Enter credentials when requested. Optional Keychain storage applies only to account credentials; private-key and OTP answers are not saved.
+4. Enter credentials when requested. Optional Keychain storage applies only to account credentials; private-key and OTP answers are not saved. Static SCRV1/concatenated OTP and initial-authentication CRV1 are supported; dynamic requests are limited to three rounds within the original connection deadline.
 5. Select a routing policy. A validated initial China IPv4 snapshot is bundled for offline use; online update and local import remain available.
 
 ## Protection and maintenance
 
 Experimental PF protection is an explicit opt-in for managed IPv4 modes. It rejects incompatible host layouts and resets existing connections during protection changes. Original mode follows the validated original profile. Complete the real-server tests before claiming protection guarantees.
 
-Use Settings → Upgrade and Uninstall Preparation to disconnect, recover network ownership and unregister the application's background services. Keep profiles by default; deleting them is an explicit irreversible checkbox. Upgrade opens a verified same-team PKG in macOS Installer. Removal is completed in Finder; the application does not run an arbitrary root deletion command.
+Use Settings → Upgrade and Uninstall Preparation to disconnect, recover network ownership and unregister the application's helper, rule updater and login startup. Maintenance blocks new sessions and profile mutations while cleanup is in progress. Keep profiles by default; deleting them is an explicit irreversible checkbox. Upgrade opens a verified same-team PKG in macOS Installer. Removal is completed in Finder; the application does not run an arbitrary root deletion command.
 
 The PKG preinstall guard rejects a live helper or unresolved route, DNS, PF or child-session records. Do not delete recovery journals to force an upgrade. Quit old menu-bar instances before replacing a preview app. Closing its window does not quit the application.

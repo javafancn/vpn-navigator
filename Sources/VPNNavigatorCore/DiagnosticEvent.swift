@@ -42,6 +42,9 @@ public enum OpenVPNLogClassifier {
     /// Never return the source line: even apparent errors can contain secrets.
     public static func classify(_ line: String) -> DiagnosticCode? {
         let text = line.uppercased()
+        // CRV1 deliberately uses AUTH_FAILED to negotiate the next factor.
+        // Malformed/terminal failures are logged by the management callback.
+        if text.contains("AUTH_FAILED") && text.contains("CRV1:") { return nil }
         if text.contains("AUTH_FAILED") || text.contains("AUTHENTICATION FAILED") { return .authentication }
         if text.contains("VERIFY ERROR") || text.contains("CANNOT LOAD PRIVATE KEY") || text.contains("CERTIFICATE HAS EXPIRED") { return .certificate }
         if text.contains("TLS ERROR") || text.contains("TLS KEY NEGOTIATION FAILED") { return .tls }

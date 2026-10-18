@@ -20,6 +20,7 @@ final class AppModel: ObservableObject {
     @Published var ruleSnapshots: [RuleSnapshot] = []
     @Published var firewallActive = false
     @Published var firewallRecoveryRequired = false
+    @Published var networkRecoveryRequired = false
     @Published var reconnectManaged = UserDefaults.standard.bool(forKey: "reconnectManaged") {
         didSet { UserDefaults.standard.set(reconnectManaged, forKey: "reconnectManaged") }
     }
@@ -44,6 +45,8 @@ final class AppModel: ObservableObject {
     private var helperAttemptID: UUID?
     private var helperStateVerified = true
     private let localEvents = DiagnosticEventStore(file: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("VPNNavigator/Diagnostics/events.json"))
+    private var profileMutations = 0
+    @Published private(set) var maintenanceInProgress = false
     @Published var busy = false
     @Published var message: String?
     @Published var helperStatus = "未启用"
@@ -74,6 +77,7 @@ final class AppModel: ObservableObject {
         store = ProfileStore(root: root.appendingPathComponent("Profiles"))
         updater = RuleUpdater(folder: root.appendingPathComponent("Rules"))
         ipv6Updater = APNICIPv6PreviewStore(root: root.appendingPathComponent("Rules"))
+        helperStateVerified = helper.installationStatus != .enabled
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") { return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
@@ -119,7 +123,7 @@ final class AppModel: ObservableObject {
     var connected: Bool { sessionState == .connected }
     var connecting: Bool { [.connecting, .authenticating, .reconnecting].contains(sessionState) }
     var stopping: Bool { sessionState == .stopping }
-    var canQuit: Bool { !connected && !connecting && !stopping && activeProfileID == nil && !firewallRecoveryRequired && helperStateVerified }
+    var canQuit: Bool { SessionExitPolicy.mayExit(state: sessionState, activeProfileID: activeProfileID, helperVerified: helperStateVerified, recoveryRequired: firewallRecoveryRequired || networkRecoveryRequired) }
     var sessionPreferences: SessionPreferences {
         .init(connectionTimeout: connectionTimeout == 0 ? 60 : connectionTimeout,
               reconnectOriginal: reconnectOriginal, killSwitch: killSwitch, reconnectManaged: reconnectManaged)
@@ -143,6 +147,8 @@ final class AppModel: ObservableObject {
         } catch { message = error.localizedDescription }
     }
     func importFile(_ url: URL) async {
+        guard !maintenanceInProgress else { return }
+        profileMutations += 1; defer { profileMutations -= 1 }
         let granted = url.startAccessingSecurityScopedResource()
         defer { if granted { url.stopAccessingSecurityScopedResource() } }
         do {
@@ -152,12 +158,16 @@ final class AppModel: ObservableObject {
         } catch { message = "Import failed: \(error.localizedDescription)" }
     }
     func setMode(_ mode: RoutingMode) async {
+        guard !maintenanceInProgress else { return }
+        profileMutations += 1; defer { profileMutations -= 1 }
         guard var item = selected else { return }
         item.mode = mode
         do { try await store.update(item); await load() }
         catch { message = error.localizedDescription }
     }
     func updateMetadata(name: String, group: String, notes: String, favorite: Bool) async {
+        guard !maintenanceInProgress else { return }
+        profileMutations += 1; defer { profileMutations -= 1 }
         guard var item = selected else { return }
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanGroup = group.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -180,6 +190,8 @@ final class AppModel: ObservableObject {
     }
 
     func saveSource(for profile: VPNProfile, text: String) async -> Bool {
+        guard !maintenanceInProgress else { return false }
+        profileMutations += 1; defer { profileMutations -= 1 }
         guard !connected && !connecting else {
             message = "Disconnect before editing a VPN profile."
             return false
@@ -203,6 +215,8 @@ final class AppModel: ObservableObject {
     }
 
     func restoreSource(for profile: VPNProfile, revision: String) async -> Bool {
+        guard !maintenanceInProgress else { return false }
+        profileMutations += 1; defer { profileMutations -= 1 }
         guard !connected && !connecting else {
             message = "Disconnect before restoring a VPN profile."
             return false
@@ -218,6 +232,8 @@ final class AppModel: ObservableObject {
     }
 
     func deleteSelected() async {
+        guard !maintenanceInProgress else { return }
+        profileMutations += 1; defer { profileMutations -= 1 }
         guard let item = selected else { return }
         do { try await store.delete(id: item.id); KeychainVault.remove(id: item.id); selectedID = nil; await load() }
         catch { message = error.localizedDescription }
@@ -315,15 +331,19 @@ final class AppModel: ObservableObject {
         await refreshConnectionStatus()
     }
     func disableServices() async {
+        guard !maintenanceInProgress else { return }
+        _ = await unregisterNetworkServices()
+    }
+    private func unregisterNetworkServices() async -> Bool {
         guard !connected && !connecting else {
             message = "Disconnect VPN before disabling background services."
-            return
+            return false
         }
         if helper.installationStatus == .enabled {
             let actual = await helper.status()
             guard actual.hasPrefix("disconnected:") else {
                 message = "Background helper reports an active, failed or unresolved session; verify recovery before disabling services: \(actual)"
-                return
+                return false
             }
         }
         do {
@@ -331,9 +351,14 @@ final class AppModel: ObservableObject {
             if agent.status != .notRegistered && agent.status != .notFound { try await agent.unregister() }
             if helper.installationStatus != .notRegistered && helper.installationStatus != .notFound { try helper.unregister() }
             await refreshConnectionStatus()
+            guard [agent.status, helper.installationStatus].allSatisfy({ $0 == .notRegistered || $0 == .notFound }) else {
+                message = "后台服务尚未完全停用，请检查系统设置。"; return false
+            }
             message = "VPN Navigator background services have been unregistered."
+            return true
         } catch {
             message = "Service removal requires attention: \(error.localizedDescription)"
+            return false
         }
     }
     func restoreRuleSnapshot(_ id: UUID) async {
@@ -374,6 +399,7 @@ final class AppModel: ObservableObject {
     }
 
     func requestHelper() {
+        guard !maintenanceInProgress else { return }
         do {
             try helper.requestRegistration()
             try SMAppService.agent(plistName: "com.javafancn.vpn-navigator.rules.plist").register()
@@ -394,6 +420,7 @@ final class AppModel: ObservableObject {
                 authenticationChallenge = report.challenge
                 firewallActive = report.firewallActive
                 firewallRecoveryRequired = report.firewallRecoveryRequired
+                networkRecoveryRequired = report.requiresNetworkRecovery
                 traffic = report.traffic
                 if report.state == .connected, let value = report.traffic {
                     receiveTrend.record(cumulativeBytes: value.receivedBytes)
@@ -422,6 +449,7 @@ final class AppModel: ObservableObject {
         }
     }
     func connectSelected() async {
+        guard !maintenanceInProgress else { return }
         guard !busy, !connecting, !connected, !stopping, let selected else { return }
         let attempt = UUID(); connectionAttempt = attempt
         connectionStatus = "connecting: 正在准备连接"
@@ -472,6 +500,7 @@ final class AppModel: ObservableObject {
         }
     }
     func switchToSelected() async {
+        guard !maintenanceInProgress else { return }
         guard !busy, let selected, connected, activeProfileID != selected.id else { return }
         busy = true
         let response = await helper.disconnect()
@@ -497,15 +526,17 @@ final class AppModel: ObservableObject {
         connectionStatus = "stopping: 正在停止连接并恢复网络"
         busy = true
         let response = await helper.disconnect(attemptID: cancelledAttempt)
-        busy = false
+        busy = maintenanceInProgress
         if response.hasPrefix("ERROR:") { message = response }
         localEvents.append(.stopped)
         await refreshConnectionStatus()
     }
     func respondToChallenge(_ challenge: AuthenticationChallenge, value: String) async {
         let response = await helper.submitChallenge(id: challenge.id, response: value)
-        if response == "Accepted" { authenticationChallenge = nil }
-        else { message = response }
+        if response == "Accepted" {
+            // A newer factor may have arrived while this XPC call awaited.
+            if authenticationChallenge?.id == challenge.id { authenticationChallenge = nil }
+        } else { message = response }
     }
     func refreshDiagnostics() async {
         let remote = helper.installationStatus == .enabled ? await helper.diagnosticEvents() : []
@@ -548,23 +579,35 @@ final class AppModel: ObservableObject {
     }
 
     func prepareMaintenance(removeProfiles: Bool) async -> Bool {
-        if !canQuit { await disconnect() }
-        guard canQuit else { message = "会话或网络恢复尚未完成，不能准备升级或卸载。"; return false }
-        await disableServices()
-        guard [.notRegistered, .notFound].contains(helper.installationStatus) else {
-            message = "后台助手未完全停用，请检查系统授权与恢复状态。"; return false
+        guard !maintenanceInProgress, profileMutations == 0, !busy || connecting else {
+            message = "请等待当前操作结束后再准备维护。"; return false
         }
-        if removeProfiles {
-            do {
-                for profile in profiles {
-                    try await store.delete(id: profile.id)
-                    KeychainVault.remove(id: profile.id)
-                }
+        maintenanceInProgress = true; busy = true
+        defer { maintenanceInProgress = false; busy = false }
+        if helper.installationStatus == .enabled || !canQuit { await disconnect() }
+        guard canQuit else { message = "会话或网络恢复尚未完成，不能准备升级或卸载。"; return false }
+        guard await unregisterNetworkServices() else { return false }
+        do {
+            let login = SMAppService.mainApp
+            if login.status != .notRegistered && login.status != .notFound { try await login.unregister() }
+            let statuses = [helper.installationStatus,
+                            SMAppService.agent(plistName: "com.javafancn.vpn-navigator.rules.plist").status,
+                            login.status]
+            guard statuses.allSatisfy({ $0 == .notRegistered || $0 == .notFound }) else {
+                message = "后台助手、规则更新或登录启动仍未完全停用。"; return false
+            }
+            if removeProfiles {
+                // Delete only this application's Keychain service, including
+                // orphan entries. A Keychain error must never report success.
+                try KeychainVault.removeAll()
+                for profile in profiles { try await store.delete(id: profile.id) }
                 selectedID = nil; username = ""; password = ""
                 await load()
-            } catch { message = "配置未能全部删除：\(error.localizedDescription)"; return false }
+            }
+        } catch {
+            message = "维护准备尚未完成：\(error.localizedDescription)"; return false
         }
-        message = "后台服务已停用，可以升级或在 Finder 中移除应用。"
+        message = "后台助手、规则更新与登录启动均已停用，可以升级或在 Finder 中移除应用。"
         return true
     }
     func exportPreview() async {

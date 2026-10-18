@@ -40,4 +40,4 @@ Signed delivery compiles native OpenVPN and static OpenSSL from hash-verified so
 
 ## Remaining validation boundaries
 
-No static or loopback result certifies full traffic leak freedom. Real signed XPC registration, TLS/OTP servers, corporate DNS, physical IPv6, network switching, sleep/wake, multi-VPN scenarios, process crashes, long-duration usage and clean installation must still be recorded. IPv6 country routing and dynamic browser/CRV1 authentication are not shipped capabilities.
+No static or loopback result certifies full traffic leak freedom. Real signed XPC registration, TLS/OTP servers, corporate DNS, physical IPv6, network switching, sleep/wake, multi-VPN scenarios, process crashes, long-duration usage and clean installation must still be recorded. Initial-authentication legacy CRV1 is implemented with bounded rounds; post-connect CRV1 reauthentication, browser/SAML and IPv6 country routing remain unsupported.

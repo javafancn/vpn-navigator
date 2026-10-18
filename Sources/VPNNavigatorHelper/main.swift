@@ -11,6 +11,13 @@ if CommandLine.arguments.dropFirst().first == "--commit-dns" {
     catch { exit(1) }
 }
 #if DEBUG
+if CommandLine.arguments.dropFirst().first == "--self-test-management" {
+    guard getuid() != 0, CommandLine.arguments.count == 4 else { exit(1) }
+    do {
+        try ManagementSocketSelfTest.run(path: CommandLine.arguments[2], scenario: CommandLine.arguments[3])
+        print("Management socket fixture passed."); exit(0)
+    } catch { fputs("Management socket self-test failed.\n", stderr); exit(1) }
+}
 if CommandLine.arguments.dropFirst().first == "--self-test-route-ordering" {
     do { try RouteExecutionSelfTest.run(); print("Route rollback ordering and cancellation checks passed."); exit(0) }
     catch { fputs("Route ordering self-test failed.\n", stderr); exit(1) }
@@ -113,7 +120,7 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
                 activeProfileID: self.engine.activeProfileID,
                 receivedBytes: self.engine.traffic?.receivedBytes,
                 sentBytes: self.engine.traffic?.sentBytes, challenge: self.engine.challenge,
-                firewallActive: self.engine.firewallActive, firewallRecoveryRequired: self.engine.firewallRecoveryRequired, attemptID: self.engine.activeAttemptID)
+                firewallActive: self.engine.firewallActive, firewallRecoveryRequired: self.engine.firewallRecoveryRequired, attemptID: self.engine.activeAttemptID, networkRecoveryRequired: self.engine.networkRecoveryRequired)
             guard let bytes = try? JSONEncoder().encode(report),
                   let output = String(data: bytes, encoding: .utf8) else {
                 reply("ERROR: Cannot serialize tunnel status")

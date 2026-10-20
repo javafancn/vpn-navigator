@@ -116,8 +116,10 @@ func scenario(_ test: Scenario) async -> Bool {
     guard !test.forbidden.contains(where: { !$0.isEmpty && events.contains($0) }) else { print("Secret in diagnostic events"); return false }
     let stopped = await disconnect()
     guard stopped else { print("Disconnect was not confirmed"); return false }
-    let cleaned = await ask { $0.sessionSnapshot(reply: $1) }
-    guard let cleanData = cleaned.data(using: .utf8),
+    for _ in 0..<3 {
+      try? await Task.sleep(nanoseconds: 200_000_000)
+      let cleaned = await ask { $0.sessionSnapshot(reply: $1) }
+      guard let cleanData = cleaned.data(using: .utf8),
           let cleanReport = (try? JSONSerialization.jsonObject(with: cleanData)) as? [String: Any],
           cleanReport["state"] as? String == "disconnected",
           cleanReport["networkRecoveryRequired"] as? Bool == false else {
@@ -127,6 +129,7 @@ func scenario(_ test: Scenario) async -> Bool {
             print("Cleanup state: \(report["state"] as? String ?? "missing"); recovery: \(String(describing: report["networkRecoveryRequired"] as? Bool))")
         } else { print("Cleanup snapshot unavailable") }
         return false
+      }
     }
     print("PASS: authentication scenario " + test.name)
     return true

@@ -251,7 +251,7 @@ final class ManagedTunnel {
             }
             socket.onChallenge = { [weak self, weak socket] challenge in
                 self?.queue.async { [weak self] in
-                    guard let self, self.management === socket else { return }
+                    guard let self, let socket, self.management === socket else { return }
                     self.challenge = challenge
                     self.state = .authenticating
                     self.message = "需要额外认证，请在主窗口输入。"
@@ -259,7 +259,7 @@ final class ManagedTunnel {
             }
             socket.onAuthenticationFailure = { [weak self, weak socket] in
                 self?.queue.async { [weak self] in
-                    guard let self, self.management === socket else { return }
+                    guard let self, let socket, self.management === socket else { return }
                     self.stop()
                     self.eventStore.append(.authentication)
                     self.lastError = DiagnosticCode.authentication.summary
@@ -269,7 +269,7 @@ final class ManagedTunnel {
             }
             socket.onUnsupportedChallenge = { [weak self, weak socket] in
                 self?.queue.async { [weak self] in
-                    guard let self, self.management === socket else { return }
+                    guard let self, let socket, self.management === socket else { return }
                     self.stop()
                     self.lastError = "OpenVPN requested an unsupported authentication method."
                     self.state = .failed
@@ -278,7 +278,10 @@ final class ManagedTunnel {
             }
             socket.onExit = { [weak self, weak socket] in
                 self?.queue.async { [weak self] in
-                    guard let self, self.management === socket else { return }
+                    // A retired weak socket and management can both be nil.
+                    // Bind the socket before comparing identities so a stale
+                    // EOF cannot overwrite an explicit successful disconnect.
+                    guard let self, let socket, self.management === socket else { return }
                     // EOF can arrive before Process.terminationHandler. Keep
                     // the unexpected failure visible after successful cleanup.
                     let failure = self.lastError ?? "OpenVPN 意外退出，请查看诊断报告。"
@@ -293,13 +296,13 @@ final class ManagedTunnel {
             }
             socket.onTraffic = { [weak self, weak socket] sample in
                 self?.queue.async { [weak self] in
-                    guard let self, self.management === socket else { return }
+                    guard let self, let socket, self.management === socket else { return }
                     self.traffic = sample
                 }
             }
             socket.onState = { [weak self, weak socket] snapshot in
                 self?.queue.async { [weak self] in
-                    guard let self, self.management === socket else { return }
+                    guard let self, let socket, self.management === socket else { return }
                     self.handle(snapshot)
                 }
             }

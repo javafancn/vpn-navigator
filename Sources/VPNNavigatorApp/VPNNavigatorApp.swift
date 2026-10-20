@@ -136,7 +136,7 @@ final class AppModel: ObservableObject {
     var connected: Bool { sessionState == .connected }
     var connecting: Bool { [.connecting, .authenticating, .reconnecting].contains(sessionState) }
     var stopping: Bool { sessionState == .stopping }
-    var canQuit: Bool { repairExitAuthorized || SessionExitPolicy.mayExit(state: sessionState, activeProfileID: activeProfileID, helperVerified: helperStateVerified, recoveryRequired: firewallRecoveryRequired || networkRecoveryRequired) }
+    var canQuit: Bool { (repairExitAuthorized && canRepairInterruptedInstallation) || SessionExitPolicy.mayExit(state: sessionState, activeProfileID: activeProfileID, helperVerified: helperStateVerified, recoveryRequired: firewallRecoveryRequired || networkRecoveryRequired) }
     var canRepairInterruptedInstallation: Bool {
         guard BuildChannel.isLocal, !maintenanceInProgress, !busy, !connected, !connecting, !stopping,
               activeProfileID == nil, profileMutations == 0,

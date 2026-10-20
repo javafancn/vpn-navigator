@@ -128,6 +128,13 @@ exit 37
             assert run(['sudo', '/usr/sbin/installer', '-pkg', fault_package, '-target', '/'], ok=False).returncode != 0
             assert STATE.exists(), 'Failed package lost the transaction barrier'
             if phase == 'preparing':
+                saved_setup = folder / 'held-setup'
+                run(['sudo', 'mv', PAYLOAD / 'VPNNavigatorLocalSetup', saved_setup])
+                try:
+                    assert run(['sudo', '/usr/sbin/installer', '-pkg', PAYLOAD / 'VPNNavigator-Uninstall.pkg', '-target', '/'], ok=False).returncode != 0
+                    assert STATE.exists() and BASE.exists(), 'Missing setup was mistaken for a complete uninstall'
+                finally:
+                    run(['sudo', 'mv', saved_setup, PAYLOAD / 'VPNNavigatorLocalSetup'])
                 # Same version/build but a different valid app identity models
                 # an incomplete replacement. Repair must restore package code,
                 # rather than only rewrite its approval around unknown files.

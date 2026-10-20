@@ -127,6 +127,12 @@ exit 37
                     shutil.copy2(folder / original.name, original)
             assert run(['sudo', '/usr/sbin/installer', '-pkg', fault_package, '-target', '/'], ok=False).returncode != 0
             assert STATE.exists(), 'Failed package lost the transaction barrier'
+            if phase == 'preparing':
+                # Same version/build but a different valid app identity models
+                # an incomplete replacement. Repair must restore package code,
+                # rather than only rewrite its approval around unknown files.
+                run(['sudo', '/usr/libexec/PlistBuddy', '-c', 'Add :VPNNavRepairFixture bool true', APP / 'Contents/Info.plist'])
+                run(['sudo', 'codesign', '--force', '--options', 'runtime', '--sign', '-', '--identifier', 'com.javafancn.vpn-navigator', APP])
             state(phase)
             health(False)
             assert run(['sudo', '/usr/sbin/installer', '-pkg', PAYLOAD / 'VPNNavigator-Uninstall.pkg', '-target', '/'], ok=False).returncode != 0
@@ -167,6 +173,7 @@ exit 37
             run(['sudo', '/usr/sbin/installer', '-pkg', package, '-target', '/'])
             assert not STATE.exists(), 'Health-checked installation did not commit'
             health()
+            assert 'VPNNavRepairFixture' not in plistlib.loads((APP / 'Contents/Info.plist').read_bytes()), 'Same-version repair retained unapproved app code'
             assert sentinel.read_bytes() == sentinel_bytes, 'Repair changed user profiles'
             print('PASS: ' + phase + ' checkpoint blocks ordinary trust, exposes repair, preserves profiles and repairs through administrator PKG.')
         assert hashlib.sha256(package.read_bytes()).digest() == hashlib.sha256((folder / package.name).read_bytes()).digest()

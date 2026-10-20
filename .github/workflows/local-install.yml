@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check integration fixture syntax
-        run: python3 -m py_compile scripts/local-tests/test-upgrade.py scripts/local-tests/test-tls-loopback.py scripts/local-tests/test-installed.py
+        run: python3 -m py_compile scripts/local-tests/*.py
       - name: Fetch verified sources
         run: python3 scripts/fetch-engine-sources.py "$RUNNER_TEMP/local-engine-sources"
       - uses: actions/cache@v4
@@ -44,7 +44,7 @@ jobs:
         run: |
           stat -f 'Console UID %u' /dev/console
           python3 scripts/local-tests/test-upgrade.py
-      - name: Test real certificate TLS and utun through installed helper
+      - name: Test real TLS, private key, static and dynamic MFA, cancellation and server loss
         run: python3 scripts/local-tests/test-tls-loopback.py
       - name: Test actual root service and both sides of XPC authentication
         run: python3 scripts/local-tests/test-installed.py

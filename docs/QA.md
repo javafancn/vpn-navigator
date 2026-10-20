@@ -130,3 +130,9 @@ Automated loopback and synthetic-service tests exercise a subset of these paths.
 | A91 | Child exited but DNS/route journals remain; legacy failed snapshot | Quit/maintenance stay blocked; an explicit recovered report clears the gate |
 
 `python3 scripts/test-management-socket.py "$(swift build --show-bin-path)/VPNNavigatorHelper"` runs non-root local fixtures without OpenVPN, route, DNS or PF changes. These fixtures validate protocol I/O and cancellation, not real TLS-server compatibility. A85/A87/A90/A91 still require signed application/server acceptance on a disposable Mac.
+
+## Installed local-channel authentication evidence
+
+PR #17 extends `scripts/local-tests/test-tls-loopback.py` with real TLS-server account verification, encrypted private keys, static flags 0–3 and initial CRV1 exchanges. It covers isolated subsets of A07/A71/A73/A85–A89, including wrong secrets, prompt cancellation, duplicate/stale responses, round limits and secret-free reports/events. Server loss additionally exercises failure visibility, owned-session cleanup and subsequent reconnect. See [LOCAL_AUTH_ACCEPTANCE.md](LOCAL_AUTH_ACCEPTANCE.md) for exact scope and current workflow evidence.
+
+These tests use a temporarily approved CI client through the installed production XPC API. They do not exercise SwiftUI input, Keychain, an external identity provider or physical-network behavior. No hardware acceptance row above is marked complete by this evidence.

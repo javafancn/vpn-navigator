@@ -9,6 +9,7 @@ import VPNNavigatorCore
 enum PeerVerifier {
     static func clientRequirement(uid: UInt32) -> String? {
         if BuildChannel.isLocal {
+            guard !LocalInstallation.isInstallationPending || uid == 0 else { return nil }
             guard let approval = try? LocalInstallation.load(), uid == approval.ownerUID || uid == 0 else { return nil }
             return try? approval.requirement(for: uid == 0 ? [.setup] : [.app, .agent])
         }

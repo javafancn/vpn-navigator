@@ -11,7 +11,7 @@ check_local_paths() {
       (( (8#$mode & 8#022) == 0 )) || return 1
     fi
   done
-  for path in '/Library/Application Support/VPNNavigator/Local/manifest.json' '/Library/Application Support/VPNNavigator/Local/retired-approval.json' '/Library/Application Support/VPNNavigator/Local/Payload/'{VPNNavigatorHelper,VPNNavigatorRuleAgent,VPNNavigatorLocalSetup,openvpn,macos-dns-updown.sh,approval-template.json,VPNNavigator-Uninstall.pkg} '/Library/LaunchDaemons/com.javafancn.vpn-navigator.local-helper.plist'; do
+  for path in '/Library/Application Support/VPNNavigator/Local/manifest.json' '/Library/Application Support/VPNNavigator/Local/retired-approval.json' '/Library/Application Support/VPNNavigator/Local/install-state.json' '/Library/Application Support/VPNNavigator/Local/Payload/'{VPNNavigatorHelper,VPNNavigatorRuleAgent,VPNNavigatorLocalSetup,openvpn,macos-dns-updown.sh,approval-template.json,VPNNavigator-Uninstall.pkg} '/Library/LaunchDaemons/com.javafancn.vpn-navigator.local-helper.plist'; do
     [[ ! -L "$path" ]] || return 1
     if [[ -e "$path" ]]; then
       [[ -f "$path" && "$(/usr/bin/stat -f %u "$path")" == 0 ]] || return 1

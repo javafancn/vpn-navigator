@@ -45,12 +45,14 @@ final class AppModel: ObservableObject {
     private var connectionAttempt: UUID?
     private var helperAttemptID: UUID?
     private var helperStateVerified = true
+    private var repairExitAuthorized = false
     private let localEvents = DiagnosticEventStore(file: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("VPNNavigator/Diagnostics/events.json"))
     private var profileMutations = 0
     @Published private(set) var maintenanceInProgress = false
     @Published var busy = false
     @Published var message: String?
     @Published var helperStatus = "未启用"
+    @Published var installationIssue: String?
     @Published var availableInstaller: URL?
     @Published var availableReleasePage: URL?
     @Published var connectionStatus = "disconnected: Not connected"
@@ -79,7 +81,8 @@ final class AppModel: ObservableObject {
         updater = RuleUpdater(folder: root.appendingPathComponent("Rules"))
         ipv6Updater = APNICIPv6PreviewStore(root: root.appendingPathComponent("Rules"))
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") { return }
+        installationIssue = helper.localInstallationIssue
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") { return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -113,7 +116,7 @@ final class AppModel: ObservableObject {
                 } catch { message = "规则后台更新未启用：\(error.localizedDescription)" }
             }
             eventHistory = localEvents.events()
-            if !UserDefaults.standard.bool(forKey: "setupAssistantDismissed") {
+            if installationIssue != nil || !UserDefaults.standard.bool(forKey: "setupAssistantDismissed") {
                 showingSetup = true
             }
         }
@@ -133,7 +136,14 @@ final class AppModel: ObservableObject {
     var connected: Bool { sessionState == .connected }
     var connecting: Bool { [.connecting, .authenticating, .reconnecting].contains(sessionState) }
     var stopping: Bool { sessionState == .stopping }
-    var canQuit: Bool { SessionExitPolicy.mayExit(state: sessionState, activeProfileID: activeProfileID, helperVerified: helperStateVerified, recoveryRequired: firewallRecoveryRequired || networkRecoveryRequired) }
+    var canQuit: Bool { (repairExitAuthorized && canRepairInterruptedInstallation) || SessionExitPolicy.mayExit(state: sessionState, activeProfileID: activeProfileID, helperVerified: helperStateVerified, recoveryRequired: firewallRecoveryRequired || networkRecoveryRequired) }
+    var canRepairInterruptedInstallation: Bool {
+        guard BuildChannel.isLocal, !maintenanceInProgress, !busy, !connected, !connecting, !stopping,
+              activeProfileID == nil, profileMutations == 0,
+              let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+              let transaction = try? LocalInstallation.pendingTransaction() else { return false }
+        return transaction.matches(version: version, architecture: LocalInstallation.nativeArchitecture)
+    }
     var sessionPreferences: SessionPreferences {
         .init(connectionTimeout: connectionTimeout == 0 ? 60 : connectionTimeout,
               reconnectOriginal: reconnectOriginal, killSwitch: killSwitch, reconnectManaged: reconnectManaged)
@@ -405,6 +415,7 @@ final class AppModel: ObservableObject {
     }
 
     private func displayHelperStatus(_ status: SMAppService.Status) -> String {
+        if BuildChannel.isLocal, LocalInstallation.isInstallationPending { return "安装未完成" }
         switch status {
         case .enabled: return "已启用"
         case .notRegistered: return "未注册"
@@ -431,6 +442,7 @@ final class AppModel: ObservableObject {
         } catch { message = "Helper registration failed: \(error.localizedDescription)" }
     }
     func refreshConnectionStatus() async {
+        installationIssue = helper.localInstallationIssue
         helperStatus = displayHelperStatus(helper.installationStatus)
         if helper.installationStatus == .enabled {
             if let report = await helper.sessionReport() {
@@ -474,6 +486,9 @@ final class AppModel: ObservableObject {
     }
     func connectSelected() async {
         guard !maintenanceInProgress else { return }
+        if BuildChannel.isLocal, LocalInstallation.isInstallationPending {
+            message = helper.localInstallationIssue; showingSetup = true; return
+        }
         guard !busy, !connecting, !connected, !stopping, let selected else { return }
         let attempt = UUID(); connectionAttempt = attempt
         connectionStatus = "connecting: 正在准备连接"
@@ -634,7 +649,8 @@ final class AppModel: ObservableObject {
     /// Local packages have no publisher certificate. Selection is an explicit
     /// user action; only macOS Installer can grant administrator authorization.
     func openLocalInstaller() {
-        guard BuildChannel.isLocal, !maintenanceInProgress, canQuit,
+        let repairing = canRepairInterruptedInstallation
+        guard BuildChannel.isLocal, !maintenanceInProgress, canQuit || repairing,
               helper.installationStatus != .enabled else {
             message = "请先完成升级与卸载准备。"; showingMaintenance = true; return
         }
@@ -646,10 +662,26 @@ final class AppModel: ObservableObject {
               url.lastPathComponent.contains("-" + LocalInstallation.nativeArchitecture + "-") else {
             message = "请选择与本机架构一致的本地版安装包（-Local.pkg）。"; return
         }
-        if NSWorkspace.shared.open(url) { NSApplication.shared.terminate(nil) }
+        if repairing {
+            Task {
+                do {
+                    try await UserServices.disableRules()
+                    try UserServices.setLogin(false)
+                    guard canRepairInterruptedInstallation else { throw LocalInstallError.incomplete }
+                    // This exception applies only to a validated administrator
+                    // transaction barrier. Preinstall already stopped the old
+                    // job; the new helper rejects VPN requests until commit.
+                    // The trusted PKG independently checks root-owned journals.
+                    guard NSWorkspace.shared.open(url) else { throw LocalInstallError.command }
+                    repairExitAuthorized = true
+                    NSApplication.shared.terminate(nil)
+                } catch { message = "无法交接安装修复：\(error.localizedDescription)" }
+            }
+        } else if NSWorkspace.shared.open(url) { NSApplication.shared.terminate(nil) }
         else { message = "无法打开安装包，请在 Finder 中打开。" }
     }
     func openLocalUninstaller() {
+        guard !LocalInstallation.isInstallationPending else { message = "请先修复未完成的安装，再准备卸载。"; return }
         guard BuildChannel.isLocal, !maintenanceInProgress, canQuit,
               helper.installationStatus != .enabled else { return }
         do {
@@ -678,6 +710,18 @@ struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
     @StateObject private var model = AppModel()
     init() {
+        if BuildChannel.isLocal && ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") {
+            let diagnosticModel = AppModel()
+            let transaction = try? LocalInstallation.pendingTransaction()
+            let state: [String: Any] = ["pending": LocalInstallation.isInstallationPending,
+                                       "phase": transaction?.phase.rawValue ?? "none",
+                                       "repairAvailable": diagnosticModel.canRepairInterruptedInstallation,
+                                       "status": diagnosticModel.installationIssue ?? "ready"]
+            if let bytes = try? JSONSerialization.data(withJSONObject: state) {
+                print(String(decoding: bytes, as: UTF8.self)); Darwin.exit(0)
+            }
+            Darwin.exit(1)
+        }
         if BuildChannel.isLocal && ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") {
             Task { let result = await HelperClient.shared.ping(); print(result); Darwin.exit(result.hasPrefix("VPN Navigator Helper") ? 0 : 1) }
         }

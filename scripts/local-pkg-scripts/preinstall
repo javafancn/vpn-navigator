@@ -5,13 +5,63 @@ source "$(/usr/bin/dirname "$0")/guard"
 check_local_paths || { echo 'Unsafe existing installation paths' >&2; exit 1; }
 EXPECTED="$(/bin/cat "$(/usr/bin/dirname "$0")/architecture")"
 [[ "$(/usr/bin/uname -m)" == "$EXPECTED" ]] || { echo 'Wrong installer architecture' >&2; exit 1; }
-for name in VPNNavigatorApp VPNNavigatorHelper VPNNavigatorRuleAgent; do
+BASE='/Library/Application Support/VPNNavigator/Local'
+STATE="$BASE/install-state.json"
+LABEL='system/com.javafancn.vpn-navigator.local-helper'
+VERSION="$(/bin/cat "$(/usr/bin/dirname "$0")/version")"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+[[ ${#VERSION} -lt 32 ]] || exit 1
+if /bin/launchctl print system/com.javafancn.vpn-navigator.helper >/dev/null 2>&1; then
+  echo 'Uninstall the signed channel before installing the local channel.' >&2; exit 1
+fi
+for name in VPNNavigatorApp VPNNavigatorRuleAgent VPNNavigatorLocalSetup; do
   if /usr/bin/pgrep -x "$name" >/dev/null 2>&1; then
     echo 'Quit VPN Navigator and prepare maintenance before installing.' >&2; exit 1
   fi
 done
 for name in routes.journal dns.journal pf-guard.json active.ovpn openvpn-child.json; do
-  if [[ -e "/var/run/vpn-navigator/$name" ]]; then
+  if [[ -e "/var/run/vpn-navigator/$name" || -L "/var/run/vpn-navigator/$name" ]]; then
     echo 'Unresolved VPN session or network recovery. Preserve evidence and recover first.' >&2; exit 1
   fi
 done
+if [[ -e "$STATE" ]]; then
+  # Only an intact root-owned transaction authorizes stopping a partial local
+  # installation. check_local_paths ran before reading this record.
+  [[ "$(/usr/bin/stat -f %z "$STATE")" -lt 4096 ]] || exit 1
+  [[ "$(/usr/bin/plutil -extract schema raw -o - "$STATE")" == 1 ]] || exit 1
+  OLD_VERSION="$(/usr/bin/plutil -extract version raw -o - "$STATE")"
+  [[ "$OLD_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && ${#OLD_VERSION} -lt 32 ]] || exit 1
+  [[ "$(/usr/bin/plutil -extract architecture raw -o - "$STATE")" == "$EXPECTED" ]] || exit 1
+  case "$(/usr/bin/plutil -extract phase raw -o - "$STATE")" in
+    preparing|verifying|repairRequired) ;;
+    *) exit 1 ;;
+  esac
+else
+  if /usr/bin/pgrep -x VPNNavigatorHelper >/dev/null 2>&1; then
+    echo 'Prepare maintenance before replacing the helper.' >&2; exit 1
+  fi
+fi
+# A lazy, stopped job must not launch old code during payload extraction.
+/bin/launchctl bootout "$LABEL" >/dev/null 2>&1 || true
+STOPPED=false
+# Older macOS can return from bootout while the job is still retiring. Wait
+# for absence; never use numeric PID signals or extract over a live component.
+for attempt in {1..50}; do
+  if ! /bin/launchctl print "$LABEL" >/dev/null 2>&1 &&
+     ! /usr/bin/pgrep -x VPNNavigatorHelper >/dev/null 2>&1 &&
+     ! /usr/bin/pgrep -x VPNNavigatorLocalSetup >/dev/null 2>&1; then
+    STOPPED=true; break
+  fi
+  /bin/sleep 0.1
+done
+[[ "$STOPPED" == true ]] || { echo 'Local service did not finish stopping; installation refused.' >&2; exit 1; }
+for name in routes.journal dns.journal pf-guard.json active.ovpn openvpn-child.json; do
+  [[ ! -e "/var/run/vpn-navigator/$name" && ! -L "/var/run/vpn-navigator/$name" ]] || exit 1
+done
+/usr/bin/install -d -o root -g wheel -m 755 "$BASE" "$BASE/Payload"
+TEMP_STATE="$(/usr/bin/mktemp "$BASE/.install-state.XXXXXXXX")"
+trap '/bin/rm -f "$TEMP_STATE"' EXIT
+/usr/bin/printf '{"schema":1,"version":"%s","architecture":"%s","phase":"preparing"}\n' "$VERSION" "$EXPECTED" > "$TEMP_STATE"
+/bin/chmod 644 "$TEMP_STATE"
+/bin/mv -f "$TEMP_STATE" "$STATE"
+/bin/sync

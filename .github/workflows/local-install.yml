@@ -46,6 +46,8 @@ jobs:
           python3 scripts/local-tests/test-upgrade.py
       - name: Test real TLS, private key, static and dynamic MFA, cancellation and server loss
         run: python3 scripts/local-tests/test-tls-loopback.py
+      - name: Test interrupted install checkpoints and administrator repair
+        run: python3 scripts/local-tests/test-interrupted-install.py
       - name: Test actual root service and both sides of XPC authentication
         run: python3 scripts/local-tests/test-installed.py
       - name: Diagnose failed local installation

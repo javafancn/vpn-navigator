@@ -23,8 +23,10 @@ import VPNNavigatorCore
                     try await Task.sleep(nanoseconds: 300_000_000)
                 }
                 guard healthy else { _ = try? run(["bootout", "system/" + LocalInstallation.daemonLabel]); throw LocalInstallError.command }
+                try LocalInstallation.completeInstallation()
                 print("Local helper installed and authenticated. No Developer ID certificate used.")
             } else if args == ["uninstall"], getuid() == 0 {
+                guard !LocalInstallation.isInstallationPending else { throw LocalInstallError.incomplete }
                 try LocalInstallation.protectedRoot()
                 guard !LocalInstallation.hasRecoveryEvidence else { throw LocalInstallError.recoveryRequired }
                 // The user process must remove its own login/rule jobs and
@@ -52,7 +54,15 @@ import VPNNavigatorCore
                 print(result)
             } else { throw LocalInstallError.rootRequired }
             exit(0)
-        } catch { fputs("Local setup: \(error.localizedDescription)\n", stderr); exit(1) }
+        } catch {
+            if CommandLine.arguments.dropFirst().first == "install", getuid() == 0,
+               LocalInstallation.isInstallationPending {
+                // Never erase session or network evidence during failed setup.
+                if !LocalInstallation.hasRecoveryEvidence { _ = try? run(["bootout", "system/" + LocalInstallation.daemonLabel]) }
+                try? LocalInstallation.setInstallPhase(.repairRequired)
+            }
+            fputs("Local setup: \(error.localizedDescription)\n", stderr); exit(1)
+        }
     }
     static func makeTemplate(app: URL, payload: URL, version: String) throws {
         var binaries: [String: LocalBinary] = [:]
@@ -75,6 +85,9 @@ import VPNNavigatorCore
         guard !LocalInstallation.hasRecoveryEvidence else { throw LocalInstallError.recoveryRequired }
         try LocalInstallation.protectedRoot()
         var approval = try LocalInstallation.decode(LocalInstallation.template)
+        guard let pending = try LocalInstallation.pendingTransaction(),
+              pending.phase == .preparing,
+              pending.matches(version: approval.version, architecture: approval.architecture) else { throw LocalInstallError.incomplete }
         guard approval.architecture == LocalInstallation.nativeArchitecture else { throw LocalInstallError.invalid }
         approval.ownerUID = uid
         for role in LocalRole.allCases {
@@ -92,6 +105,7 @@ import VPNNavigatorCore
         try LocalInstallation.daemonData().write(to: LocalInstallation.daemonPlist, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: LocalInstallation.daemonPlist.path)
         if FileManager.default.fileExists(atPath: LocalInstallation.retired.path) { try LocalInstallation.protected(LocalInstallation.retired); try FileManager.default.removeItem(at: LocalInstallation.retired) }
+        try LocalInstallation.setInstallPhase(.verifying)
         _ = try run(["enable", "system/" + LocalInstallation.daemonLabel])
         _ = try run(["bootstrap", "system", LocalInstallation.daemonPlist.path])
     }

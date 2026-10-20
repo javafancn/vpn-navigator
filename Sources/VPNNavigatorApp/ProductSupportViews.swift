@@ -34,8 +34,13 @@ struct MaintenanceAssistantView: View {
             Text("升级与卸载准备").font(.system(size: 24, weight: .bold))
             Text(BuildChannel.isLocal ? "先恢复网络并停用后台服务，再通过系统安装器升级或完整卸载。直接将应用拖入废纸篓会保留系统组件。" : "先停止 VPN、恢复网络并停用本应用后台服务及登录启动，再交由系统安装器升级或 Finder 移除应用。")
                 .font(.system(size: 14)).fixedSize(horizontal: false, vertical: true)
+            if let issue = model.installationIssue {
+                Text(issue).font(.system(size: 13)).foregroundStyle(.secondary)
+                Button("选择安装包修复…") { model.openLocalInstaller() }
+                    .buttonStyle(ReferencePrimaryButton()).disabled(!model.canRepairInterruptedInstallation)
+            }
             Toggle("同时删除全部连接配置、历史版本与已保存凭据", isOn: $removeProfiles)
-                .disabled(preparing || prepared)
+                .disabled(preparing || prepared || model.installationIssue != nil)
             Text("默认保留本地配置。勾选删除后无法撤销；不会删除其他应用或系统的凭据。")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             if let message = model.message { Text(message).font(.system(size: 13)).foregroundStyle(.secondary) }
@@ -43,7 +48,7 @@ struct MaintenanceAssistantView: View {
                 Button(preparing ? "准备中…" : "断开并停用后台服务") {
                     preparing = true
                     Task { prepared = await model.prepareMaintenance(removeProfiles: removeProfiles); preparing = false }
-                }.buttonStyle(ReferencePrimaryButton()).disabled(preparing || prepared)
+                }.buttonStyle(ReferencePrimaryButton()).disabled(preparing || prepared || model.installationIssue != nil)
                 Spacer()
             }
             HStack {
@@ -131,7 +136,7 @@ struct SetupAssistantView: View {
                 Divider().opacity(0.25)
                 HStack {
                     checkRow("后台助手", detail: model.helperStatus, ready: model.helperStatus == "已启用")
-                    Button(BuildChannel.isLocal ? "安装 / 启用…" : "启用…") { model.requestHelper() }
+                    Button(BuildChannel.isLocal ? (model.installationIssue == nil ? "安装 / 启用…" : "修复安装…") : "启用…") { model.requestHelper() }
                         .buttonStyle(ReferenceSecondaryButton()).disabled(!BuildChannel.isLocal && (!signed || !engine))
                     Button("系统授权…") { SMAppService.openSystemSettingsLoginItems() }
                         .buttonStyle(ReferenceSecondaryButton())
@@ -155,6 +160,7 @@ struct SetupAssistantView: View {
                     dismiss()
                 }.buttonStyle(ReferencePrimaryButton())
             }
+            if let issue = model.installationIssue { Text(issue).font(.system(size: 13)).foregroundStyle(.secondary) }
         }
         .padding(24).frame(width: 660)
         .background(GlassAtmosphere())

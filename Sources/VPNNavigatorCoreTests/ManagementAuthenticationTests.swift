@@ -34,6 +34,36 @@ final class ManagementAuthenticationTests: XCTestCase {
         XCTAssertEqual(try flow.respond(id: value.id.uuidString, response: "").last,
                        "password \"Auth\" \"CRV1::opaque-state::\"")
     }
+    func testInitialDynamicRetryReleasesExactlyOneManagementHold() throws {
+        var flow = ManagementAuthentication()
+        let hold = ">HOLD:Waiting for hold release:1"
+        XCTAssertNil(flow.receive(hold))
+        _ = flow.receive(challenge())
+        XCTAssertNil(flow.receive(hold))
+        let retry = try XCTUnwrap(ManagementParser.parseState(">STATE:1,RECONNECTING,auth-failure,,,,"))
+        _ = flow.transition(retry)
+        guard case .commands(let commands) = flow.receive(hold) else { return XCTFail("CRV1 retry deadlocked on hold") }
+        XCTAssertEqual(commands, ["hold release"])
+        XCTAssertNil(flow.receive(hold))
+        let value = try presentation(flow.receive(need))
+        _ = try flow.respond(id: value.id.uuidString, response: "token")
+        XCTAssertNil(flow.receive(hold))
+    }
+    func testTransportRetryCannotReleasePendingDynamicHold() throws {
+        for reason in ["tls-error", "connection-reset", "ping-restart"] {
+            var flow = ManagementAuthentication(); _ = flow.receive(challenge())
+            _ = flow.transition(try XCTUnwrap(ManagementParser.parseState(">STATE:1,RECONNECTING,auth-failure,,,,")))
+            _ = flow.transition(try XCTUnwrap(ManagementParser.parseState(">STATE:2,RECONNECTING,\(reason),,,,")))
+            XCTAssertNil(flow.receive(">HOLD:Waiting for hold release:1"))
+        }
+    }
+    func testMalformedDynamicHoldFailsClosed() throws {
+        for suffix in ["", "-1", "+1", "1 extra", "999999", "3601", "1\nhold release"] {
+            var flow = ManagementAuthentication(); _ = flow.receive(challenge())
+            _ = flow.transition(try XCTUnwrap(ManagementParser.parseState(">STATE:1,RECONNECTING,auth-failure,,,,")))
+            guard case .unsupported = flow.receive(">HOLD:Waiting for hold release:" + suffix) else { return XCTFail("Malformed hold released") }
+        }
+    }
     func testPrivateKeyUnlockDuringRetryPreservesDynamicContext() throws {
         var flow = ManagementAuthentication(); _ = flow.receive(challenge())
         let key = try presentation(flow.receive(">PASSWORD:Need 'Private Key' password"))
@@ -84,6 +114,7 @@ final class ManagementAuthenticationTests: XCTestCase {
         var flow = ManagementAuthentication()
         _ = flow.transition(try XCTUnwrap(ManagementParser.parseState(">STATE:1,CONNECTED,SUCCESS,10.8.0.2,1.2.3.4")))
         guard case .failed = flow.receive(challenge()) else { return XCTFail("Post-connect challenge accepted") }
+        XCTAssertNil(flow.receive(">HOLD:Waiting for hold release:1"))
         let retry = try XCTUnwrap(ManagementParser.parseState(">STATE:2,RECONNECTING,auth-failure,,,,"))
         XCTAssertEqual(flow.transition(retry).state, .reconnecting)
     }

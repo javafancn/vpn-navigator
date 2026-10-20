@@ -54,6 +54,8 @@ def exercise(helper, scenario):
                             if scenario == "cancel":
                                 send(">PASSWORD:Verification Failed: 'Auth' ['CRV1:R:cancel:Y3Ix:设备确认']")
                                 send(">STATE:1,RECONNECTING,auth-failure,,,,")
+                                send(">HOLD:Waiting for hold release:1")
+                                commands('hold release')
                                 send(">PASSWORD:Need 'Auth' username/password")
                                 assert line() == "", "Cancelled challenge produced credentials"
                                 return
@@ -72,6 +74,8 @@ def exercise(helper, scenario):
                             for flags, state, response in [("R,E", "state-one", "8675309"), ("", "state-two", "")]:
                                 send(f">PASSWORD:Verification Failed: 'Auth' ['CRV1:{flags}:{state}:Y3Ix:设备确认:下一步']")
                                 send(">STATE:2,RECONNECTING,auth-failure,,,,")
+                                send(">HOLD:Waiting for hold release:1")
+                                commands('hold release')
                                 send(">PASSWORD:Need 'Auth' username/password")
                                 commands('username "Auth" "cr1"', f'password "Auth" "CRV1::{state}::{response}"')
                             send(">STATE:3,CONNECTED,SUCCESS,10.8.0.2,127.0.0.1")

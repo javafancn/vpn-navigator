@@ -45,6 +45,7 @@ public struct ManagementAuthentication {
     private var pending: AuthenticationChallenge?
     private var dynamic: DynamicAuthenticationChallenge?
     private var awaitingAuthRequest = false
+    private var mayReleaseDynamicHold = false
     private var dynamicRounds = 0
     private var connectedBefore = false
     public init() { }
@@ -52,8 +53,22 @@ public struct ManagementAuthentication {
         credentials = ManagementCredentialPolicy.allows(username: username, password: password, credentialsRequired: true) ? (username, password) : nil
     }
     public mutating func receive(_ line: String) -> Event? {
+        if line.hasPrefix(">HOLD:") {
+            // OpenVPN enters management-hold again before the next Need Auth
+            // on CRV1 restarts. Release only this expected initial-auth retry;
+            // transport and established-tunnel reconnects remain fail closed.
+            guard !connectedBefore, dynamic != nil, awaitingAuthRequest, mayReleaseDynamicHold else { return nil }
+            let prefix = ">HOLD:Waiting for hold release:"
+            guard line.hasPrefix(prefix) else { return .unsupported }
+            let delay = line.dropFirst(prefix.count)
+            guard !delay.isEmpty, delay.utf8.count <= 5,
+                  delay.utf8.allSatisfy({ (48...57).contains($0) }),
+                  let seconds = UInt16(delay), seconds <= 3600 else { return .unsupported }
+            mayReleaseDynamicHold = false
+            return .commands(["hold release"])
+        }
         if line.hasPrefix(">PASSWORD:Verification Failed:") {
-            pending = nil; dynamic = nil; awaitingAuthRequest = false
+            pending = nil; dynamic = nil; awaitingAuthRequest = false; mayReleaseDynamicHold = false
             guard !connectedBefore, dynamicRounds < 3, let value = DynamicAuthenticationChallenge.parse(line) else { return .failed }
             dynamicRounds += 1; dynamic = value; awaitingAuthRequest = true
             return nil
@@ -66,7 +81,7 @@ public struct ManagementAuthentication {
         }
         if let dynamic {
             guard line == ">PASSWORD:Need 'Auth' username/password" else { return .unsupported }
-            awaitingAuthRequest = false; pending = dynamic.presentation
+            awaitingAuthRequest = false; mayReleaseDynamicHold = false; pending = dynamic.presentation
             return .challenge(dynamic.presentation)
         }
         if let value = AuthenticationChallenge.parse(line) {
@@ -96,11 +111,13 @@ public struct ManagementAuthentication {
     }
     public mutating func transition(_ snapshot: TunnelSnapshot) -> TunnelSnapshot {
         if snapshot.state == .connected { connectedBefore = true; pending = nil; dynamic = nil; awaitingAuthRequest = false }
+        if [.reconnecting, .connected, .failed, .stopping].contains(snapshot.state) { mayReleaseDynamicHold = false }
         // CRV1 intentionally restarts the initial auth attempt. Do not route
         // this through the managed transport reconnect path. The original
         // overall attempt deadline and pre-tunnel PF policy remain in force.
         if !connectedBefore, dynamic != nil, awaitingAuthRequest,
            snapshot.state == .reconnecting, snapshot.message == "auth-failure" {
+            mayReleaseDynamicHold = true
             return TunnelSnapshot(state: .authenticating, remoteIPv4: nil, localTunnelIPv4: nil, message: "等待动态身份验证")
         }
         return snapshot

@@ -104,7 +104,7 @@ func scenario(_ test: Scenario) async -> Bool {
         }
         try? await Task.sleep(nanoseconds: 250_000_000)
     }
-    guard matched, replies == test.factors.count else { return false }
+    guard matched, replies == test.factors.count else { print("Terminal/factor mismatch"); return false }
     if let id = cancelledID {
         let stale = await ask { $0.submitChallenge(id: id, response: "fixture-stale", reply: $1) }
         guard stale.hasPrefix("ERROR:") else { return false }
@@ -113,13 +113,21 @@ func scenario(_ test: Scenario) async -> Bool {
         guard status.hasPrefix("disconnected:") else { return false }
     }
     let events = await ask { $0.diagnosticEvents(reply: $1) }
-    guard !test.forbidden.contains(where: { !$0.isEmpty && events.contains($0) }),
-          await disconnect() else { return false }
+    guard !test.forbidden.contains(where: { !$0.isEmpty && events.contains($0) }) else { print("Secret in diagnostic events"); return false }
+    let stopped = await disconnect()
+    guard stopped else { print("Disconnect was not confirmed"); return false }
     let cleaned = await ask { $0.sessionSnapshot(reply: $1) }
     guard let cleanData = cleaned.data(using: .utf8),
           let cleanReport = (try? JSONSerialization.jsonObject(with: cleanData)) as? [String: Any],
           cleanReport["state"] as? String == "disconnected",
-          cleanReport["networkRecoveryRequired"] as? Bool == false else { return false }
+          cleanReport["networkRecoveryRequired"] as? Bool == false else {
+        // Only controlled enum/bool fields; never print raw reports or secrets.
+        if let cleanData = cleaned.data(using: .utf8),
+           let report = (try? JSONSerialization.jsonObject(with: cleanData)) as? [String: Any] {
+            print("Cleanup state: \(report["state"] as? String ?? "missing"); recovery: \(String(describing: report["networkRecoveryRequired"] as? Bool))")
+        } else { print("Cleanup snapshot unavailable") }
+        return false
+    }
     print("PASS: authentication scenario " + test.name)
     return true
 }

@@ -93,6 +93,9 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
         let generation = engine.cancellation.snapshot()
         queue.async {
             guard !self.retiring else { reply("ERROR: Local services are retiring"); return }
+            guard !BuildChannel.isLocal || !LocalInstallation.isInstallationPending else {
+                reply("ERROR: " + LocalInstallError.incomplete.localizedDescription); return
+            }
             guard let requestID = UUID(uuidString: attemptID) else { reply("ERROR: Invalid connection attempt"); return }
             guard let profileUUID = UUID(uuidString: profileID) else {
                 reply("ERROR: Invalid profile identifier"); return

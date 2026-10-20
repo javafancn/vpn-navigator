@@ -10,6 +10,7 @@ final class HelperClient {
 
     var installationStatus: SMAppService.Status {
         if BuildChannel.isLocal {
+            if LocalInstallation.isInstallationPending { return .requiresApproval }
             if FileManager.default.fileExists(atPath: LocalInstallation.manifest.path) {
                 guard let value = try? LocalInstallation.load(), value.ownerUID == getuid() else { return .requiresApproval }
                 return .enabled
@@ -17,6 +18,11 @@ final class HelperClient {
             return FileManager.default.fileExists(atPath: LocalInstallation.retired.path) ? .notRegistered : .notFound
         }
         return SMAppService.daemon(plistName: HelperIdentity.plistName).status
+    }
+    var localInstallationIssue: String? {
+        guard BuildChannel.isLocal, LocalInstallation.isInstallationPending else { return nil }
+        do { return try LocalInstallation.pendingTransaction()?.summary }
+        catch { return "安装事务记录无法核验，请保留现状并进行人工诊断。不要删除网络恢复记录。" }
     }
 
     func requestRegistration() throws {

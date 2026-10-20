@@ -87,7 +87,7 @@ public struct LocalApproval: Codable, Equatable, Sendable {
     }
 }
 public enum LocalInstallError: Error, LocalizedError {
-    case invalid, unsafe, altered, notInstalled, rootRequired, recoveryRequired, command
+    case invalid, unsafe, altered, notInstalled, rootRequired, recoveryRequired, command, incomplete
     public var errorDescription: String? {
         switch self {
         case .invalid: return "本地安装批准记录无效。"
@@ -97,6 +97,7 @@ public enum LocalInstallError: Error, LocalizedError {
         case .rootRequired: return "此安装操作需要系统安装器授予管理员权限。"
         case .recoveryRequired: return "VPN 会话或网络恢复尚未完成，请先断开并执行安全恢复。"
         case .command: return "后台服务操作未完成，请检查安装状态。"
+        case .incomplete: return "安装事务尚未完成，VPN 连接已暂停。请等待系统安装器完成，或用可信安装包修复。"
         }
     }
 }
@@ -114,6 +115,7 @@ public enum LocalInstallation {
     public static let retired = root.appendingPathComponent("retired-approval.json")
     public static let uninstaller = payload.appendingPathComponent("VPNNavigator-Uninstall.pkg")
     public static let template = payload.appendingPathComponent("approval-template.json")
+    public static let transaction = root.appendingPathComponent("install-state.json")
     public static let daemonLabel = "com.javafancn.vpn-navigator.local-helper"
     public static let daemonPlist = URL(fileURLWithPath: "/Library/LaunchDaemons/\(daemonLabel).plist")
     public static let app = URL(fileURLWithPath: "/Applications/VPN Navigator.app", isDirectory: true)
@@ -160,6 +162,7 @@ public enum LocalInstallation {
         let value = try JSONDecoder().decode(LocalApproval.self, from: Data(contentsOf: path)); try value.validate(); return value
     }
     public static func load(allowRetired: Bool = false) throws -> LocalApproval {
+        if isInstallationPending && getuid() != 0 { throw LocalInstallError.incomplete }
         let record = FileManager.default.fileExists(atPath: manifest.path) ? manifest : (allowRetired ? retired : manifest)
         guard BuildChannel.isLocal, FileManager.default.fileExists(atPath: record.path) else { throw LocalInstallError.notInstalled }
         try protectedRoot()
@@ -172,7 +175,43 @@ public enum LocalInstallation {
         let dns = payload.appendingPathComponent("macos-dns-updown.sh"); try protected(dns)
         try protected(uninstaller)
         guard try hash(dns) == value.dnsSHA256, try hash(uninstaller) == value.uninstallerSHA256 else { throw LocalInstallError.altered }
+        if isInstallationPending {
+            let pending = try pendingTransaction()
+            guard getuid() == 0, pending?.phase == .verifying,
+                  pending?.matches(version: value.version, architecture: value.architecture) == true,
+                  selfMatches([.helper, .setup], approval: value) else { throw LocalInstallError.incomplete }
+        }
         return value
+    }
+    public static var isInstallationPending: Bool {
+        var value = stat()
+        if lstat(transaction.path, &value) == 0 { return true }
+        return errno != ENOENT
+    }
+    public static func pendingTransaction() throws -> LocalInstallTransaction? {
+        guard isInstallationPending else { return nil }
+        try protectedRoot(); try protected(transaction)
+        let attrs = try FileManager.default.attributesOfItem(atPath: transaction.path)
+        guard ((attrs[.size] as? NSNumber)?.intValue ?? Int.max) < 4096 else { throw LocalInstallError.invalid }
+        let state = try JSONDecoder().decode(LocalInstallTransaction.self, from: Data(contentsOf: transaction))
+        try state.validate()
+        guard state.architecture == nativeArchitecture else { throw LocalInstallError.invalid }
+        return state
+    }
+    public static func setInstallPhase(_ phase: LocalInstallTransaction.Phase) throws {
+        guard getuid() == 0, var pending = try pendingTransaction() else { throw LocalInstallError.rootRequired }
+        pending.phase = phase
+        try JSONEncoder().encode(pending).write(to: transaction, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: transaction.path)
+        let handle = try FileHandle(forWritingTo: transaction)
+        defer { try? handle.close() }
+        try handle.synchronize()
+    }
+    public static func completeInstallation() throws {
+        guard getuid() == 0, let pending = try pendingTransaction(), pending.phase == .verifying else { throw LocalInstallError.incomplete }
+        let approval = try load()
+        guard selfMatches([.setup], approval: approval) else { throw LocalInstallError.unsafe }
+        try FileManager.default.removeItem(at: transaction)
     }
     public static func selfMatches(_ roles: [LocalRole], approval: LocalApproval) -> Bool {
         var code: SecCode?, staticCode: SecStaticCode?, info: CFDictionary?

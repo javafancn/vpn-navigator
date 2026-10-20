@@ -22,6 +22,7 @@ for scripts in "$INSTALL_SCRIPTS" "$UNINSTALL_SCRIPTS"; do
 done
 pkgbuild --nopayload --identifier com.javafancn.vpn-navigator.local-uninstall --version 1.0 --scripts "$UNINSTALL_SCRIPTS" "$PAYLOAD/VPNNavigator-Uninstall.pkg"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+print -r -- "$VERSION" > "$INSTALL_SCRIPTS/version"
 "$APP/Contents/Resources/VPNNavigatorLocalSetup" template "$APP" "$PAYLOAD" "$VERSION"
 chmod -R go-w "$STAGING/Library"
 mkdir -p dist

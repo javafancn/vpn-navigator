@@ -43,14 +43,18 @@ else
 fi
 # A lazy, stopped job must not launch old code during payload extraction.
 /bin/launchctl bootout "$LABEL" >/dev/null 2>&1 || true
-if /bin/launchctl print "$LABEL" >/dev/null 2>&1; then
-  echo 'Local job could not be stopped; installation refused.' >&2; exit 1
-fi
-for name in VPNNavigatorHelper VPNNavigatorLocalSetup; do
-  if /usr/bin/pgrep -x "$name" >/dev/null 2>&1; then
-    echo 'A privileged component is still running; retry after it exits.' >&2; exit 1
+STOPPED=false
+# Older macOS can return from bootout while the job is still retiring. Wait
+# for absence; never use numeric PID signals or extract over a live component.
+for attempt in {1..50}; do
+  if ! /bin/launchctl print "$LABEL" >/dev/null 2>&1 &&
+     ! /usr/bin/pgrep -x VPNNavigatorHelper >/dev/null 2>&1 &&
+     ! /usr/bin/pgrep -x VPNNavigatorLocalSetup >/dev/null 2>&1; then
+    STOPPED=true; break
   fi
+  /bin/sleep 0.1
 done
+[[ "$STOPPED" == true ]] || { echo 'Local service did not finish stopping; installation refused.' >&2; exit 1; }
 for name in routes.journal dns.journal pf-guard.json active.ovpn openvpn-child.json; do
   [[ ! -e "/var/run/vpn-navigator/$name" && ! -L "/var/run/vpn-navigator/$name" ]] || exit 1
 done

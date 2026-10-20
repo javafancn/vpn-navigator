@@ -97,7 +97,9 @@ func scenario(_ test: Scenario) async -> Bool {
             guard duplicate.hasPrefix("ERROR:") else { return false }
         }
         if state == "connected" || state == "failed" {
-            matched = state == test.outcome && report["networkRecoveryRequired"] as? Bool == false
+            // Active sessions intentionally retain their PID/DNS evidence.
+            // Recovery must be clear only after failure or explicit disconnect.
+            matched = state == test.outcome && (state == "connected" || report["networkRecoveryRequired"] as? Bool == false)
             break
         }
         try? await Task.sleep(nanoseconds: 250_000_000)
@@ -113,6 +115,11 @@ func scenario(_ test: Scenario) async -> Bool {
     let events = await ask { $0.diagnosticEvents(reply: $1) }
     guard !test.forbidden.contains(where: { !$0.isEmpty && events.contains($0) }),
           await disconnect() else { return false }
+    let cleaned = await ask { $0.sessionSnapshot(reply: $1) }
+    guard let cleanData = cleaned.data(using: .utf8),
+          let cleanReport = (try? JSONSerialization.jsonObject(with: cleanData)) as? [String: Any],
+          cleanReport["state"] as? String == "disconnected",
+          cleanReport["networkRecoveryRequired"] as? Bool == false else { return false }
     print("PASS: authentication scenario " + test.name)
     return true
 }

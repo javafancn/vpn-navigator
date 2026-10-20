@@ -12,7 +12,9 @@ M0 原型 b774342 在 macOS 15 Apple Silicon / Intel 上通过实际 PKG 安装�
 
 完整实现 e5eaf72 已在 macOS 15 Apple Silicon / Intel 及 26 通过实际安装、用户服务、维护撤销、恢复记录/不安全路径阻止替换、管理员重装及卸载（[run 39137296514](https://github.com/javafancn/vpn-navigator/actions/runs/39137296514)）。该提交四组核心回归共 119 项测试及 UI 构建通过。后续新增的旧身份撤销、部分 payload 修复、原位置卸载 PKG 和 macOS 14 矩阵仍以最新 PR 检查为准。
 
-真实回环 TLS 与 DNS 命令路径修复已在四组安装环境通过并合并 main（PR #15；[run 39139704125](https://github.com/javafancn/vpn-navigator/actions/runs/39139704125)），核心测试增至 122 项。覆盖实际证书握手、utun、两次断开重连、错误 CA 拒绝与恢复记录清理。0.3.0 / Build 3 的控制器崩溃收束、失败状态保留和版本升级验收由 PR #16 继续检查，见 LOCAL_CRASH_RECOVERY.md。
+真实回环 TLS 与 DNS 命令路径修复已在四组安装环境通过并合并 main（PR #15；[run 39139704125](https://github.com/javafancn/vpn-navigator/actions/runs/39139704125)），核心测试增至 122 项。覆盖实际证书握手、utun、两次断开重连、错误 CA 拒绝与恢复记录清理。0.3.0 / Build 3 的控制器崩溃收束、失败状态保留和版本升级验收已随 PR #16 合并，四组安装验收通过（[run 39141002502](https://github.com/javafancn/vpn-navigator/actions/runs/39141002502)），见 LOCAL_CRASH_RECOVERY.md。
+
+PR #17 扩展真实隔离服务器认证：账号密码、加密私钥、静态 flags 0–3、初始 CRV1 单轮/多轮/确认/上限，以及取消和服务端中断。当前检查见 PR 与 Actions，范围及外部门槛见 [认证验收](LOCAL_AUTH_ACCEPTANCE.md)。这些测试通过现有 XPC，并不替代 Keychain、界面输入或真实企业身份提供方验收。
 
 ## 任务对应
 
@@ -32,7 +34,7 @@ M0 原型 b774342 在 macOS 15 Apple Silicon / Intel 上通过实际 PKG 安装�
 | L19–L20 | 本地手选同架构可信 PKG、系统管理员重新批准；正式在线更新继续同 Team ID 验证，并排除 Local/Uninstall 包。 |
 | L21 | 替换前退出与恢复检查，新 payload 与批准一致后启动；失败进入明确修复状态。无自动回滚承诺，可信旧包重装仍需管理员批准。 |
 | L22–L23 | 用户服务停用 → 认证 XPC 撤销批准及卸载 root 服务 → 管理员卸载 PKG；默认保留配置，可显式清除本应用配置/Keychain。保留未解决恢复证据。 |
-| L24 | 现有核心及网络管理测试，加完整性、双方冒充、错误批准用户、记录缺失/符号链接、停用后拒绝、安装脚本拒绝不安全权限/被修改 setup。补测曾获批准的客户端哈希在批准更新后被 OS 拒绝，及缺失 DNS payload 后的管理员重装修复；更多中断注入仍需扩展。 |
+| L24 | 现有核心及网络管理测试，加完整性、双方冒充、错误批准用户、记录缺失/符号链接、停用后拒绝、安装脚本拒绝不安全权限/被修改 setup。旧客户端身份撤销、部分 payload 修复和控制器崩溃已通过；真实认证、中途取消和服务器掉线由 PR #17 扩展。物理网络中断仍待验收。 |
 | L25 | 隔离 CI 实际安装、用户三类服务、维护、恢复证据阻止更新/卸载、管理员重装与卸载；取消/重启/跨通道完整实机演练待验收。 |
 | L26–L28 | 真实外部 TLS/MFA、出口/DNS/IPv4/IPv6 抓包、异常网络/睡眠/崩溃、macOS 13 真机及长时性能尚未验收。 |
 | L29–L30 | CI 产出双架构候选安装/卸载包、SHA-256、批准与兼容审计 manifest；源码/许可证在应用内。成功的具体运行记录才是交付依据。 |

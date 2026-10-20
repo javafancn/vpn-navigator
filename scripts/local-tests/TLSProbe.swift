@@ -10,6 +10,9 @@ import Darwin
     func disconnect(cancelAttemptID: String, reply: @escaping (String) -> Void)
     func recoverOrphanedRoutes(reply: @escaping (String) -> Void)
     func connectionStatus(reply: @escaping (String) -> Void)
+    func sessionSnapshot(reply: @escaping (String) -> Void)
+    func diagnosticEvents(reply: @escaping (String) -> Void)
+    func submitChallenge(id: String, response: String, reply: @escaping (String) -> Void)
 }
 final class Reply: @unchecked Sendable {
     let lock = NSLock(); var done = false; let finish: (String) -> Void
@@ -42,6 +45,90 @@ func ask(_ block: @escaping (TLSHelper, @escaping (String) -> Void) -> Void) asy
 func disconnect() async -> Bool {
     await ask { $0.disconnect(cancelAttemptID: "", reply: $1) } == "Disconnected"
 }
+struct Factor: Decodable {
+    let kind: String
+    let response: String
+}
+struct Scenario: Decodable {
+    let name: String
+    let profilePath: String
+    let username: String
+    let password: String
+    let outcome: String
+    let factors: [Factor]
+    let forbidden: [String]
+}
+func scenario(_ test: Scenario) async -> Bool {
+    guard ["connected", "failed", "cancelled"].contains(test.outcome),
+          let profile = try? String(contentsOfFile: test.profilePath) else { return false }
+    let attempt = UUID().uuidString
+    let preferences = #"{"connectionTimeout":30,"reconnectOriginal":false,"killSwitch":false,"reconnectManaged":false}"#
+    let started = await ask {
+        $0.connect(profile: profile, profileID: UUID().uuidString, mode: "Original", rules: "",
+                   username: test.username, password: test.password, preferences: preferences, attemptID: attempt, reply: $1)
+    }
+    guard !started.hasPrefix("ERROR:") else { return false }
+    var seen = Set<String>(), replies = 0, matched = false
+    var previousState = ""
+    var cancelledID: String?
+    for _ in 0..<160 {
+        let raw = await ask { $0.sessionSnapshot(reply: $1) }
+        guard !test.forbidden.contains(where: { !$0.isEmpty && raw.contains($0) }),
+              let data = raw.data(using: .utf8),
+              let report = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let state = report["state"] as? String else { return false }
+        if state != previousState { print("Authentication fixture state: " + state); previousState = state }
+        if let factor = report["challenge"] as? [String: Any],
+           let id = factor["id"] as? String, seen.insert(id).inserted {
+            guard replies < test.factors.count,
+                  factor["kind"] as? String == test.factors[replies].kind else { return false }
+            if test.outcome == "cancelled", replies == test.factors.count - 1 {
+                cancelledID = id
+                let result = await ask { $0.disconnect(cancelAttemptID: attempt, reply: $1) }
+                matched = result == "Disconnected"
+                replies += 1
+                break
+            }
+            let result = await ask { $0.submitChallenge(id: id, response: test.factors[replies].response, reply: $1) }
+            guard result == "Accepted" else { return false }
+            replies += 1
+            // Every accepted prompt is single use, even before the next state.
+            let duplicate = await ask { $0.submitChallenge(id: id, response: "fixture-duplicate", reply: $1) }
+            guard duplicate.hasPrefix("ERROR:") else { return false }
+        }
+        if state == "connected" || state == "failed" {
+            matched = state == test.outcome && report["networkRecoveryRequired"] as? Bool == false
+            break
+        }
+        try? await Task.sleep(nanoseconds: 250_000_000)
+    }
+    guard matched, replies == test.factors.count else { return false }
+    if let id = cancelledID {
+        let stale = await ask { $0.submitChallenge(id: id, response: "fixture-stale", reply: $1) }
+        guard stale.hasPrefix("ERROR:") else { return false }
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        let status = await ask { $0.connectionStatus(reply: $1) }
+        guard status.hasPrefix("disconnected:") else { return false }
+    }
+    let events = await ask { $0.diagnosticEvents(reply: $1) }
+    guard !test.forbidden.contains(where: { !$0.isEmpty && events.contains($0) }),
+          await disconnect() else { return false }
+    print("PASS: authentication scenario " + test.name)
+    return true
+}
+func expectFailure() async -> Bool {
+    for _ in 0..<80 {
+        let raw = await ask { $0.sessionSnapshot(reply: $1) }
+        if let data = raw.data(using: .utf8),
+           let report = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+           report["state"] as? String == "failed",
+           report["networkRecoveryRequired"] as? Bool == false {
+            return await disconnect()
+        }
+        try? await Task.sleep(nanoseconds: 250_000_000)
+    }
+    return false
+}
 func exercise(_ profile: String, shouldConnect: Bool, disconnectAtEnd: Bool = true) async -> Bool {
     let preferences = #"{"connectionTimeout":20,"reconnectOriginal":false,"killSwitch":false,"reconnectManaged":false}"#
     let result = await ask {
@@ -67,6 +154,14 @@ func exercise(_ profile: String, shouldConnect: Bool, disconnectAtEnd: Bool = tr
 }
 Task {
     let arguments = Array(CommandLine.arguments.dropFirst())
+    if arguments.count == 2, arguments[0] == "--scenario",
+       let data = try? Data(contentsOf: URL(fileURLWithPath: arguments[1])),
+       let test = try? JSONDecoder().decode(Scenario.self, from: data) {
+        let passed = await scenario(test)
+        if !passed { _ = await disconnect(); print("FAIL: authentication fixture (secrets omitted)") }
+        exit(passed ? 0 : 1)
+    }
+    if arguments == ["--expect-failed"] { exit(await expectFailure() ? 0 : 1) }
     if arguments == ["--disconnect"] { exit(await disconnect() ? 0 : 1) }
     if arguments == ["--recover"] {
         let result = await ask { $0.recoverOrphanedRoutes(reply: $1) }

@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from auth_suite import exercise_auth
 
 BASE = Path('/Library/Application Support/VPNNavigator/Local')
 PAYLOAD = BASE / 'Payload'
@@ -41,6 +42,32 @@ def main():
     log = None
     approved = False
     before_route = default_path()
+    def stop_server():
+        nonlocal server, log
+        if server is not None and server.poll() is None:
+            # Own live Popen group; never signal a PID recovered from a journal.
+            run(['sudo', '/bin/kill', '-TERM', '--', '-' + str(server.pid)], ok=False)
+            try:
+                server.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                run(['sudo', '/bin/kill', '-KILL', '--', '-' + str(server.pid)], ok=False)
+                server.wait(timeout=5)
+        if log:
+            log.close()
+            log = None
+
+    def start_server():
+        nonlocal server, log
+        log = (folder / 'server.log').open('a')
+        server = subprocess.Popen(['sudo', '-n', str(ENGINE), '--config', str(config)], stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        for _ in range(60):
+            assert server.poll() is None, 'TLS fixture server exited'
+            try:
+                with socket.create_connection(('127.0.0.1', port), timeout=0.2):
+                    return
+            except OSError:
+                time.sleep(0.1)
+        raise AssertionError('TLS fixture did not start')
     try:
         def ssl(*args):
             if args[0] == 'req':
@@ -115,17 +142,7 @@ verb 3
         temporary.write_text(json.dumps(approval))
         run(['sudo', 'cp', temporary, MANIFEST])
         approved = True
-        log = (folder / 'server.log').open('w')
-        server = subprocess.Popen(['sudo', '-n', str(ENGINE), '--config', str(config)], stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-        for _ in range(60):
-            assert server.poll() is None, 'TLS fixture server exited'
-            try:
-                with socket.create_connection(('127.0.0.1', port), timeout=0.2):
-                    break
-            except OSError:
-                time.sleep(0.1)
-        else:
-            raise AssertionError('TLS fixture did not start')
+        start_server()
         result = run([probe, valid, invalid], ok=False, timeout=120)
         print(result.stdout, end='')
         assert result.returncode == 0, 'Installed helper TLS fixture failed: ' + result.stderr
@@ -156,6 +173,7 @@ verb 3
             raise AssertionError('Explicit recovery after controller crash failed: ' + recovery.stdout)
         run([probe, valid, invalid], timeout=120)
         print('PASS: crashed controller closes its child, preserves evidence, recovers and reconnects.')
+        exercise_auth(folder, profile, ssl, probe, run, start_server, stop_server, config)
         for name in ['active.ovpn', 'routes.journal', 'dns.journal', 'pf-guard.json', 'openvpn-child.json']:
             assert run(['sudo', '/bin/test', '-e', '/var/run/vpn-navigator/' + name], ok=False).returncode != 0, 'Unresolved owned session: ' + name
         assert default_path() == before_route, 'Loopback TLS fixture changed the default network path'
@@ -165,21 +183,17 @@ verb 3
             saved = folder / 'original-approval.json'
             saved.write_bytes(original)
             run(['sudo', 'cp', saved, MANIFEST])
-        if server is not None and server.poll() is None:
-            # The live Popen session leader prevents its process-group ID from
-            # being reused while cleanup targets this exact fixture group.
-            run(['sudo', '/bin/kill', '-TERM', '--', '-' + str(server.pid)], ok=False)
-            try:
-                server.wait(timeout=8)
-            except subprocess.TimeoutExpired:
-                run(['sudo', '/bin/kill', '-KILL', '--', '-' + str(server.pid)], ok=False)
-                server.wait(timeout=5)
-        if log:
-            log.close()
+        stop_server()
         if sys.exc_info()[0] is not None:
             server_log = folder / 'server.log'
             if server_log.exists():
-                print('Synthetic TLS fixture log:\n' + server_log.read_text()[-5000:])
+                diagnostic = server_log.read_text()
+                redactions = folder / 'redactions.json'
+                if redactions.exists():
+                    for secret in json.loads(redactions.read_text()):
+                        if secret:
+                            diagnostic = diagnostic.replace(secret, '[redacted fixture value]')
+                print('Synthetic TLS fixture log:\n' + diagnostic[-5000:])
         run(['sudo', 'rm', '-rf', folder])
 
 

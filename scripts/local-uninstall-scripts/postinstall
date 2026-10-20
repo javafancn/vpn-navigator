@@ -11,7 +11,10 @@ source "$(/usr/bin/dirname "$0")/guard"
 check_local_paths || { echo 'Unsafe installation paths; preserve them for diagnosis.' >&2; exit 1; }
 [[ ! -e '/Library/Application Support/VPNNavigator/Local/install-state.json' && ! -L '/Library/Application Support/VPNNavigator/Local/install-state.json' ]] || { echo 'Repair the incomplete installation before uninstalling.' >&2; exit 1; }
 if [[ ! -e "$SETUP" ]]; then
-  [[ ! -e '/Library/Application Support/VPNNavigator/Local' ]] || { echo 'The installation tool is missing; repair with a trusted Local.pkg before uninstalling.' >&2; exit 1; }
+  if [[ -e '/Library/Application Support/VPNNavigator/Local' || -e '/Library/LaunchDaemons/com.javafancn.vpn-navigator.local-helper.plist' ]] ||
+     /bin/launchctl print system/com.javafancn.vpn-navigator.local-helper >/dev/null 2>&1; then
+    echo 'The installation tool is missing; repair with a trusted Local.pkg before uninstalling.' >&2; exit 1
+  fi
   exit 0
 fi
 check_local_setup

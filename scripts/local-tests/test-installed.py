@@ -182,6 +182,15 @@ let delegate = Delegate(); listener.delegate = delegate; listener.resume(); RunL
         assert not BASE.exists() and not PLIST.exists() and not APP.exists()
         assert run(['launchctl', 'print', 'system/' + LABEL], ok=False).returncode != 0
         print('PASS: actual local install, bidirectional XPC trust and complete system uninstall.')
+        # Absence of the setup tool alone is not proof of a complete uninstall.
+        run(['sudo', 'touch', PLIST])
+        try:
+            assert run(['sudo', '/usr/sbin/installer', '-pkg', uninstaller, '-target', '/'], ok=False).returncode != 0
+            assert PLIST.exists(), 'Incomplete-uninstall evidence was removed'
+        finally:
+            run(['sudo', 'rm', PLIST])
+        run(['sudo', '/usr/sbin/installer', '-pkg', uninstaller, '-target', '/'])
+        print('PASS: missing setup with residual service requires repair; already-removed system uninstall is idempotent.')
     finally:
         run(['sudo', 'launchctl', 'bootout', 'system/' + LABEL], ok=False)
         run(['sudo', 'launchctl', 'bootout', 'system/com.javafancn.vpn-navigator.local-fixture'], ok=False)

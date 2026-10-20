@@ -55,6 +55,28 @@ def main():
     sentinel.chmod(0o600)
     sentinel_bytes = sentinel.read_bytes()
     try:
+        probe = folder / 'PendingClient'
+        run(['swiftc', '-swift-version', '5', 'scripts/local-tests/PendingClient.swift', '-o', probe])
+        run(['codesign', '--force', '--options', 'runtime', '--sign', '-', '--identifier', 'com.javafancn.vpn-navigator', probe])
+        signature = run(['codesign', '-dv', '--verbose=4', probe])
+        cdhash = next(line.split('=', 1)[1] for line in signature.stderr.splitlines() if line.startswith('CDHash='))
+
+        def approved_probe(accepted):
+            manifest = BASE / 'manifest.json'
+            saved = manifest.read_bytes()
+            temporary = folder / 'probe-approval.json'
+            approval = json.loads(saved)
+            approval['binaries']['app']['cdhash'] = cdhash
+            approval['binaries']['app']['sha256'] = hashlib.sha256(probe.read_bytes()).hexdigest()
+            temporary.write_text(json.dumps(approval))
+            run(['sudo', 'cp', temporary, manifest])
+            try:
+                assert (run([probe], ok=False).returncode == 0) == accepted, 'Server pending-install policy did not match expectation'
+            finally:
+                temporary.write_bytes(saved)
+                run(['sudo', 'cp', temporary, manifest])
+
+        approved_probe(True)
         for original in originals:
             shutil.copy2(original, folder / original.name)
         prefix = '''#!/bin/bash
@@ -112,6 +134,8 @@ exit 37
             if phase == 'verifying':
                 # Only the approved root setup can health-check before commit.
                 run(['sudo', PAYLOAD / 'VPNNavigatorLocalSetup', 'health'])
+                approved_probe(False)
+                run(['sudo', PAYLOAD / 'VPNNavigatorLocalSetup', 'health'])
                 assert run(['launchctl', 'print', LABEL], ok=False).returncode == 0
                 checkpoint = STATE.read_bytes()
                 journal = Path('/var/run/vpn-navigator/dns.journal')
@@ -136,6 +160,10 @@ exit 37
                 run(['sudo', 'rm', STATE])
                 run(['sudo', 'cp', valid, STATE])
                 run(['sudo', 'chmod', '644', STATE])
+                run(['sudo', 'chmod', 'o+w', STATE])
+                state('none', repair=False)
+                assert run(['sudo', '/usr/sbin/installer', '-pkg', package, '-target', '/'], ok=False).returncode != 0
+                run(['sudo', 'chmod', 'o-w', STATE])
             run(['sudo', '/usr/sbin/installer', '-pkg', package, '-target', '/'])
             assert not STATE.exists(), 'Health-checked installation did not commit'
             health()

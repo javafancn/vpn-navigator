@@ -42,8 +42,10 @@ public enum ProfileMaterializer {
                 guard source.path.hasPrefix(base.path + "/"),
                       (try? source.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
                 else { throw MaterializeError.invalidPath(index + 1) }
-                let file = try Data(contentsOf: source)
-                guard file.count < 1_000_000 else { throw MaterializeError.tooLarge(index + 1) }
+                let file: Data
+                do { file = try ProfileFileIO.read(source, maximumBytes: 999_999) }
+                catch ProfileFileIO.Failure.tooLarge { throw MaterializeError.tooLarge(index + 1) }
+                catch { throw MaterializeError.invalidPath(index + 1) }
                 let body: String
                 if directive == "pkcs12" {
                     body = file.base64EncodedString()

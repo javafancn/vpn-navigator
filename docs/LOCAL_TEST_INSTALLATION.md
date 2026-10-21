@@ -6,7 +6,7 @@
 
 从本仓库通过检查的 `Local test installer and XPC trust` Actions 运行下载对应架构 artifact：Apple Silicon 使用 ARM64，Intel 使用 X64；名称同时标明验收所用 macOS。压缩包包含：
 
-- `VPN-Navigator-0.3.4-arm64-Local.pkg` 或 `…-x86_64-Local.pkg`：完整安装包。
+- `VPN-Navigator-0.3.5-arm64-Local.pkg` 或 `…-x86_64-Local.pkg`：完整安装包。
 - `…-Local-Uninstall.pkg`：系统组件卸载包；先在应用中完成维护准备。
 - `…-Local-SHA256.txt`：两个 PKG 的完整性校验。
 - `…-Local-manifest.json`：构建时生成的程序身份及文件哈希，安装后由管理员批准。

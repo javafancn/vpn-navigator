@@ -7,6 +7,13 @@ import UniformTypeIdentifiers
 @MainActor
 final class AppModel: ObservableObject {
     @Published var profiles: [VPNProfile] = []
+    @Published var showingImportReport = false
+    @Published private(set) var importResults: [ProfileImportResult] = []
+    @Published private(set) var profileImportInProgress = false
+    @Published private(set) var profileExportInProgress = false
+    @Published private(set) var importCancellationRequested = false
+    private var importCancellation: ProfileImportCancellation?
+    var profileTransferInProgress: Bool { profileImportInProgress || profileExportInProgress }
     @Published var quickAccessShortcut = QuickAccessShortcut(rawValue: UserDefaults.standard.string(forKey: "quickAccessShortcut") ?? "") ?? .disabled {
         didSet { UserDefaults.standard.set(quickAccessShortcut.rawValue, forKey: "quickAccessShortcut") }
     }
@@ -86,19 +93,19 @@ final class AppModel: ObservableObject {
     private let ipv6Updater: APNICIPv6PreviewStore
     private let helper = HelperClient.shared
 
-    init(backgroundServiceDefaults: UserDefaults = .standard) {
+    init(backgroundServiceDefaults: UserDefaults = .standard, profileStoreRoot: URL? = nil) {
         backgroundPreferences = BackgroundServicePreferences(defaults: backgroundServiceDefaults,
             existingLoginEnabled: UserServices.loginStatus == .enabled)
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("VPNNavigator", isDirectory: true)
-        store = ProfileStore(root: root.appendingPathComponent("Profiles"))
+        store = ProfileStore(root: profileStoreRoot ?? root.appendingPathComponent("Profiles"))
         updater = RuleUpdater(folder: root.appendingPathComponent("Rules"))
         ipv6Updater = APNICIPv6PreviewStore(root: root.appendingPathComponent("Rules"))
         automaticRulesEnabled = backgroundPreferences.rulesEnabled
         launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") { return }
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") { return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -144,7 +151,7 @@ final class AppModel: ObservableObject {
     var connected: Bool { sessionState == .connected }
     var connecting: Bool { [.connecting, .authenticating, .reconnecting].contains(sessionState) }
     var stopping: Bool { sessionState == .stopping }
-    var canQuit: Bool { !backgroundServicesBusy && ((repairExitAuthorized && canRepairInterruptedInstallation) || SessionExitPolicy.mayExit(state: sessionState, activeProfileID: activeProfileID, helperVerified: helperStateVerified, recoveryRequired: firewallRecoveryRequired || networkRecoveryRequired)) }
+    var canQuit: Bool { !profileTransferInProgress && !backgroundServicesBusy && ((repairExitAuthorized && canRepairInterruptedInstallation) || SessionExitPolicy.mayExit(state: sessionState, activeProfileID: activeProfileID, helperVerified: helperStateVerified, recoveryRequired: firewallRecoveryRequired || networkRecoveryRequired)) }
     var canRepairInterruptedInstallation: Bool {
         guard BuildChannel.isLocal, !maintenanceInProgress, !backgroundServicesBusy, !busy, !connected, !connecting, !stopping,
               activeProfileID == nil, profileMutations == 0,
@@ -159,11 +166,7 @@ final class AppModel: ObservableObject {
 
     func load() async {
         do {
-            profiles = try await store.list()
-            var sizes: [UUID: Int] = [:]
-            for item in profiles { sizes[item.id] = try? await store.fileSize(for: item) }
-            profileSizes = sizes
-            if selectedID == nil { selectedID = profiles.first?.id }
+            try await loadProfiles()
             rules = try await updater.cached()
             if rules == nil, let seed = Bundle.main.url(forResource: "china-ipv4", withExtension: "txt", subdirectory: "Rules") {
                 rules = try await updater.bootstrap(seed)
@@ -174,16 +177,60 @@ final class AppModel: ObservableObject {
             rulesUpdatedAt = try await updater.lastUpdated()
         } catch { message = error.localizedDescription }
     }
+    private func loadProfiles() async throws {
+        profiles = try await store.list()
+        var sizes: [UUID: Int] = [:]
+        for item in profiles { sizes[item.id] = try? await store.fileSize(for: item) }
+        profileSizes = sizes
+        if selectedID == nil { selectedID = profiles.first?.id }
+    }
     func importFile(_ url: URL) async {
-        guard !maintenanceInProgress else { return }
-        profileMutations += 1; defer { profileMutations -= 1 }
-        let granted = url.startAccessingSecurityScopedResource()
-        defer { if granted { url.stopAccessingSecurityScopedResource() } }
+        await importFiles([url], presentReport: false)
+    }
+    func importFiles(_ urls: [URL], presentReport: Bool = true) async {
+        guard !maintenanceInProgress, !profileTransferInProgress, !busy, !connecting, !stopping else {
+            message = "请等待当前操作完成后再导入配置。"; return
+        }
+        guard !urls.isEmpty, urls.count <= ProfileBatchImporter.maximumFiles else {
+            message = ProfileBatchImporter.Failure.fileCount.localizedDescription; return
+        }
+        let cancellation = ProfileImportCancellation()
+        importCancellation = cancellation; importCancellationRequested = false
+        importResults = []; profileImportInProgress = true; profileMutations += 1
+        if presentReport { showingImportReport = true }
+        defer { profileImportInProgress = false; profileMutations -= 1; importCancellation = nil }
         do {
-            let item = try await store.importProfile(from: url)
-            await load()
-            selectedID = item.id
-        } catch { message = "Import failed: \(error.localizedDescription)" }
+            importResults = try await ProfileBatchImporter(store: store).run(urls, cancellation: cancellation) { [weak self] results in
+                await self?.receiveImportProgress(results)
+            }
+            try await loadProfiles()
+            if let id = importResults.compactMap({ item -> UUID? in
+                if case .imported(let id) = item.status { return id }; return nil
+            }).first { selectedID = id }
+            if !presentReport {
+                if let first = importResults.first, case .failed(let failure) = first.status { message = failure.summary }
+                else { message = "配置已导入。" }
+            }
+        } catch { message = "无法完成导入或刷新配置列表，请检查存储权限。" }
+    }
+    func cancelProfileImport() {
+        guard profileImportInProgress else { return }
+        importCancellationRequested = true; importCancellation?.cancel()
+    }
+    private func receiveImportProgress(_ results: [ProfileImportResult]) { importResults = results }
+    func clearImportReport() {
+        guard !profileImportInProgress else { return }
+        showingImportReport = false; importResults = []; importCancellationRequested = false
+    }
+    func showImportReportSnapshot() {
+        guard ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot") else { return }
+        importResults = [
+            .init(filename: "工作网络.ovpn", status: .imported(UUID())),
+            .init(filename: "家庭网络.ovpn", status: .imported(UUID())),
+            .init(filename: "测试节点.ovpn", status: .failed(.material)),
+            .init(filename: "备用节点.ovpn", status: .cancelled)
+        ]
+        showingImportReport = true
     }
     func setMode(_ mode: RoutingMode) async {
         guard !maintenanceInProgress else { return }
@@ -539,7 +586,7 @@ final class AppModel: ObservableObject {
         }
     }
     func connectSelected() async {
-        guard !maintenanceInProgress else { return }
+        guard !maintenanceInProgress, !profileTransferInProgress, !showingImportReport else { return }
         if BuildChannel.isLocal, LocalInstallation.isInstallationPending {
             message = helper.localInstallationIssue; showingSetup = true; return
         }
@@ -593,7 +640,7 @@ final class AppModel: ObservableObject {
         }
     }
     func switchToSelected(expectedSession: QuickAccessSession? = nil) async {
-        guard !maintenanceInProgress else { return }
+        guard !maintenanceInProgress, !profileTransferInProgress, !showingImportReport else { return }
         guard !busy, let selected, connected, activeProfileID != selected.id else { return }
         busy = true
         if let expectedSession {
@@ -633,7 +680,7 @@ final class AppModel: ObservableObject {
         guard profiles.contains(where: { $0.id == id }) else { return .blocked }
         if connected && id != activeProfileID && quickAccessSession == nil { return .blocked }
         return QuickAccessAction.resolve(state: sessionState, profileID: id, activeProfileID: activeProfileID,
-            operationInProgress: busy || maintenanceInProgress || backgroundServicesBusy ||
+            operationInProgress: busy || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || showingImportReport ||
                 authenticationChallenge != nil || showingAccountCredentials,
             mayStart: canQuit)
     }
@@ -782,17 +829,23 @@ final class AppModel: ObservableObject {
             else { throw LocalInstallError.command }
         } catch { message = "无法打开卸载包：\(error.localizedDescription)" }
     }
-    func exportPreview() async {
-        guard let profile = selected else { return }
+    func exportProfile(kind: ProfileExportKind = .portable) async {
+        guard !maintenanceInProgress, !profileTransferInProgress, let profile = selected else { return }
+        profileExportInProgress = true; profileMutations += 1
+        defer { profileExportInProgress = false; profileMutations -= 1 }
         do {
-            let original = try await store.original(for: profile)
-            let generated = try ProfileCompiler.render(original: original, mode: profile.mode, rules: rules)
+            let runtime = try await store.runtimeConfig(for: profile)
+            let generated = try ProfileExport.render(runtime: runtime, kind: kind, mode: profile.mode, rules: rules)
             let panel = NSSavePanel()
-            panel.nameFieldStringValue = profile.name + "-preview.ovpn"
+            panel.allowedContentTypes = [.init(filenameExtension: "ovpn")!]
+            panel.nameFieldStringValue = ProfileExport.filename(name: profile.name, kind: kind)
+            panel.message = kind == .portable ? "文件可能包含证书和私钥，请妥善保存。应用内选定的分流策略在连接时生效。" : "这是静态路由预览，可能包含证书和私钥，不代表当前系统路由。"
             guard panel.runModal() == .OK, let url = panel.url else { return }
-            try generated.write(to: url, atomically: true, encoding: .utf8)
-            message = "Exported a preview; no system routes were modified."
-        } catch { message = "Export failed: \(error.localizedDescription)" }
+            let granted = url.startAccessingSecurityScopedResource()
+            defer { if granted { url.stopAccessingSecurityScopedResource() } }
+            try await Task.detached(priority: .userInitiated) { try ProfileFileIO.write(generated, to: url) }.value
+            message = kind == .portable ? "已导出可迁移的配置，文件仅限当前用户读写。" : "已导出静态路由预览，文件仅限当前用户读写。"
+        } catch { message = "导出失败：\(error.localizedDescription)" }
     }
 }
 
@@ -801,6 +854,12 @@ struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
     @StateObject private var model = AppModel()
     init() {
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") {
+            Task {
+                do { try await ProfileTransferSelfTest.run(); print("Profile import model checks passed."); Darwin.exit(0) }
+                catch { print("Profile import model self-test failed: \(error.localizedDescription)"); Darwin.exit(1) }
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") {
             Task {
                 do { try await QuickAccessSelfTest.run(); print("Quick access panel and global shortcut checks passed."); Darwin.exit(0) }

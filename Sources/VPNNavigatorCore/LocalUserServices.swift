@@ -25,7 +25,10 @@ public enum UserServices {
             if enabled { try register(loginLabel) }
             else { try unregister(loginLabel) }
         } else if enabled { try SMAppService.mainApp.register() }
-        else { try SMAppService.mainApp.unregister() }
+        else {
+            let service = SMAppService.mainApp
+            if service.status != .notRegistered && service.status != .notFound { try service.unregister() }
+        }
     }
     private static func localStatus(_ label: String) -> SMAppService.Status {
         let path = folder.appendingPathComponent(label + ".plist")

@@ -8,7 +8,7 @@ final class QuickAccessState: ObservableObject {
     @Published var query = ""
     @Published var selectedID: UUID?
     @Published var pendingSwitchID: UUID?
-    var expectedActiveID: UUID?
+    var expectedSession: QuickAccessSession?
 }
 
 @MainActor
@@ -45,7 +45,7 @@ final class QuickAccessCoordinator: NSObject, NSWindowDelegate {
               !model.backgroundServicesBusy else { openMainWindow(); return }
         state.query = ""
         state.pendingSwitchID = nil
-        state.expectedActiveID = nil
+        state.expectedSession = nil
         state.selectedID = matches.contains(where: { $0.id == model.selectedID }) ? model.selectedID : matches.first?.id
         if panel == nil {
             let window = QuickAccessPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 460),
@@ -117,19 +117,19 @@ final class QuickAccessCoordinator: NSObject, NSWindowDelegate {
         case .openMain: hide(); openMainWindow()
         case .connect: perform(id, replacing: nil)
         case .requestSwitch:
-            state.expectedActiveID = model.activeProfileID
+            state.expectedSession = model.quickAccessSession
             state.pendingSwitchID = id
         }
     }
     func confirmSwitch() {
-        guard let model, let id = state.pendingSwitchID, let previous = state.expectedActiveID,
-              model.activeProfileID == previous, model.quickAccessAction(for: id) == .requestSwitch else {
+        guard let model, let id = state.pendingSwitchID, let previous = state.expectedSession,
+              model.quickAccessSession == previous, model.quickAccessAction(for: id) == .requestSwitch else {
             cancelSwitch(); return
         }
         perform(id, replacing: previous)
     }
-    func cancelSwitch() { state.pendingSwitchID = nil; state.expectedActiveID = nil }
-    private func perform(_ id: UUID, replacing previous: UUID?) {
+    func cancelSwitch() { state.pendingSwitchID = nil; state.expectedSession = nil }
+    private func perform(_ id: UUID, replacing previous: QuickAccessSession?) {
         guard let model else { return }
         hide()
         openMainWindow()

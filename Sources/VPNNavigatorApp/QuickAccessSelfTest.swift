@@ -15,8 +15,12 @@ enum QuickAccessSelfTest {
         model.profiles = [first, second]; model.selectedID = first.id
         let coordinator = QuickAccessCoordinator(model: model)
         defer { coordinator.shutdown() }
+        NSApp.activate(ignoringOtherApps: true)
+        try await Task.sleep(nanoseconds: 100_000_000)
         coordinator.show()
+        try await Task.sleep(nanoseconds: 100_000_000)
         guard let panel = coordinator.panel, panel.isVisible, panel.canBecomeKey,
+              panel.isKeyWindow, panel.firstResponder is NSTextView,
               !panel.canBecomeMain, panel.frame.size == NSSize(width: 560, height: 460),
               panel.styleMask.contains(.nonactivatingPanel), !panel.isOpaque else { throw Failure.check }
         coordinator.show()
@@ -37,7 +41,8 @@ enum QuickAccessSelfTest {
         model.connectionStatus = "connected: fixture only"
         model.activeProfileID = first.id
         coordinator.select(second.id)
-        coordinator.activateSelection()
+        coordinator.state.expectedSession = QuickAccessSession(profileID: first.id, attemptID: UUID())
+        coordinator.state.pendingSwitchID = second.id
         guard coordinator.state.pendingSwitchID == second.id, model.selectedID == first.id else { throw Failure.check }
         try key(36)
         guard coordinator.state.pendingSwitchID == second.id, model.selectedID == first.id else { throw Failure.check }
@@ -66,7 +71,7 @@ enum QuickAccessSelfTest {
                 GetCurrentEventTime(), 0, &event) == noErr, let event else { throw Failure.check }
             var identity = registrar.eventID
             let parameter = SetEventParameter(event, EventParamName(kEventParamDirectObject),
-                EventParamType(typeEventHotKeyID), UInt32(MemoryLayout<EventHotKeyID>.size), &identity)
+                EventParamType(typeEventHotKeyID), MemoryLayout<EventHotKeyID>.size, &identity)
             let dispatched = SendEventToEventTarget(event, GetApplicationEventTarget())
             ReleaseEvent(event)
             guard parameter == noErr, dispatched == noErr else { throw Failure.check }

@@ -11,6 +11,7 @@ import Foundation
     func submitChallenge(id: String, response: String, reply: @escaping (String) -> Void)
     func diagnosticEvents(reply: @escaping (String) -> Void)
     func disconnect(cancelAttemptID: String, reply: @escaping (String) -> Void)
+    func disconnectSession(expectedProfileID: String, expectedAttemptID: String, reply: @escaping (String) -> Void)
     func connectionStatus(reply: @escaping (String) -> Void)
     func sessionSnapshot(reply: @escaping (String) -> Void)
     func activeProfile(reply: @escaping (String) -> Void)

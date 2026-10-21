@@ -58,3 +58,15 @@ public enum QuickAccessAction: Equatable, Sendable {
         return .connect
     }
 }
+
+public struct QuickAccessSession: Equatable, Sendable {
+    public let profileID: UUID
+    public let attemptID: UUID
+    public init(profileID: UUID, attemptID: UUID) { self.profileID = profileID; self.attemptID = attemptID }
+    public func matches(_ report: SessionReport) -> Bool {
+        // Active DNS/route/PF journals are expected while connected. The
+        // existing stop path must clean them before a replacement can start.
+        report.state == .connected && report.activeProfileID == profileID && report.attemptID == attemptID &&
+            report.challenge == nil
+    }
+}

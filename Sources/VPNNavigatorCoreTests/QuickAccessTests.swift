@@ -58,4 +58,17 @@ final class QuickAccessTests: XCTestCase {
         }
         XCTAssertEqual(QuickAccessAction.resolve(state: .disconnected, profileID: a, activeProfileID: nil, operationInProgress: true, mayStart: true), .blocked)
     }
+    func testSwitchConfirmationPinsAttemptEvenWhenProfileIsTheSame() {
+        let profile = UUID(), attempt = UUID()
+        let confirmation = QuickAccessSession(profileID: profile, attemptID: attempt)
+        func report(attemptID: UUID, recovery: Bool = false) -> SessionReport {
+            SessionReport(state: .connected, message: "", activeProfileID: profile,
+                receivedBytes: nil, sentBytes: nil, attemptID: attemptID, networkRecoveryRequired: recovery)
+        }
+        XCTAssertTrue(confirmation.matches(report(attemptID: attempt)))
+        XCTAssertFalse(confirmation.matches(report(attemptID: UUID())))
+        XCTAssertTrue(confirmation.matches(report(attemptID: attempt, recovery: true)))
+        XCTAssertFalse(confirmation.matches(SessionReport(state: .failed, message: "", activeProfileID: profile,
+            receivedBytes: nil, sentBytes: nil, attemptID: attempt, networkRecoveryRequired: true)))
+    }
 }

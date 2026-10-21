@@ -22,7 +22,7 @@ final class GlobalQuickAccessHotKey {
                 let owner = Unmanaged<GlobalQuickAccessHotKey>.fromOpaque(context).takeUnretainedValue()
                 var identity = EventHotKeyID(signature: 0, id: 0)
                 guard GetEventParameter(event, EventParamName(kEventParamDirectObject),
-                    EventParamType(typeEventHotKeyID), nil, UInt32(MemoryLayout<EventHotKeyID>.size), nil, &identity) == noErr,
+                    EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &identity) == noErr,
                     identity.signature == owner.eventID.signature, identity.id == owner.eventID.id else {
                     return OSStatus(eventNotHandledErr)
                 }

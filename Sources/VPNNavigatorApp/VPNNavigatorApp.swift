@@ -84,13 +84,13 @@ final class AppModel: ObservableObject {
     init(backgroundServiceDefaults: UserDefaults = .standard) {
         backgroundPreferences = BackgroundServicePreferences(defaults: backgroundServiceDefaults,
             existingLoginEnabled: UserServices.loginStatus == .enabled)
-        automaticRulesEnabled = backgroundPreferences.rulesEnabled
-        launchAtLogin = backgroundPreferences.loginEnabled
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("VPNNavigator", isDirectory: true)
         store = ProfileStore(root: root.appendingPathComponent("Profiles"))
         updater = RuleUpdater(folder: root.appendingPathComponent("Rules"))
         ipv6Updater = APNICIPv6PreviewStore(root: root.appendingPathComponent("Rules"))
+        automaticRulesEnabled = backgroundPreferences.rulesEnabled
+        launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") { return }

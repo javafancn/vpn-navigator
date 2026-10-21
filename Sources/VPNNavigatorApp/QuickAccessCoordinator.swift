@@ -155,8 +155,14 @@ final class QuickAccessPanel: NSPanel {
         if event.type == .keyDown,
            event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
            !((firstResponder as? NSTextView)?.hasMarkedText() ?? false) {
-            if event.isARepeat, [36, 76].contains(event.keyCode) { return }
-            if onKey?(event.keyCode) == true { return }
+            // Return belongs to the focused footer button when tabbing;
+            // never replace its action with the selected profile's action.
+            if event.keyCode == 53 {
+                if onKey?(event.keyCode) == true { return }
+            } else if firstResponder is NSTextView {
+                if event.isARepeat, [36, 76].contains(event.keyCode) { return }
+                if onKey?(event.keyCode) == true { return }
+            }
         }
         super.sendEvent(event)
     }

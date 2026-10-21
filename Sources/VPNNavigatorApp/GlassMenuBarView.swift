@@ -52,6 +52,9 @@ struct GlassMenuBarView: View {
             .padding(14).frame(maxWidth: .infinity, alignment: .leading)
             .glassCard(cornerRadius: 15)
             VStack(spacing: 0) {
+                Button { model.quickAccess.toggle() } label: { menuRow("快速打开…", symbol: "magnifyingglass") }
+                    .buttonStyle(ReferenceQuietButton())
+                Divider().opacity(0.2)
                 Button {
                     openWindow(id: "main")
                     NSApp.activate(ignoringOtherApps: true)

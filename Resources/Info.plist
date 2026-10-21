@@ -7,8 +7,8 @@
     <key>CFBundleName</key><string>VPN Navigator</string>
     <key>CFBundleDisplayName</key><string>VPN Navigator</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.3.3</string>
-    <key>CFBundleVersion</key><string>6</string>
+    <key>CFBundleShortVersionString</key><string>0.3.4</string>
+    <key>CFBundleVersion</key><string>7</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>

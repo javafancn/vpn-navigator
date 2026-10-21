@@ -42,6 +42,7 @@ final class QuickAccessCoordinator: NSObject, NSWindowDelegate {
         guard NSApp.modalWindow == nil, !model.showingAccountCredentials,
               model.authenticationChallenge == nil, !model.showingSetup,
               !model.showingMaintenance, !model.maintenanceInProgress,
+              !model.showingImportReport, !model.profileTransferInProgress,
               !model.backgroundServicesBusy else { openMainWindow(); return }
         state.query = ""
         state.pendingSwitchID = nil

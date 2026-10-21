@@ -87,6 +87,9 @@ struct MainView: View {
             if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-quick-access-snapshot") {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.quickAccess.show() }
             }
+            if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-import-report-snapshot") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.showImportReportSnapshot() }
+            }
         }
         .fileImporter(isPresented: $importing,
                       allowedContentTypes: [.init(filenameExtension: "ovpn")!],
@@ -94,7 +97,7 @@ struct MainView: View {
             switch result {
             case .success(let urls):
                 Task {
-                    for url in urls { await model.importFile(url) }
+                    await model.importFiles(urls)
                     tab = .profiles
                 }
             case .failure(let error):
@@ -109,6 +112,7 @@ struct MainView: View {
         .sheet(isPresented: $model.showingSetup) { SetupAssistantView().environmentObject(model) }
         .sheet(isPresented: $model.showingPreferences) { ClientPreferencesView().environmentObject(model) }
         .sheet(isPresented: $model.showingDiagnostics) { DiagnosticHistoryView().environmentObject(model) }
+        .sheet(isPresented: $model.showingImportReport) { ProfileImportReportView().environmentObject(model) }
         .alert("VPN Navigator", isPresented: Binding(
             get: { model.message != nil },
             set: { if !$0 { model.message = nil } }
@@ -1117,7 +1121,10 @@ struct ProfileDetail: View {
                     .buttonStyle(ReferenceSecondaryButton())
                     .help("收藏此配置")
                     Menu {
-                        Button("导出预览…") { Task { await model.exportPreview() } }
+                        Button("导出可迁移配置…") { Task { await model.exportProfile() } }
+                            .disabled(model.profileTransferInProgress || model.maintenanceInProgress)
+                        Button("导出路由预览…") { Task { await model.exportProfile(kind: .routePreview) } }
+                            .disabled(model.profileTransferInProgress || model.maintenanceInProgress || (profile.mode == .chinaDirect && model.rules == nil))
                         Button("删除配置…", role: .destructive) {
                             confirmDelete = true
                         }
@@ -1175,9 +1182,9 @@ struct ProfileDetail: View {
                         }
                     }
                     .buttonStyle(ReferencePrimaryButton())
-                    Button("导出配置…") { Task { await model.exportPreview() } }
+                    Button(model.profileExportInProgress ? "导出中…" : "导出配置…") { Task { await model.exportProfile() } }
                         .buttonStyle(ReferenceSecondaryButton())
-                        .disabled(profile.mode == .chinaDirect && model.rules == nil)
+                        .disabled(model.profileTransferInProgress || model.maintenanceInProgress)
                 }
                 .font(.system(size: 14))
                 .padding(.top, 3)

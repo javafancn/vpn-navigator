@@ -23,26 +23,30 @@ public actor ProfileStore {
     public func importProfile(from file: URL) throws -> VPNProfile {
         try prepare()
         guard file.pathExtension.lowercased() == "ovpn" else { throw StoreError.invalidFile }
-        let contents = try Data(contentsOf: file)
+        let contents = try ProfileFileIO.read(file, followSymlinks: true)
         guard !contents.isEmpty, contents.count <= 2_000_000,
               let string = String(data: contents, encoding: .utf8),
               string.contains("remote ") || string.contains("\nremote ") else { throw StoreError.invalidFile }
         // Normalize external inline-capable certificates into a private runtime copy.
         // Preserve the user's original bytes as the canonical source.
         let runtime = try ProfileMaterializer.materialize(text: string, directory: file.deletingLastPathComponent())
+        var profiles = try list()
         let id = UUID()
         let filename = "\(id.uuidString).ovpn"
         let destination = root.appendingPathComponent(filename)
-        try contents.write(to: destination, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
         let runtimeURL = root.appendingPathComponent("\(id.uuidString).runtime.ovpn")
-        try runtime.write(to: runtimeURL, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: runtimeURL.path)
         let profile = VPNProfile(id: id, name: file.deletingPathExtension().lastPathComponent,
                                  sourceFilename: file.lastPathComponent, relativePath: filename)
-        var profiles = try list()
         profiles.append(profile)
-        try save(profiles)
+        var created: [URL] = []
+        do {
+            try ProfileFileIO.write(contents, to: destination); created.append(destination)
+            try ProfileFileIO.write(Data(runtime.utf8), to: runtimeURL); created.append(runtimeURL)
+            try save(profiles)
+        } catch {
+            for path in created { try? FileManager.default.removeItem(at: path) }
+            throw error
+        }
         return profile
     }
     public func update(_ profile: VPNProfile) throws {
@@ -58,13 +62,15 @@ public actor ProfileStore {
     public func original(for profile: VPNProfile) throws -> String {
         // Never allow untrusted persisted paths to escape the store.
         guard profile.relativePath == "\(profile.id.uuidString).ovpn" else { throw StoreError.invalidFile }
-        return try String(contentsOf: root.appendingPathComponent(profile.relativePath), encoding: .utf8)
+        guard let text = String(data: try ProfileFileIO.read(root.appendingPathComponent(profile.relativePath)), encoding: .utf8) else { throw StoreError.invalidFile }
+        return text
     }
     public func runtimeConfig(for profile: VPNProfile) throws -> String {
         guard profile.relativePath == "\(profile.id.uuidString).ovpn" else { throw StoreError.invalidFile }
         let normalized = root.appendingPathComponent("\(profile.id.uuidString).runtime.ovpn")
         guard FileManager.default.fileExists(atPath: normalized.path) else { return try original(for: profile) }
-        return try String(contentsOf: normalized, encoding: .utf8)
+        guard let text = String(data: try ProfileFileIO.read(normalized), encoding: .utf8) else { throw StoreError.invalidFile }
+        return text
     }
     private func historyDirectory(for id: UUID) -> URL {
         root.appendingPathComponent("History", isDirectory: true)
@@ -106,22 +112,18 @@ public actor ProfileStore {
         let archived = history.appendingPathComponent(UUID().uuidString + ".ovpn")
         // Revisions restore from self-contained runtime copies, even when the
         // imported source referenced certificates outside the profile store.
-        try oldRuntime.write(to: archived, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: archived.path)
+        try ProfileFileIO.write(Data(oldRuntime.utf8), to: archived)
         let originalArchive = history.appendingPathComponent(
             archived.deletingPathExtension().lastPathComponent + ".source.ovpn")
-        try oldSource.write(to: originalArchive, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: originalArchive.path)
+        try ProfileFileIO.write(Data(oldSource.utf8), to: originalArchive)
         let sourceURL = root.appendingPathComponent(profile.relativePath)
         let runtimeURL = root.appendingPathComponent("\(profile.id.uuidString).runtime.ovpn")
         do {
-            try text.write(to: sourceURL, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: sourceURL.path)
-            try text.write(to: runtimeURL, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: runtimeURL.path)
+            try ProfileFileIO.write(Data(text.utf8), to: sourceURL)
+            try ProfileFileIO.write(Data(text.utf8), to: runtimeURL)
         } catch {
-            try? oldSource.write(to: sourceURL, atomically: true, encoding: .utf8)
-            try? oldRuntime.write(to: runtimeURL, atomically: true, encoding: .utf8)
+            try? ProfileFileIO.write(Data(oldSource.utf8), to: sourceURL)
+            try? ProfileFileIO.write(Data(oldRuntime.utf8), to: runtimeURL)
             throw error
         }
     }
@@ -132,8 +134,8 @@ public actor ProfileStore {
               UUID(uuidString: String(filename.dropLast(5))) != nil else {
             throw StoreError.invalidFile
         }
-        let old = try String(contentsOf: historyDirectory(for: profile.id)
-            .appendingPathComponent(filename), encoding: .utf8)
+        guard let old = String(data: try ProfileFileIO.read(historyDirectory(for: profile.id)
+            .appendingPathComponent(filename)), encoding: .utf8) else { throw StoreError.invalidFile }
         try revise(profile, text: old)
     }
 
@@ -149,8 +151,7 @@ public actor ProfileStore {
     private func save(_ profiles: [VPNProfile]) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(profiles).write(to: indexURL, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: indexURL.path)
+        try ProfileFileIO.write(encoder.encode(profiles), to: indexURL)
     }
 }
 public enum StoreError: Error { case invalidFile, notFound }

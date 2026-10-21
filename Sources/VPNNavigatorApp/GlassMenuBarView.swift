@@ -28,7 +28,7 @@ struct GlassMenuBarView: View {
                 Spacer(minLength: 0)
                 Toggle("VPN 连接", isOn: connectionToggle)
                     .toggleStyle(.switch).labelsHidden().tint(GlassPalette.blue)
-                    .disabled(model.stopping || (model.busy && !model.connecting && !model.connected && !model.firewallRecoveryRequired) || (!model.connected && model.selected == nil))
+                    .disabled(model.stopping || (model.busy && !model.connecting && !model.connected && !model.firewallRecoveryRequired) || (!model.connected && model.selected == nil) || (!model.connected && !model.connecting && (model.profileTransferInProgress || model.showingImportReport)))
             }
             VStack(alignment: .leading, spacing: 14) {
                 Label(model.connected ? "已连接" : model.connecting ? "正在连接" : "未连接", systemImage: model.connected ? "checkmark.circle.fill" : "circle.dotted")

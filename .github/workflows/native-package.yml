@@ -56,6 +56,12 @@ jobs:
           import subprocess
           subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-quick-access-self-test'], check=True, timeout=40)
           PYTEST
+      - name: Verify profile import model and cancellation
+        run: |
+          python3 - <<'PYTEST'
+          import subprocess
+          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-profile-transfer-self-test'], check=True, timeout=40)
+          PYTEST
       - name: Ad-hoc sign development UI for local integrity checks
         run: |
           APP='dist/VPN Navigator.app'
@@ -130,11 +136,12 @@ jobs:
           import AppKit
           import CoreGraphics
           let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+          let expectedWidth = Double(CommandLine.arguments.dropFirst().first ?? "560") ?? 560
           for window in windows {
               let owner = window[kCGWindowOwnerName as String] as? String ?? ""
               let bounds = window[kCGWindowBounds as String] as? [String: Any] ?? [:]
               if owner.contains("VPN"), let width = bounds["Width"] as? Double,
-                 (550...570).contains(width), let number = window[kCGWindowNumber as String] as? Int {
+                 abs(width - expectedWidth) <= 10, let number = window[kCGWindowNumber as String] as? Int {
                   print(number); exit(0)
               }
           }
@@ -143,6 +150,12 @@ jobs:
           WINDOW_ID="$(swift "$RUNNER_TEMP/quick-window-id.swift")"
           screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-quick-access.png"
           test -s "$RUNNER_TEMP/VPNNavigator-quick-access.png"
+          killall VPNNavigatorApp 2>/dev/null || true
+          open -n "$APP" --args --vpnnav-ui-tab=profiles --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot --vpnnav-ui-import-report-snapshot
+          sleep 7
+          WINDOW_ID="$(swift "$RUNNER_TEMP/quick-window-id.swift" 620)"
+          screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-import-report.png"
+          test -s "$RUNNER_TEMP/VPNNavigator-import-report.png"
           killall VPNNavigatorApp 2>/dev/null || true
           for SCENE in cool warm; do
             swift scripts/capture-glass-calibration.swift "$SCENE" "$RUNNER_TEMP"
@@ -165,6 +178,7 @@ jobs:
             ${{ runner.temp }}/VPNNavigator-diagnostics.png
             ${{ runner.temp }}/VPNNavigator-settings.png
             ${{ runner.temp }}/VPNNavigator-quick-access.png
+            ${{ runner.temp }}/VPNNavigator-import-report.png
             ${{ runner.temp }}/VPNNavigator-Desktop-Before.png
             ${{ runner.temp }}/*-bounds.txt
             ${{ runner.temp }}/VPNNavigator-glass-*.png

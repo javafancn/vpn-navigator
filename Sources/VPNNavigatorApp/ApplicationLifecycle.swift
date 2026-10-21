@@ -9,7 +9,7 @@ final class ApplicationLifecycle: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model else { return .terminateNow }
-        guard !model.maintenanceInProgress else { return .terminateCancel }
+        guard !model.maintenanceInProgress, !model.backgroundServicesBusy else { return .terminateCancel }
         guard !model.canQuit else { return .terminateNow }
         guard !quitting else { return .terminateCancel }
         quitting = true

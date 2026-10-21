@@ -49,6 +49,13 @@ final class AppModel: ObservableObject {
     private let localEvents = DiagnosticEventStore(file: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("VPNNavigator/Diagnostics/events.json"))
     private var profileMutations = 0
     @Published private(set) var maintenanceInProgress = false
+    @Published private(set) var backgroundServicesBusy = false
+    @Published private(set) var automaticRulesEnabled = true
+    @Published private(set) var launchAtLogin = false
+    @Published private(set) var rulesServiceStatus = "未检查"
+    @Published private(set) var loginServiceStatus = "未检查"
+    @Published private(set) var backgroundServicesIssue: String?
+    private let backgroundPreferences: BackgroundServicePreferences
     @Published var busy = false
     @Published var message: String?
     @Published var helperStatus = "未启用"
@@ -74,12 +81,16 @@ final class AppModel: ObservableObject {
     private let ipv6Updater: APNICIPv6PreviewStore
     private let helper = HelperClient.shared
 
-    init() {
+    init(backgroundServiceDefaults: UserDefaults = .standard) {
+        backgroundPreferences = BackgroundServicePreferences(defaults: backgroundServiceDefaults,
+            existingLoginEnabled: UserServices.loginStatus == .enabled)
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("VPNNavigator", isDirectory: true)
         store = ProfileStore(root: root.appendingPathComponent("Profiles"))
         updater = RuleUpdater(folder: root.appendingPathComponent("Rules"))
         ipv6Updater = APNICIPv6PreviewStore(root: root.appendingPathComponent("Rules"))
+        automaticRulesEnabled = backgroundPreferences.rulesEnabled
+        launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") { return }
@@ -106,15 +117,7 @@ final class AppModel: ObservableObject {
         }
         Task {
             await load()
-            if BuildChannel.isLocal, helper.installationStatus == .enabled,
-               let approval = try? LocalInstallation.load(),
-               let installedHash = approval.binaries[LocalRole.app.rawValue]?.sha256,
-               UserDefaults.standard.string(forKey: "localRulesBuild") != installedHash {
-                do {
-                    try UserServices.enableRules()
-                    UserDefaults.standard.set(installedHash, forKey: "localRulesBuild")
-                } catch { message = "规则后台更新未启用：\(error.localizedDescription)" }
-            }
+            if helper.installationStatus == .enabled { await restoreBackgroundServices() }
             eventHistory = localEvents.events()
             if installationIssue != nil || !UserDefaults.standard.bool(forKey: "setupAssistantDismissed") {
                 showingSetup = true
@@ -136,9 +139,9 @@ final class AppModel: ObservableObject {
     var connected: Bool { sessionState == .connected }
     var connecting: Bool { [.connecting, .authenticating, .reconnecting].contains(sessionState) }
     var stopping: Bool { sessionState == .stopping }
-    var canQuit: Bool { (repairExitAuthorized && canRepairInterruptedInstallation) || SessionExitPolicy.mayExit(state: sessionState, activeProfileID: activeProfileID, helperVerified: helperStateVerified, recoveryRequired: firewallRecoveryRequired || networkRecoveryRequired) }
+    var canQuit: Bool { !backgroundServicesBusy && ((repairExitAuthorized && canRepairInterruptedInstallation) || SessionExitPolicy.mayExit(state: sessionState, activeProfileID: activeProfileID, helperVerified: helperStateVerified, recoveryRequired: firewallRecoveryRequired || networkRecoveryRequired)) }
     var canRepairInterruptedInstallation: Bool {
-        guard BuildChannel.isLocal, !maintenanceInProgress, !busy, !connected, !connecting, !stopping,
+        guard BuildChannel.isLocal, !maintenanceInProgress, !backgroundServicesBusy, !busy, !connected, !connecting, !stopping,
               activeProfileID == nil, profileMutations == 0,
               let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
               let transaction = try? LocalInstallation.pendingTransaction() else { return false }
@@ -357,8 +360,54 @@ final class AppModel: ObservableObject {
         await refreshConnectionStatus()
     }
     func disableServices() async {
-        guard !maintenanceInProgress else { return }
+        guard !maintenanceInProgress, !backgroundServicesBusy else { return }
         _ = await unregisterNetworkServices()
+    }
+    func refreshBackgroundServiceStatus() {
+        func display(_ status: SMAppService.Status) -> String {
+            status == .requiresApproval ? "需要系统授权或服务配置需修复" : displayHelperStatus(status)
+        }
+        rulesServiceStatus = display(UserServices.rulesStatus)
+        loginServiceStatus = display(UserServices.loginStatus)
+    }
+    func setAutomaticRules(_ enabled: Bool) async {
+        guard !maintenanceInProgress, !backgroundServicesBusy else { return }
+        backgroundPreferences.rulesEnabled = enabled
+        automaticRulesEnabled = enabled
+        await restoreBackgroundServices()
+    }
+    func setLaunchAtLogin(_ enabled: Bool) async {
+        guard !maintenanceInProgress, !backgroundServicesBusy else { return }
+        backgroundPreferences.loginEnabled = enabled
+        launchAtLogin = enabled
+        await restoreBackgroundServices()
+    }
+    func restoreBackgroundServices() async {
+        guard !maintenanceInProgress, !backgroundServicesBusy else { return }
+        backgroundServicesBusy = true
+        defer { backgroundServicesBusy = false; refreshBackgroundServiceStatus() }
+        backgroundServicesIssue = nil
+        do {
+            // Removal needs no root authority. Enabling requires the existing
+            // authenticated helper, including local payload and caller checks.
+            if !automaticRulesEnabled { try await UserServices.disableRules() }
+            if !launchAtLogin { try UserServices.setLogin(false) }
+            if automaticRulesEnabled || launchAtLogin {
+                guard helper.installationStatus == .enabled,
+                      (await helper.ping()).hasPrefix("VPN Navigator Helper") else {
+                    throw LocalInstallError.notInstalled
+                }
+                if automaticRulesEnabled, UserServices.rulesStatus != .enabled { try UserServices.enableRules() }
+                if launchAtLogin, UserServices.loginStatus != .enabled { try UserServices.setLogin(true) }
+            }
+            func matches(_ status: SMAppService.Status, enabled: Bool) -> Bool {
+                enabled ? status == .enabled : status == .notRegistered || status == .notFound
+            }
+            guard matches(UserServices.rulesStatus, enabled: automaticRulesEnabled),
+                  matches(UserServices.loginStatus, enabled: launchAtLogin) else { throw LocalInstallError.command }
+        } catch {
+            backgroundServicesIssue = "后台服务未完全应用，偏好已保留。请检查安装或系统授权后重试：\(error.localizedDescription)"
+        }
     }
     private func unregisterNetworkServices() async -> Bool {
         guard !connected && !connecting else {
@@ -377,6 +426,7 @@ final class AppModel: ObservableObject {
             if BuildChannel.isLocal { try UserServices.setLogin(false) }
             if helper.installationStatus != .notRegistered && helper.installationStatus != .notFound { try await helper.unregister() }
             await refreshConnectionStatus()
+            refreshBackgroundServiceStatus()
             guard [UserServices.rulesStatus, helper.installationStatus].allSatisfy({ $0 == .notRegistered || $0 == .notFound }) else {
                 message = "后台服务尚未完全停用，请检查系统设置。"; return false
             }
@@ -426,17 +476,16 @@ final class AppModel: ObservableObject {
     }
 
     func requestHelper() {
-        guard !maintenanceInProgress else { return }
+        guard !maintenanceInProgress, !backgroundServicesBusy else { return }
         if BuildChannel.isLocal {
             if helper.installationStatus == .enabled {
-                do { try UserServices.enableRules(); message = "本地助手已批准，规则后台更新已启用。" }
-                catch { message = error.localizedDescription }
+                Task { await restoreBackgroundServices(); message = backgroundServicesIssue ?? "本地助手已批准，后台服务已按偏好恢复。" }
             } else { openLocalInstaller() }
             return
         }
         do {
             try helper.requestRegistration()
-            try UserServices.enableRules()
+            Task { await restoreBackgroundServices() }
             helperStatus = displayHelperStatus(helper.installationStatus)
             message = "Enable the background helper in System Settings if requested. A signed .app distribution is required."
         } catch { message = "Helper registration failed: \(error.localizedDescription)" }
@@ -618,7 +667,7 @@ final class AppModel: ObservableObject {
     }
 
     func prepareMaintenance(removeProfiles: Bool) async -> Bool {
-        guard !maintenanceInProgress, profileMutations == 0, !busy || connecting else {
+        guard !maintenanceInProgress, !backgroundServicesBusy, profileMutations == 0, !busy || connecting else {
             message = "请等待当前操作结束后再准备维护。"; return false
         }
         maintenanceInProgress = true; busy = true
@@ -729,12 +778,7 @@ struct VPNNavigatorApp: App {
             Task {
                 do {
                     guard await HelperClient.shared.ping() == "VPN Navigator Helper (local)" else { throw LocalInstallError.command }
-                    try UserServices.enableRules()
-                    try UserServices.setLogin(true)
-                    guard UserServices.rulesStatus == .enabled, UserServices.loginStatus == .enabled else { throw LocalInstallError.command }
-                    try UserServices.setLogin(false)
-                    try await UserServices.disableRules()
-                    try await HelperClient.shared.unregister()
+                    try await BackgroundServicesSelfTest.run()
                     guard UserServices.rulesStatus == .notRegistered, UserServices.loginStatus == .notRegistered,
                           HelperClient.shared.installationStatus == .notRegistered else { throw LocalInstallError.command }
                     _ = try LocalInstallation.load(allowRetired: true)

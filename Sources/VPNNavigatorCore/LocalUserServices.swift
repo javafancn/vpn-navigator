@@ -25,7 +25,10 @@ public enum UserServices {
             if enabled { try register(loginLabel) }
             else { try unregister(loginLabel) }
         } else if enabled { try SMAppService.mainApp.register() }
-        else { try SMAppService.mainApp.unregister() }
+        else {
+            let service = SMAppService.mainApp
+            if service.status != .notRegistered && service.status != .notFound { try service.unregister() }
+        }
     }
     private static func localStatus(_ label: String) -> SMAppService.Status {
         let path = folder.appendingPathComponent(label + ".plist")
@@ -50,7 +53,8 @@ public enum UserServices {
         try checked(folder)
         let path = folder.appendingPathComponent(label + ".plist")
         let data = try jobData(label)
-        if FileManager.default.fileExists(atPath: path.path) { try checked(path); _ = try? launchctl(["bootout", "gui/\(getuid())/\(label)"]) }
+        if FileManager.default.fileExists(atPath: path.path) { try checked(path) }
+        try stop(label)
         try data.write(to: path, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
         _ = try launchctl(["enable", "gui/\(getuid())/\(label)"])
@@ -66,9 +70,18 @@ public enum UserServices {
         let path = folder.appendingPathComponent(label + ".plist")
         if FileManager.default.fileExists(atPath: folder.path) { try checked(folder) }
         if FileManager.default.fileExists(atPath: path.path) { try checked(path) }
-        _ = try? launchctl(["bootout", "gui/\(getuid())/\(label)"])
+        try stop(label)
         if FileManager.default.fileExists(atPath: path.path) { try FileManager.default.removeItem(at: path) }
-        if (try? launchctl(["print", "gui/\(getuid())/\(label)"])) != nil { throw LocalInstallError.command }
+    }
+    private static func stop(_ label: String) throws {
+        let job = "gui/\(getuid())/\(label)"
+        guard (try? launchctl(["print", job])) != nil else { return }
+        _ = try? launchctl(["bootout", job])
+        for _ in 0..<30 {
+            if (try? launchctl(["print", job])) == nil { return }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        throw LocalInstallError.command
     }
     @discardableResult public static func launchctl(_ arguments: [String]) throws -> String {
         let task = Process(), pipe = Pipe()

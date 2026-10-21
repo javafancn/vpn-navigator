@@ -185,10 +185,10 @@ struct SetupAssistantView: View {
 struct ClientPreferencesView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    @State private var launchAtLogin = UserServices.loginStatus == .enabled
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("连接偏好").font(.system(size: 24, weight: .bold))
+            ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Picker("连接与认证超时", selection: Binding(
                     get: { model.sessionPreferences.connectionTimeout },
@@ -207,20 +207,33 @@ struct ClientPreferencesView: View {
                 Text("重连期间持续保留防火墙，旧进程、DNS 和路由未安全恢复时不会启动新会话。服务器地址固定为本次已解析的 IPv4。")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 Divider().opacity(0.25)
-                Toggle("登录时启动 VPN Navigator", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { enabled in
-                        do {
-                            try UserServices.setLogin(enabled)
-                        } catch {
-                            launchAtLogin = UserServices.loginStatus == .enabled
-                            model.message = "登录启动设置失败：\(error.localizedDescription)"
-                        }
-                    }
-            }.padding(20).glassCard(cornerRadius: 16).disabled(model.maintenanceInProgress)
+                Toggle("每天自动更新国内 IPv4 规则", isOn: Binding(
+                    get: { model.automaticRulesEnabled },
+                    set: { enabled in Task { await model.setAutomaticRules(enabled) } }))
+                Text("规则服务：\(model.rulesServiceStatus)").font(.system(size: 12)).foregroundStyle(.secondary)
+                Toggle("登录时启动 VPN Navigator", isOn: Binding(
+                    get: { model.launchAtLogin },
+                    set: { enabled in Task { await model.setLaunchAtLogin(enabled) } }))
+                Text("登录服务：\(model.loginServiceStatus)").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("升级或修复会暂时停用服务；安装完成后，重新打开应用会恢复上述选择。关闭自动更新后，仍可手动更新或导入规则。")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                if let issue = model.backgroundServicesIssue {
+                    Text(issue).font(.system(size: 12)).foregroundStyle(.orange)
+                }
+                HStack {
+                    Button(model.backgroundServicesBusy ? "应用中…" : "按偏好重试") { Task { await model.restoreBackgroundServices() } }
+                        .buttonStyle(ReferenceSecondaryButton())
+                    Button("系统授权…") { SMAppService.openSystemSettingsLoginItems() }
+                        .buttonStyle(ReferenceSecondaryButton())
+                }
+            }.padding(20).glassCard(cornerRadius: 16)
+                .disabled(model.maintenanceInProgress || model.backgroundServicesBusy)
+            }.frame(maxHeight: 460)
             Text("连接偏好在下一次连接时生效。登录启动不会自动建立 VPN 连接。")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             HStack { Spacer(); Button("完成") { dismiss() }.buttonStyle(ReferencePrimaryButton()) }
-        }.padding(24).frame(width: 520).background(GlassAtmosphere())
+        }.padding(24).frame(width: 560).background(GlassAtmosphere())
+            .task { model.refreshBackgroundServiceStatus() }
     }
 }
 

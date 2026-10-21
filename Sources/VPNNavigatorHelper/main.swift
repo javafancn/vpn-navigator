@@ -138,18 +138,33 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
     func connectionStatus(reply: @escaping (String) -> Void) {
         queue.async { reply("\(self.engine.state.rawValue): \(self.engine.message)") }
     }
+    func disconnectSession(expectedProfileID: String, expectedAttemptID: String, reply: @escaping (String) -> Void) {
+        queue.async {
+            guard let profileID = UUID(uuidString: expectedProfileID),
+                  let attemptID = UUID(uuidString: expectedAttemptID),
+                  QuickAccessSession(profileID: profileID, attemptID: attemptID).matches(self.currentSessionReport()) else {
+                reply("ERROR: Connection changed; switch confirmation expired"); return
+            }
+            // Identity check and stop execute on the same engine queue. A
+            // stale request cannot cancel a newer attempt or its generation.
+            self.engine.cancellation.cancel(attemptID)
+            self.engine.stop(releaseProtection: true)
+            reply(self.engine.state == .disconnected ? "Disconnected" : "ERROR: " + self.engine.message)
+        }
+    }
+    private func currentSessionReport() -> SessionReport {
+        SessionReport(state: engine.state, message: engine.message, activeProfileID: engine.activeProfileID,
+            receivedBytes: engine.traffic?.receivedBytes, sentBytes: engine.traffic?.sentBytes,
+            challenge: engine.challenge, firewallActive: engine.firewallActive,
+            firewallRecoveryRequired: engine.firewallRecoveryRequired, attemptID: engine.activeAttemptID,
+            networkRecoveryRequired: engine.networkRecoveryRequired)
+    }
     func activeProfile(reply: @escaping (String) -> Void) {
         queue.async { reply(self.engine.activeProfileID?.uuidString ?? "") }
     }
     func sessionSnapshot(reply: @escaping (String) -> Void) {
         queue.async {
-            let report = SessionReport(
-                state: self.engine.state,
-                message: self.engine.message,
-                activeProfileID: self.engine.activeProfileID,
-                receivedBytes: self.engine.traffic?.receivedBytes,
-                sentBytes: self.engine.traffic?.sentBytes, challenge: self.engine.challenge,
-                firewallActive: self.engine.firewallActive, firewallRecoveryRequired: self.engine.firewallRecoveryRequired, attemptID: self.engine.activeAttemptID, networkRecoveryRequired: self.engine.networkRecoveryRequired)
+            let report = self.currentSessionReport()
             guard let bytes = try? JSONEncoder().encode(report),
                   let output = String(data: bytes, encoding: .utf8) else {
                 reply("ERROR: Cannot serialize tunnel status")

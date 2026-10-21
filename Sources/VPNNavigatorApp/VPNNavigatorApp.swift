@@ -7,6 +7,11 @@ import UniformTypeIdentifiers
 @MainActor
 final class AppModel: ObservableObject {
     @Published var profiles: [VPNProfile] = []
+    @Published var quickAccessShortcut = QuickAccessShortcut(rawValue: UserDefaults.standard.string(forKey: "quickAccessShortcut") ?? "") ?? .disabled {
+        didSet { UserDefaults.standard.set(quickAccessShortcut.rawValue, forKey: "quickAccessShortcut") }
+    }
+    @Published var quickAccessShortcutStatus = "全局快捷键已关闭"
+    lazy var quickAccess = QuickAccessCoordinator(model: self)
     @Published var selectedID: UUID? {
         didSet {
             if oldValue != selectedID {
@@ -93,7 +98,7 @@ final class AppModel: ObservableObject {
         launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") { return }
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") { return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -587,11 +592,22 @@ final class AppModel: ObservableObject {
             connectionStatus = "failed: 配置未通过检查"
         }
     }
-    func switchToSelected() async {
+    func switchToSelected(expectedSession: QuickAccessSession? = nil) async {
         guard !maintenanceInProgress else { return }
         guard !busy, let selected, connected, activeProfileID != selected.id else { return }
         busy = true
-        let response = await helper.disconnect()
+        if let expectedSession {
+            guard let report = await helper.sessionReport(), expectedSession.matches(report),
+                  selectedID == selected.id, profiles.contains(where: { $0.id == selected.id }) else {
+                busy = false
+                message = "连接状态或所选配置已改变，未执行切换。"
+                await refreshConnectionStatus()
+                return
+            }
+        }
+        let response: String
+        if let expectedSession { response = await helper.disconnectSession(expectedSession) }
+        else { response = await helper.disconnect() }
         if response != "Disconnected" {
             busy = false
             message = "Cannot switch profiles until the old VPN has fully exited: \(response)"
@@ -604,7 +620,33 @@ final class AppModel: ObservableObject {
             return
         }
         busy = false
+        guard selectedID == selected.id, profiles.contains(where: { $0.id == selected.id }) else {
+            message = "所选配置已改变，原 VPN 已安全断开，请重新选择连接。"; return
+        }
         await connectSelected()
+    }
+    var quickAccessSession: QuickAccessSession? {
+        guard connected, let profileID = activeProfileID, let attemptID = helperAttemptID else { return nil }
+        return QuickAccessSession(profileID: profileID, attemptID: attemptID)
+    }
+    func quickAccessAction(for id: UUID) -> QuickAccessAction {
+        guard profiles.contains(where: { $0.id == id }) else { return .blocked }
+        if connected && id != activeProfileID && quickAccessSession == nil { return .blocked }
+        return QuickAccessAction.resolve(state: sessionState, profileID: id, activeProfileID: activeProfileID,
+            operationInProgress: busy || maintenanceInProgress || backgroundServicesBusy ||
+                authenticationChallenge != nil || showingAccountCredentials,
+            mayStart: canQuit)
+    }
+    func activateQuickProfile(_ id: UUID, replacing expectedSession: QuickAccessSession?) async {
+        let action = quickAccessAction(for: id)
+        guard (action == .connect && expectedSession == nil) ||
+              (action == .requestSwitch && expectedSession != nil && quickAccessSession == expectedSession) else {
+            message = "连接状态已改变，请在主窗口确认后重试。"; return
+        }
+        guard helper.installationStatus == .enabled else { showingSetup = true; return }
+        selectedID = id
+        if action == .requestSwitch { await switchToSelected(expectedSession: expectedSession) }
+        else { await connectSelected() }
     }
     func disconnect() async {
         guard !stopping else { return }
@@ -759,6 +801,12 @@ struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
     @StateObject private var model = AppModel()
     init() {
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") {
+            Task {
+                do { try await QuickAccessSelfTest.run(); print("Quick access panel and global shortcut checks passed."); Darwin.exit(0) }
+                catch { print("Quick access self-test failed: \(error.localizedDescription)"); Darwin.exit(1) }
+            }
+        }
         if BuildChannel.isLocal && ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") {
             let diagnosticModel = AppModel()
             let transaction = try? LocalInstallation.pendingTransaction()
@@ -808,6 +856,12 @@ struct VPNNavigatorApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 700)
+        .commands {
+            CommandGroup(after: .newItem) {
+                Button("快速打开…") { model.quickAccess.toggle() }
+                    .keyboardShortcut("p", modifiers: [.command, .shift])
+            }
+        }
         MenuBarExtra("VPN Navigator", systemImage: "network") {
             GlassMenuBarView().environmentObject(model)
         }

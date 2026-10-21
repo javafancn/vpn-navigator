@@ -109,6 +109,12 @@ final class HelperClient {
     func trafficStatus() async -> String {
         await ask { helper, reply in helper.trafficStatus(reply: reply) }
     }
+    func disconnectSession(_ expected: QuickAccessSession) async -> String {
+        await ask(timeout: 30) { helper, reply in
+            helper.disconnectSession(expectedProfileID: expected.profileID.uuidString,
+                expectedAttemptID: expected.attemptID.uuidString, reply: reply)
+        }
+    }
     func recoverOrphanedRoutes() async -> String {
         await ask(timeout: 60) { helper, reply in helper.recoverOrphanedRoutes(reply: reply) }
     }

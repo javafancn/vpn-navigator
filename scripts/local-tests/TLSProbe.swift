@@ -8,6 +8,7 @@ import Darwin
                  username: String, password: String, preferences: String, attemptID: String,
                  reply: @escaping (String) -> Void)
     func disconnect(cancelAttemptID: String, reply: @escaping (String) -> Void)
+    func disconnectSession(expectedProfileID: String, expectedAttemptID: String, reply: @escaping (String) -> Void)
     func recoverOrphanedRoutes(reply: @escaping (String) -> Void)
     func connectionStatus(reply: @escaping (String) -> Void)
     func sessionSnapshot(reply: @escaping (String) -> Void)
@@ -149,9 +150,10 @@ func expectFailure() async -> Bool {
 }
 func exercise(_ profile: String, shouldConnect: Bool, disconnectAtEnd: Bool = true) async -> Bool {
     let preferences = #"{"connectionTimeout":20,"reconnectOriginal":false,"killSwitch":false,"reconnectManaged":false}"#
+    let profileID = UUID().uuidString, attemptID = UUID().uuidString
     let result = await ask {
-        $0.connect(profile: profile, profileID: UUID().uuidString, mode: "Original", rules: "",
-                   username: "", password: "", preferences: preferences, attemptID: UUID().uuidString, reply: $1)
+        $0.connect(profile: profile, profileID: profileID, mode: "Original", rules: "",
+                   username: "", password: "", preferences: preferences, attemptID: attemptID, reply: $1)
     }
     guard !result.hasPrefix("ERROR:") else { print(result); _ = await disconnect(); return false }
     var matched = false
@@ -165,8 +167,18 @@ func exercise(_ profile: String, shouldConnect: Bool, disconnectAtEnd: Bool = tr
         if status.hasPrefix("ERROR:") { print(status); break }
         try? await Task.sleep(nanoseconds: 500_000_000)
     }
+    if matched && shouldConnect {
+        for (expectedProfile, expectedAttempt) in [(profileID, UUID().uuidString), (UUID().uuidString, attemptID), ("invalid", attemptID)] {
+            let refused = await ask { $0.disconnectSession(expectedProfileID: expectedProfile, expectedAttemptID: expectedAttempt, reply: $1) }
+            guard refused.hasPrefix("ERROR:"), (await ask { $0.connectionStatus(reply: $1) }).hasPrefix("connected:") else { return false }
+        }
+        print("PASS: stale/malformed switch identities leave the real TLS session connected.")
+    }
     if !disconnectAtEnd { return matched }
-    let cleaned = await disconnect()
+    let cleaned: Bool
+    if matched && shouldConnect {
+        cleaned = await ask { $0.disconnectSession(expectedProfileID: profileID, expectedAttemptID: attemptID, reply: $1) } == "Disconnected"
+    } else { cleaned = await disconnect() }
     if !cleaned { print("Disconnect did not confirm cleanup") }
     return matched && cleaned
 }

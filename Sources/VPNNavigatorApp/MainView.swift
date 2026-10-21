@@ -32,6 +32,7 @@ struct MainView: View {
     @EnvironmentObject private var model: AppModel
     @State private var tab: WorkspaceTab = .overview
     @State private var importing = false
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var sidebarSelection
 
@@ -78,6 +79,15 @@ struct MainView: View {
         .frame(minWidth: 1100, minHeight: 700)
         .preferredColorScheme(.light)
         .environment(\.locale, Locale(identifier: "zh_CN"))
+        .onAppear {
+            model.quickAccess.openMainWindow = {
+                openWindow(id: "main")
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-quick-access-snapshot") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.quickAccess.show() }
+            }
+        }
         .fileImporter(isPresented: $importing,
                       allowedContentTypes: [.init(filenameExtension: "ovpn")!],
                       allowsMultipleSelection: true) { result in

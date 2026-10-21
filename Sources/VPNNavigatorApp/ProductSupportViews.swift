@@ -226,6 +226,15 @@ struct ClientPreferencesView: View {
                     Button("系统授权…") { SMAppService.openSystemSettingsLoginItems() }
                         .buttonStyle(ReferenceSecondaryButton())
                 }
+                Divider().opacity(0.25)
+                Picker("全局快速打开", selection: $model.quickAccessShortcut) {
+                    ForEach(QuickAccessShortcut.allCases) { Text($0.title).tag($0) }
+                }
+                Text(model.quickAccessShortcutStatus).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("应用运行时可从其他应用唤起面板；关闭窗口后仍可使用。应用内也可按 ⇧⌘P，或从菜单栏打开。")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                Button("重试快捷键注册") { model.quickAccess.retryShortcut() }
+                    .buttonStyle(ReferenceSecondaryButton()).disabled(model.quickAccessShortcut == .disabled)
             }.padding(20).glassCard(cornerRadius: 16)
                 .disabled(model.maintenanceInProgress || model.backgroundServicesBusy)
             }.frame(maxHeight: 460)

@@ -7,6 +7,7 @@ final class ApplicationLifecycle: NSObject, NSApplicationDelegate {
     weak var model: AppModel?
     private var quitting = false
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    func applicationWillTerminate(_ notification: Notification) { model?.quickAccess.shutdown() }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model else { return .terminateNow }
         guard !model.maintenanceInProgress, !model.backgroundServicesBusy else { return .terminateCancel }

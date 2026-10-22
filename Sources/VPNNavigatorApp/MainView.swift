@@ -109,6 +109,15 @@ struct MainView: View {
             if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-quick-access-snapshot") {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.quickAccess.show() }
             }
+            if ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
+               ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot") {
+                if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-library-filter-snapshot") {
+                    model.profileLibrary.scope = .group("节点")
+                    model.selectedID = model.libraryProfiles.first?.id
+                } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-library-empty-snapshot") {
+                    model.profileLibrary.scope = .favorites; model.profileLibrary.query = "工作"
+                }
+            }
             if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-profile-recovery-snapshot") {
                 Task { await model.showProfileIndexRecoverySnapshot() }
             }
@@ -542,19 +551,12 @@ private struct ReferencePowerOrb: View {
 private struct ProfileLibrary: View {
     @EnvironmentObject private var model: AppModel
     let onImport: () -> Void
-    @State private var query = ""
     @FocusState private var searchFocused: Bool
 
-    private var filtered: [VPNProfile] {
-        model.profiles.filter {
-            query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) ||
-                $0.sourceFilename.localizedCaseInsensitiveContains(query) ||
-                $0.group.localizedCaseInsensitiveContains(query)
-        }.sorted {
-            if $0.isFavorite != $1.isFavorite { return $0.isFavorite }
-            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-        }
-    }
+    private var filtered: [VPNProfile] { model.libraryProfiles }
+    private var visibleSelection: VPNProfile? { filtered.first { $0.id == model.selectedID } }
+    private var hasFilters: Bool { model.profileLibrary.scope != .all || !model.profileLibrary.query.isEmpty }
+    private func clearFilters() { model.profileLibrary.clearFilters(); searchFocused = false }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
@@ -568,13 +570,13 @@ private struct ProfileLibrary: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
                     .font(.system(size: 16))
-                TextField("搜索配置文件…", text: $query)
+                TextField("搜索名称、分组或文件名…", text: $model.profileLibrary.query)
                     .focused($searchFocused)
                     .font(.system(size: 16))
                     .textFieldStyle(.plain)
-                if !query.isEmpty {
+                if !model.profileLibrary.query.isEmpty {
                     Button {
-                        query = ""
+                        model.profileLibrary.query = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
@@ -591,21 +593,49 @@ private struct ProfileLibrary: View {
                 }
                 .buttonStyle(ReferencePrimaryButton())
                 .tint(GlassPalette.blue)
+                .disabled(!model.canChooseProfileFiles)
             }
 
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Menu {
+                            scopeButton("全部配置", scope: .all, count: model.profiles.count)
+                            scopeButton("收藏配置", scope: .favorites, count: model.profiles.filter(\.isFavorite).count)
+                            if !model.libraryGroups.isEmpty {
+                                Divider()
+                                ForEach(model.libraryGroups) { group in
+                                    scopeButton(group.name, scope: .group(group.name), count: group.count)
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 5) {
+                                Text(model.profileLibrary.scope.title).lineLimit(1).truncationMode(.middle)
+                                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                            }.font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
+                        }.menuIndicator(.hidden).buttonStyle(.plain).help("按收藏或分组筛选配置")
+                        Spacer(minLength: 0)
+                        Menu {
+                            ForEach(ProfileLibrarySort.allCases) { sort in
+                                Button { model.profileLibrary.sort = sort } label: {
+                                    Label(sort.title, systemImage: model.profileLibrary.sort == sort ? "checkmark" : "circle")
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "arrow.up.arrow.down").font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }.menuIndicator(.hidden).buttonStyle(.plain)
+                            .help("排序：" + model.profileLibrary.sort.title).accessibilityLabel("配置排序")
+                    }.padding(.horizontal, 6)
                     HStack {
-                        Text("全部配置 (\(filtered.count))")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.bottom, 3)
+                        Text("显示 \(filtered.count) / \(model.profiles.count) 个 · " + model.profileLibrary.sort.title)
+                            .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                        Spacer(minLength: 0)
+                        if hasFilters {
+                            Button("清除") { clearFilters() }.buttonStyle(.plain)
+                                .font(.system(size: 11)).foregroundStyle(GlassPalette.blue).help("清除搜索与分组筛选")
+                        }
+                    }.padding(.horizontal, 6).padding(.bottom, 3)
 
                     ScrollView {
                         LazyVStack(spacing: 5) {
@@ -632,7 +662,11 @@ private struct ProfileLibrary: View {
                                             Image(systemName: "star.fill")
                                                 .foregroundStyle(.orange)
                                                 .font(.system(size: 14))
-                                        } else {
+                                        }
+                                        if model.activeProfileID == profile.id && model.connected {
+                                            Circle().fill(Color.green).frame(width: 7, height: 7)
+                                                .accessibilityLabel("已连接")
+                                        } else if !profile.isFavorite {
                                             Circle()
                                                 .fill(Color.secondary.opacity(0.30))
                                                 .frame(width: 7, height: 7)
@@ -661,7 +695,7 @@ private struct ProfileLibrary: View {
                         }
                     }
                     if filtered.isEmpty {
-                        Label("没有匹配的配置", systemImage: "magnifyingglass")
+                        Label(model.profiles.isEmpty ? "尚无配置" : "没有匹配的配置", systemImage: "magnifyingglass")
                             .font(.system(size: 14))
                             .foregroundStyle(.secondary)
                     }
@@ -671,16 +705,26 @@ private struct ProfileLibrary: View {
                 .frame(maxHeight: .infinity, alignment: .top)
                 .glassCard(cornerRadius: 15)
 
-                Group {
+                ZStack {
                     if let profile = model.selected {
-                        ProfileDetail(profile: profile).id(profile.id)
-                    } else {
+                        ProfileDetail(profile: profile, isVisible: visibleSelection != nil).id(profile.id)
+                            .opacity(visibleSelection == nil ? 0 : 1)
+                            .disabled(visibleSelection == nil)
+                            .allowsHitTesting(visibleSelection != nil)
+                            .accessibilityHidden(visibleSelection == nil)
+                    }
+                    if visibleSelection == nil {
                         VStack(spacing: 10) {
                             GlassIcon(symbol: "square.stack.3d.up", size: 45)
-                            Text("尚未选择配置文件").font(.headline)
-                            Text("点击右上角「导入配置」以添加 .ovpn 文件")
-                                .font(.system(size: 14))
-                                .foregroundStyle(.secondary)
+                            Text(model.selected == nil ? "选择配置文件" : "当前选择不在筛选结果中").font(.headline)
+                            Text(model.profiles.isEmpty ? "点击右上角「导入配置」以添加 .ovpn 文件" :
+                                 filtered.isEmpty ? "请调整搜索词或清除筛选。" : "从左侧列表选择要查看的配置。")
+                                .font(.system(size: 14)).foregroundStyle(.secondary)
+                            if model.selected != nil && hasFilters {
+                                Button("显示当前选择") { clearFilters() }.buttonStyle(ReferenceSecondaryButton())
+                            } else if hasFilters {
+                                Button("清除筛选") { clearFilters() }.buttonStyle(ReferenceSecondaryButton())
+                            }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
@@ -694,6 +738,12 @@ private struct ProfileLibrary: View {
         .padding(.top, GlassLayout.pageTop)
         .padding(.bottom, 18)
     }
+    private func scopeButton(_ title: String, scope: ProfileLibraryScope, count: Int) -> some View {
+        Button { model.profileLibrary.scope = scope; searchFocused = false } label: {
+            Label(title + " (\(count))", systemImage: model.profileLibrary.scope == scope ? "checkmark" : "circle")
+        }
+    }
+
 }
 
 private struct RoutingWorkspace: View {
@@ -1069,6 +1119,7 @@ private enum ProfileInspectorTab: String, CaseIterable, Identifiable {
 struct ProfileDetail: View {
     @EnvironmentObject private var model: AppModel
     let profile: VPNProfile
+    var isVisible = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var inspectorSelection
     private enum EditorField: Hashable { case name, notes }
@@ -1077,9 +1128,9 @@ struct ProfileDetail: View {
     @State private var draftName = ""
     @State private var draftGroup = ""
     @State private var draftNotes = ""
-    @State private var draftFavorite = false
     @State private var editActionHovered = false
     @State private var editingCustomGroup = false
+    @State private var customGroupDraft = ""
     @State private var editorText = ""
     @State private var showingEditor = false
     @State private var confirmDelete = false
@@ -1096,15 +1147,16 @@ struct ProfileDetail: View {
             }
         }
         .alert("自定义类别", isPresented: $editingCustomGroup) {
-            TextField("类别名称", text: $draftGroup)
-            Button("确定") { }
+            TextField("类别名称", text: $customGroupDraft)
+            Button("确定") { draftGroup = customGroupDraft.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .disabled(customGroupDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || customGroupDraft.trimmingCharacters(in: .whitespacesAndNewlines).count > 48)
             Button("取消", role: .cancel) { }
         } message: {
-            Text("输入此配置文件所属的类别名称。")
+            Text("输入最多 48 字的类别名称。保存配置后，可在其它配置中复用。")
         }
         .confirmationDialog("确定要删除此配置？", isPresented: $confirmDelete) {
             Button("删除配置", role: .destructive) {
-                Task { await model.deleteSelected() }
+                Task { await model.deleteProfile(profile.id) }
             }
             Button("取消", role: .cancel) {}
         } message: {
@@ -1142,11 +1194,11 @@ struct ProfileDetail: View {
             .frame(minWidth: 690, minHeight: 505)
             .background(GlassAtmosphere())
         }
+        .onChange(of: isVisible) { visible in if !visible { focusedField = nil } }
         .onAppear {
             draftName = profile.name
             draftGroup = profile.group
             draftNotes = profile.notes
-            draftFavorite = profile.isFavorite
             Task { history = await model.revisions(for: profile) }
         }
     }
@@ -1163,26 +1215,23 @@ struct ProfileDetail: View {
                     }
                     Spacer()
                     Button {
-                        draftFavorite.toggle()
-                        Task {
-                            await model.updateMetadata(
-                                name: draftName, group: draftGroup,
-                                notes: draftNotes, favorite: draftFavorite)
-                        }
+                        let favorite = !profile.isFavorite
+                        Task { await model.setProfileFavorite(favorite, for: profile.id) }
                     } label: {
-                        Image(systemName: draftFavorite ? "star.fill" : "star")
-                            .foregroundStyle(draftFavorite ? .orange : .secondary)
+                        Image(systemName: profile.isFavorite ? "star.fill" : "star")
+                            .foregroundStyle(profile.isFavorite ? .orange : .secondary)
                     }
                     .buttonStyle(ReferenceSecondaryButton())
-                    .help("收藏此配置")
+                    .help(profile.isFavorite ? "取消收藏" : "收藏此配置")
+                    .disabled(!model.canEditProfileMetadata(profile.id))
                     Menu {
-                        Button("导出可迁移配置…") { Task { await model.exportProfile() } }
+                        Button("导出可迁移配置…") { Task { await model.exportProfile(for: profile.id) } }
                             .disabled(model.profileTransferInProgress || model.maintenanceInProgress)
-                        Button("导出路由预览…") { Task { await model.exportProfile(kind: .routePreview) } }
+                        Button("导出路由预览…") { Task { await model.exportProfile(kind: .routePreview, for: profile.id) } }
                             .disabled(model.profileTransferInProgress || model.maintenanceInProgress || (profile.mode == .chinaDirect && model.rules == nil))
                         Button("删除配置…", role: .destructive) {
                             confirmDelete = true
-                        }
+                        }.disabled(!model.canDeleteProfile(profile.id))
                     } label: {
                         Image(systemName: "ellipsis")
                             .frame(width: 22, height: 22)
@@ -1233,11 +1282,11 @@ struct ProfileDetail: View {
                     Button("保存更改") {
                         Task {
                             await model.updateMetadata(name: draftName, group: draftGroup,
-                                                       notes: draftNotes, favorite: draftFavorite)
+                                                       notes: draftNotes, favorite: profile.isFavorite, for: profile.id)
                         }
                     }
-                    .buttonStyle(ReferencePrimaryButton())
-                    Button(model.profileExportInProgress ? "导出中…" : "导出配置…") { Task { await model.exportProfile() } }
+                    .buttonStyle(ReferencePrimaryButton()).disabled(!model.canEditProfileMetadata(profile.id))
+                    Button(model.profileExportInProgress ? "导出中…" : "导出配置…") { Task { await model.exportProfile(for: profile.id) } }
                         .buttonStyle(ReferenceSecondaryButton())
                         .disabled(model.profileTransferInProgress || model.maintenanceInProgress)
                 }
@@ -1260,11 +1309,11 @@ struct ProfileDetail: View {
             }
             editorRow("类别") {
                 Menu {
-                    ForEach(["个人", "工作", "家庭", "其他"], id: \.self) { group in
+                    ForEach(ProfileLibraryQuery.groupChoices(model.profiles, current: draftGroup), id: \.self) { group in
                         Button(group) { draftGroup = group }
                     }
                     Divider()
-                    Button("自定义类别…") { editingCustomGroup = true }
+                    Button("自定义类别…") { customGroupDraft = draftGroup; editingCustomGroup = true }
                 } label: {
                     HStack {
                         Text(draftGroup.isEmpty ? "选择类别" : draftGroup)

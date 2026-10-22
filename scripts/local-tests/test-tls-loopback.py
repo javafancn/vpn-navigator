@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Disposable macOS runner only: real TLS/utun; no default routes or DNS pushes."""
 import hashlib
+import contextlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -28,6 +30,41 @@ def run(arguments, ok=True, timeout=90):
 def default_path():
     route = run(['/sbin/route', '-n', 'get', 'default']).stdout
     return tuple(line.strip() for line in route.splitlines() if line.strip().startswith(('gateway:', 'interface:')))
+
+
+@contextlib.contextmanager
+def scoped_fixture_routes(pairs):
+    """Fixed fixture ULA /128 routes only, scoped to the two owned test utuns.
+
+    Keep the kernel's unscoped local-address routes intact. Verify exact scoped
+    ownership before deletion; failed/ambiguous mutations fail the disposable
+    job rather than deleting a pre-existing route. Never changes a default.
+    """
+    installed = []
+    def inspect(target, interface):
+        return run(['/sbin/route', '-n', 'get', '-inet6', '-ifscope', interface, '-host', target], ok=False)
+    def owned(observed, target, interface):
+        fields = dict(line.strip().split(':', 1) for line in observed.stdout.splitlines() if ':' in line)
+        destination = fields.get('destination', '').strip().split('%')[0]
+        return observed.returncode == 0 and destination and ipaddress.IPv6Address(destination) == ipaddress.IPv6Address(target) and fields.get('interface', '').strip() == interface and 'IFSCOPE' in fields.get('flags', '')
+    try:
+        for target, interface in pairs:
+            assert sys.platform == 'darwin' and os.environ.get('GITHUB_ACTIONS') == 'true'
+            assert ipaddress.IPv6Address(target) in ipaddress.IPv6Network('fd42:766e:6176:1::/64')
+            assert interface.startswith('utun') and interface[4:].isdigit()
+            before = inspect(target, interface)
+            assert not owned(before, target, interface), 'Scoped fixture route already exists; refusing to replace it: ' + before.stdout
+            run(['sudo', '-n', '/sbin/route', '-n', 'add', '-inet6', '-ifscope', interface, '-host', target, '-interface', interface])
+            installed.append((target, interface))
+            observed = inspect(target, interface)
+            assert owned(observed, target, interface), 'Scoped fixture route was not observed exactly: ' + observed.stdout
+        yield
+    finally:
+        for target, interface in reversed(installed):
+            observed = inspect(target, interface)
+            assert owned(observed, target, interface), 'Scoped fixture ownership lost; retaining the route'
+            run(['sudo', '-n', '/sbin/route', '-n', 'delete', '-inet6', '-ifscope', interface, '-host', target])
+            assert not owned(inspect(target, interface), target, interface), 'Scoped fixture route was not removed'
 
 
 def main():
@@ -176,40 +213,44 @@ verb 3
         # Darwin bsd/netinet6/in6.h defines IPV6_BOUND_IF as 125; some Python
         # builds do not export the constant. Never binds a physical interface.
         bound_if = getattr(socket, 'IPV6_BOUND_IF', 125)
-        echo_errors = []
-        with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as echo, socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as sender:
-            echo.setsockopt(socket.IPPROTO_IPV6, bound_if, socket.if_nametoindex(server_tunnel))
-            sender.setsockopt(socket.IPPROTO_IPV6, bound_if, socket.if_nametoindex(client_tunnel))
-            echo.bind((server6, 0)); sender.bind((client6, 0))
-            echo.settimeout(5); sender.settimeout(5)
-            def echo_packets():
+        # Bound sockets still see local /128 routes on a same-host fixture.
+        # Add more specific scoped /128 entries for BOTH directions without
+        # replacing the unscoped routes that belong to the server/client.
+        with scoped_fixture_routes([(server6, client_tunnel), (client6, server_tunnel)]):
+            echo_errors = []
+            with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as echo, socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as sender:
+                echo.setsockopt(socket.IPPROTO_IPV6, bound_if, socket.if_nametoindex(server_tunnel))
+                sender.setsockopt(socket.IPPROTO_IPV6, bound_if, socket.if_nametoindex(client_tunnel))
+                echo.bind((server6, 0)); sender.bind((client6, 0))
+                echo.settimeout(5); sender.settimeout(5)
+                def echo_packets():
+                    try:
+                        for _ in range(3):
+                            packet, peer = echo.recvfrom(2048)
+                            echo.sendto(packet, peer)
+                    except OSError as error:
+                        echo_errors.append(type(error).__name__)
+                echo_thread = threading.Thread(target=echo_packets, daemon=True)
+                echo_thread.start()
+                time.sleep(1.2)  # Let the first management byte-count receipt settle.
+                before_data = json.loads(run([probe, '--traffic']).stdout)
                 try:
-                    for _ in range(3):
-                        packet, peer = echo.recvfrom(2048)
-                        echo.sendto(packet, peer)
-                except OSError as error:
-                    echo_errors.append(type(error).__name__)
-            echo_thread = threading.Thread(target=echo_packets, daemon=True)
-            echo_thread.start()
-            time.sleep(1.2)  # Let the first management byte-count receipt settle.
-            before_data = json.loads(run([probe, '--traffic']).stdout)
-            try:
-                for number in range(3):
-                    packet = bytes([number]) + os.urandom(1199)
-                    sender.sendto(packet, echo.getsockname())
-                    reply, _ = sender.recvfrom(2048)
-                    assert reply == packet, 'IPv6 UDP echo payload changed'
-            finally:
-                echo_thread.join(timeout=6)
-            assert not echo_errors and not echo_thread.is_alive(), 'Bound IPv6 UDP responder did not finish: ' + str(echo_errors)
+                    for number in range(3):
+                        packet = bytes([number]) + os.urandom(1199)
+                        sender.sendto(packet, echo.getsockname())
+                        reply, _ = sender.recvfrom(2048)
+                        assert reply == packet, 'IPv6 UDP echo payload changed'
+                finally:
+                    echo_thread.join(timeout=6)
+                assert not echo_errors and not echo_thread.is_alive(), 'Bound IPv6 UDP responder did not finish: ' + str(echo_errors)
+            for _ in range(30):
+                after_data = json.loads(run([probe, '--traffic']).stdout)
+                if all(after_data[key] - before_data[key] >= 3000 for key in ['sent', 'received']):
+                    break
+                time.sleep(0.2)
+            else:
+                raise AssertionError('IPv6 UDP echo did not traverse both encrypted data directions: ' + str(before_data) + ' -> ' + str(after_data))
         current_tunnel = client_tunnel
-        for _ in range(30):
-            after_data = json.loads(run([probe, '--traffic']).stdout)
-            if all(after_data[key] - before_data[key] >= 3000 for key in ['sent', 'received']):
-                break
-            time.sleep(0.2)
-        else:
-            raise AssertionError('IPv6 UDP echo did not traverse both encrypted data directions: ' + str(before_data) + ' -> ' + str(after_data))
         kernel = run(['sudo', '-n', 'env', 'GITHUB_ACTIONS=true', PAYLOAD / 'VPNNavigatorHelper', '--self-test-ipv6-kernel', current_tunnel])
         print(kernel.stdout, end='')
         run([probe, '--disconnect'])

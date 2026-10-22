@@ -33,38 +33,34 @@ def default_path():
 
 
 @contextlib.contextmanager
-def scoped_fixture_routes(pairs):
-    """Fixed fixture ULA /128 routes only, scoped to the two owned test utuns.
+def fixture_link_local_aliases(pairs):
+    """Use interface-scoped IPv6 addresses; never replaces a local host route.
 
-    Keep the kernel's unscoped local-address routes intact. Verify exact scoped
-    ownership before deletion; failed/ambiguous mutations fail the disposable
-    job rather than deleting a pre-existing route. Never changes a default.
+    Same-host global/ULA destinations are always LOCAL/lo0 on Darwin, even
+    with IPV6_BOUND_IF or an explicit scoped route. Link-local scope gives
+    each utun an independent address zone, so the packets traverse OpenVPN.
     """
     installed = []
-    def inspect(target, interface):
-        return run(['/sbin/route', '-n', 'get', '-inet6', '-ifscope', interface, '-host', target], ok=False)
-    def owned(observed, target, interface):
-        fields = dict(line.strip().split(':', 1) for line in observed.stdout.splitlines() if ':' in line)
-        destination = fields.get('destination', '').strip().split('%')[0]
-        return observed.returncode == 0 and destination and ipaddress.IPv6Address(destination) == ipaddress.IPv6Address(target) and fields.get('interface', '').strip() == interface and 'IFSCOPE' in fields.get('flags', '')
+    def present(address, interface):
+        observed = run(['/sbin/ifconfig', interface]).stdout
+        return any(line.split()[:1] == ['inet6'] and
+                   ipaddress.IPv6Address(line.split()[1].split('%')[0]) == ipaddress.IPv6Address(address)
+                   for line in observed.splitlines())
     try:
-        for target, interface in pairs:
+        for address, interface in pairs:
             assert sys.platform == 'darwin' and os.environ.get('GITHUB_ACTIONS') == 'true'
-            assert ipaddress.IPv6Address(target) in ipaddress.IPv6Network('fd42:766e:6176:1::/64')
-            assert interface.startswith('utun') and interface[4:].isdigit()
-            before = inspect(target, interface)
-            assert not owned(before, target, interface), 'Scoped fixture route already exists; refusing to replace it: ' + before.stdout
-            run(['sudo', '-n', '/sbin/route', '-n', 'add', '-inet6', '-ifscope', interface, '-host', target, '-interface', interface])
-            installed.append((target, interface))
-            observed = inspect(target, interface)
-            assert owned(observed, target, interface), 'Scoped fixture route was not observed exactly: ' + observed.stdout
+            assert address in ['fe80::1', 'fe80::2'] and interface.startswith('utun') and interface[4:].isdigit()
+            assert not present(address, interface), 'Fixture alias already exists; refusing to replace it'
+            run(['sudo', '-n', '/sbin/ifconfig', interface, 'inet6', address + '%' + interface, 'prefixlen', '64', 'alias'])
+            installed.append((address, interface))
+            assert present(address, interface), 'Fixture link-local alias was not observed'
+        time.sleep(1.2)
         yield
     finally:
-        for target, interface in reversed(installed):
-            observed = inspect(target, interface)
-            assert owned(observed, target, interface), 'Scoped fixture ownership lost; retaining the route'
-            run(['sudo', '-n', '/sbin/route', '-n', 'delete', '-inet6', '-ifscope', interface, '-host', target])
-            assert not owned(inspect(target, interface), target, interface), 'Scoped fixture route was not removed'
+        for address, interface in reversed(installed):
+            assert present(address, interface), 'Fixture alias ownership changed; retaining evidence'
+            run(['sudo', '-n', '/sbin/ifconfig', interface, 'inet6', address + '%' + interface, '-alias'])
+            assert not present(address, interface), 'Fixture link-local alias was not removed'
 
 
 def main():
@@ -132,6 +128,10 @@ def main():
         with socket.socket() as port_reservation:
             port_reservation.bind(('127.0.0.1', 0))
             port = port_reservation.getsockname()[1]
+        client_configs = folder / 'clients'; client_configs.mkdir(mode=0o700)
+        # Exact synthetic certificate identity. Authorize only this fixture's
+        # link-local data source in OpenVPN's internal per-client IPv6 table.
+        (client_configs / 'vpnnav-ci-client').write_text('iroute-ipv6 fe80::2/128\n')
         config = folder / 'server.conf'
         config.write_text(f"""dev tun
 dev-node utun
@@ -141,6 +141,7 @@ port {port}
 topology subnet
 server 198.18.254.0 255.255.255.0
 server-ipv6 fd42:766e:6176:1::/64
+client-config-dir {client_configs}
 ca {folder}/ca.crt
 cert {folder}/server.crt
 key {folder}/server.key
@@ -206,22 +207,22 @@ verb 3
                 client_tunnel = current_tunnel
         assert 'client_tunnel' in locals(), 'Client fixture utun not found'
         assert client_tunnel.startswith('utun') and client_tunnel[4:].isdigit()
-        client6 = next(address for address in interface_addresses[client_tunnel] if address.startswith('fd42:766e:6176:1:'))
-        server6 = 'fd42:766e:6176:1::1'
-        server_tunnel = next(name for name, addresses in interface_addresses.items() if server6 in addresses)
+        assert any(address.startswith('fd42:766e:6176:1:') for address in interface_addresses[client_tunnel])
+        server_tunnel = next(name for name, addresses in interface_addresses.items() if 'fd42:766e:6176:1::1' in addresses)
+        client6, server6 = 'fe80::2', 'fe80::1'
         assert server_tunnel != client_tunnel and server_tunnel.startswith('utun') and server_tunnel[4:].isdigit()
         # Darwin bsd/netinet6/in6.h defines IPV6_BOUND_IF as 125; some Python
         # builds do not export the constant. Never binds a physical interface.
         bound_if = getattr(socket, 'IPV6_BOUND_IF', 125)
-        # Bound sockets still see local /128 routes on a same-host fixture.
-        # Add more specific scoped /128 entries for BOTH directions without
-        # replacing the unscoped routes that belong to the server/client.
-        with scoped_fixture_routes([(server6, client_tunnel), (client6, server_tunnel)]):
+        # Unlike same-host ULA addresses, link-local peer addresses belong to
+        # different interface zones. Preserve all unscoped LOCAL/lo0 routes.
+        with fixture_link_local_aliases([(server6, server_tunnel), (client6, client_tunnel)]):
             echo_errors = []
             with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as echo, socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as sender:
                 echo.setsockopt(socket.IPPROTO_IPV6, bound_if, socket.if_nametoindex(server_tunnel))
                 sender.setsockopt(socket.IPPROTO_IPV6, bound_if, socket.if_nametoindex(client_tunnel))
-                echo.bind((server6, 0)); sender.bind((client6, 0))
+                server_scope, client_scope = socket.if_nametoindex(server_tunnel), socket.if_nametoindex(client_tunnel)
+                echo.bind((server6, 0, 0, server_scope)); sender.bind((client6, 0, 0, client_scope))
                 echo.settimeout(5); sender.settimeout(5)
                 def echo_packets():
                     try:
@@ -237,9 +238,12 @@ verb 3
                 try:
                     for number in range(3):
                         packet = bytes([number]) + os.urandom(1199)
-                        sender.sendto(packet, echo.getsockname())
+                        sender.sendto(packet, (server6, echo.getsockname()[1], 0, client_scope))
                         reply, _ = sender.recvfrom(2048)
                         assert reply == packet, 'IPv6 UDP echo payload changed'
+                except OSError as error:
+                    after_error = json.loads(run([probe, '--traffic']).stdout)
+                    raise AssertionError('Scoped IPv6 UDP echo failed: ' + type(error).__name__ + '; counters ' + str(before_data) + ' -> ' + str(after_error) + '; responder ' + str(echo_errors)) from error
                 finally:
                     echo_thread.join(timeout=6)
                 assert not echo_errors and not echo_thread.is_alive(), 'Bound IPv6 UDP responder did not finish: ' + str(echo_errors)

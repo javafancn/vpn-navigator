@@ -234,8 +234,13 @@ final class AppModel: ObservableObject {
         !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress &&
         !busy && !connecting && !stopping
     }
+    var canChooseProfileFiles: Bool {
+        !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress &&
+        !showingImportReport && !busy && !connecting && !stopping
+    }
     func importFiles(_ urls: [URL], presentReport: Bool = true) async {
-        guard !maintenanceInProgress, !profileTransferInProgress, !busy, !connecting, !stopping else {
+        guard !reviewingIncomingProfiles, !maintenanceInProgress, !backgroundServicesBusy,
+              !profileTransferInProgress, !busy, !connecting, !stopping else {
             message = "请等待当前操作完成后再导入配置。"; return
         }
         guard !urls.isEmpty, urls.count <= ProfileBatchImporter.maximumFiles else {

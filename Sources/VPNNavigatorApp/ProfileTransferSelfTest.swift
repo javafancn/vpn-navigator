@@ -62,6 +62,11 @@ enum ProfileTransferSelfTest {
         incoming.showingAccountCredentials = false; incoming.presentIncomingProfiles()
         guard incoming.reviewingIncomingProfiles, incoming.profiles.isEmpty,
               !FileManager.default.fileExists(atPath: privateStore.path) else { throw Failure.check }
+        await incoming.importFiles([first])
+        guard !incoming.canChooseProfileFiles, incoming.reviewingIncomingProfiles,
+              incoming.incomingProfiles.urls.count == 3,
+              !FileManager.default.fileExists(atPath: privateStore.path) else { throw Failure.check }
+        incoming.message = nil
         incoming.clearImportReport()
         guard incoming.incomingProfiles.isEmpty, !FileManager.default.fileExists(atPath: privateStore.path) else { throw Failure.check }
         lifecycle.application(NSApplication.shared, open: [first, bad, second, first, root.appendingPathComponent("notes.txt")])

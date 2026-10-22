@@ -57,7 +57,9 @@ struct MainView: View {
                     Group {
                         switch tab {
                         case .overview: ConnectionOverview()
-                        case .profiles: ProfileLibrary(onImport: { model.profilePickerPresented = true })
+                        case .profiles: ProfileLibrary(onImport: {
+                            if model.canChooseProfileFiles { model.profilePickerPresented = true }
+                        })
                         case .routing: RoutingWorkspace()
                         case .diagnostics: NetworkDiagnosticsView()
                         case .settings: SystemSettingsPane()
@@ -213,6 +215,7 @@ struct MainView: View {
                 }
                 .buttonStyle(ReferenceSecondaryButton())
                 .keyboardShortcut("o", modifiers: .command)
+                .disabled(!model.canChooseProfileFiles)
                 Text(model.profileDropLoading ? "正在接收文件…" : "可将 .ovpn 文件拖入窗口")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                 if !model.incomingProfiles.isEmpty && !model.reviewingIncomingProfiles {

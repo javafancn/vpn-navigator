@@ -49,7 +49,7 @@ jobs:
           safe="$RUNNER_TEMP/dns-safe.env"
           bad="$RUNNER_TEMP/dns-bad.env"
           sentinel="$RUNNER_TEMP/dns-injection-sentinel"
-          printf 'dev=utun4\nscript_type=dns-up\ndns_server_1_address_1=10.8.0.1\n' > "$safe"
+          printf 'dev=utun4\nscript_type=dns-up\ndns_server_1_address_1=10.8.0.1\ndns_server_1_address_2=fd42:766e:6176:1::1\n' > "$safe"
           chmod 600 "$safe"
           env dns_vars_file="$safe" /bin/bash "$hook" --check-dns-vars
           printf 'dev=utun4\nscript_type=dns-up\ndns_search_domain_1=$(touch /tmp/unsafe-dns)\n' > "$bad"

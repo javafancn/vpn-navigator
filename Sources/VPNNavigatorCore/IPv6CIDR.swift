@@ -3,7 +3,7 @@ import Darwin
 
 /// IPv6 address and prefix handling, independent of the privileged route
 /// executor. Network masks are canonicalized to prevent duplicate prefixes.
-public struct IPv6CIDR: Hashable, Comparable, Sendable, CustomStringConvertible {
+public struct IPv6CIDR: Hashable, Comparable, Codable, Sendable, CustomStringConvertible {
     public let network: [UInt8]
     public let prefix: Int
 
@@ -46,7 +46,7 @@ public struct IPv6CIDR: Hashable, Comparable, Sendable, CustomStringConvertible 
             lhs.network.lexicographicallyPrecedes(rhs.network)
     }
 
-    private static func parseAddress(_ input: String) -> [UInt8]? {
+    public static func parseAddress(_ input: String) -> [UInt8]? {
         // Reject scoped link-local addresses: interface scopes are not a part
         // of portable route rules and must never be accepted from a remote feed.
         guard !input.contains("%"), !input.isEmpty else { return nil }
@@ -54,6 +54,23 @@ public struct IPv6CIDR: Hashable, Comparable, Sendable, CustomStringConvertible 
         let status = input.withCString { inet_pton(AF_INET6, $0, &addr) }
         guard status == 1 else { return nil }
         return withUnsafeBytes(of: &addr) { Array($0) }
+    }
+
+    public static func addressString(_ bytes: [UInt8]) -> String {
+        guard bytes.count == 16 else { return "" }
+        var addr = in6_addr()
+        withUnsafeMutableBytes(of: &addr) { $0.copyBytes(from: bytes) }
+        var result = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+        return withUnsafePointer(to: &addr) { inet_ntop(AF_INET6, $0, &result, socklen_t(result.count)) } == nil ? "" : String(cString: result)
+    }
+    public init(from decoder: Decoder) throws { try self.init(decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(description) }
+    public var address: String { Self.addressString(network) }
+    public var netmask: String { Self.addressString(Self.mask([UInt8](repeating: 255, count: 16), bits: prefix)) }
+    public func children() throws -> [Self] {
+        guard prefix < 128 else { return [] }
+        var upper = network; upper[prefix / 8] |= UInt8(1 << (7 - prefix % 8))
+        return try [Self(address + "/\(prefix + 1)"), Self(Self.addressString(upper) + "/\(prefix + 1)")]
     }
 
     private static func mask(_ bytes: [UInt8], bits: Int) -> [UInt8] {
@@ -71,8 +88,7 @@ public enum IPv6RuleError: Error, Equatable {
     case invalid(String), specialPurpose(String), tooLarge, empty
 }
 
-/// Explicitly untrusted feed parser. Loading this data does NOT activate
-/// IPv6 OS routes and does not imply leak-free IPv6 tunnel support.
+/// Untrusted registry-feed parser. Parsing or caching never changes OS routes.
 public struct IPv6RuleSet: Sendable {
     public let routes: [IPv6CIDR]
 

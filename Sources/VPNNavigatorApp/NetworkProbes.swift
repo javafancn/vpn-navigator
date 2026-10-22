@@ -14,8 +14,8 @@ struct TCPProbeResult: Sendable {
 }
 enum NetworkProbes {
     static func localSnapshot(target: String) async throws -> LocalNetworkSnapshot {
-        guard IPv4CIDR.parseAddress(target) != nil else { throw ProbeError.invalidTarget }
-        async let route = BoundedProbeCommand.run("/sbin/route", ["-n", "get", target])
+        guard IPAddress.canonical(target) != nil else { throw ProbeError.invalidTarget }
+        async let route = BoundedProbeCommand.run("/sbin/route", ["-n", "get"] + (IPAddress.isIPv6(target) ? ["-inet6"] : []) + [IPAddress.canonical(target)!])
         async let ipv6 = BoundedProbeCommand.run("/usr/sbin/netstat", ["-rn", "-f", "inet6"])
         async let defaultRoute = BoundedProbeCommand.run("/sbin/route", ["-n", "get", "default"])
         async let dns = BoundedProbeCommand.run("/usr/sbin/scutil", ["--dns"])
@@ -38,17 +38,17 @@ enum NetworkProbes {
         return addresses.joined(separator: "\n")
     }
     static func ping(_ address: String) async throws -> PingSummary {
-        guard IPv4CIDR.parseAddress(address) != nil else { throw ProbeError.invalidTarget }
-        let output = try await BoundedProbeCommand.run("/sbin/ping", ["-n", "-c", "3", "-W", "1000", address], timeout: 8, allowNonzero: true)
+        guard IPAddress.canonical(address) != nil else { throw ProbeError.invalidTarget }
+        let output = try await BoundedProbeCommand.run(IPAddress.isIPv6(address) ? "/sbin/ping6" : "/sbin/ping", ["-n", "-c", "3", "-W", "1000", address], timeout: 8, allowNonzero: true)
         guard let result = PingSummary.parse(output) else { throw ProbeError.noPingAnswer }
         return result
     }
     static func trace(_ address: String) async throws -> String {
-        guard IPv4CIDR.parseAddress(address) != nil else { throw ProbeError.invalidTarget }
-        return try await BoundedProbeCommand.run("/usr/sbin/traceroute", ["-n", "-m", "8", "-q", "1", "-w", "1", address], timeout: 12, allowNonzero: true)
+        guard IPAddress.canonical(address) != nil else { throw ProbeError.invalidTarget }
+        return try await BoundedProbeCommand.run(IPAddress.isIPv6(address) ? "/usr/sbin/traceroute6" : "/usr/sbin/traceroute", ["-n", "-m", "8", "-q", "1", "-w", "1", address], timeout: 12, allowNonzero: true)
     }
     static func tcp(_ address: String, port: UInt16) async throws -> TCPProbeResult {
-        guard IPv4CIDR.parseAddress(address) != nil, port > 0 else { throw ProbeError.invalidTarget }
+        guard IPAddress.canonical(address) != nil, port > 0 else { throw ProbeError.invalidTarget }
         let request = TCPProbeRequest()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -104,7 +104,7 @@ enum ProbeError: Error, LocalizedError {
     case invalidTarget, timedOut, commandFailed, noDNSAnswer, noPingAnswer
     var errorDescription: String? {
         switch self {
-        case .invalidTarget: return "请输入有效的 IPv4 地址、端口或域名。"
+        case .invalidTarget: return "请输入有效的 IPv4／IPv6 地址、端口或域名。"
         case .timedOut: return "探测超时，可更换目标后重试。"
         case .commandFailed: return "系统探测未成功，请检查网络与诊断目标。"
         case .noDNSAnswer: return "系统解析器未返回地址。"
@@ -136,7 +136,7 @@ private final class ProbeCommandCancellation: @unchecked Sendable {
 }
 enum BoundedProbeCommand {
     static func run(_ executable: String, _ arguments: [String], timeout: Int = 6, allowNonzero: Bool = false) async throws -> String {
-        let allowed: Set<String> = ["/sbin/route", "/usr/sbin/netstat", "/usr/sbin/scutil", "/usr/bin/dscacheutil", "/sbin/ping", "/usr/sbin/traceroute"]
+        let allowed: Set<String> = ["/sbin/route", "/usr/sbin/netstat", "/usr/sbin/scutil", "/usr/bin/dscacheutil", "/sbin/ping", "/sbin/ping6", "/usr/sbin/traceroute", "/usr/sbin/traceroute6"]
         guard allowed.contains(executable) else { throw ProbeError.commandFailed }
         let cancellation = ProbeCommandCancellation()
         return try await withTaskCancellationHandler {

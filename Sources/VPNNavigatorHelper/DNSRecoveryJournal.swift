@@ -22,7 +22,8 @@ final class DNSRecoveryJournal {
     func begin(serviceOverride: String? = nil) throws {
         guard !exists, let store else { throw DNSJournalError.unavailable }
         let global = SCDynamicStoreCopyValue(store, "State:/Network/Global/IPv4" as CFString) as? [String: Any]
-        guard let service = serviceOverride ?? (global?["PrimaryService"] as? String),
+        let global6 = SCDynamicStoreCopyValue(store, "State:/Network/Global/IPv6" as CFString) as? [String: Any]
+        guard let service = serviceOverride ?? (global?["PrimaryService"] as? String) ?? (global6?["PrimaryService"] as? String),
               DNSRecoveryPolicy.validServiceID(service) else { throw DNSJournalError.unavailable }
         var keys = [primaryKey(service)]
         let owned = SCDynamicStoreCopyKeyList(store, "State:/Network/Service/openvpn-utun[0-9]+/(DNS|DnsBackup)" as CFString) as? [String] ?? []

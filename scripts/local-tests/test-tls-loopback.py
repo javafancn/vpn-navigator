@@ -42,6 +42,9 @@ def main():
     log = None
     approved = False
     before_route = default_path()
+    transport_host = "127.0.0.1"
+    before6 = run(["/usr/sbin/netstat", "-rn", "-f", "inet6"]).stdout
+    defaults6 = lambda text: [line.split() for line in text.splitlines() if line.split()[:1] == ["default"]]
     def stop_server():
         nonlocal server, log
         if server is not None and server.poll() is None:
@@ -63,7 +66,7 @@ def main():
         for _ in range(60):
             assert server.poll() is None, 'TLS fixture server exited'
             try:
-                with socket.create_connection(('127.0.0.1', port), timeout=0.2):
+                with socket.create_connection((transport_host, port), timeout=0.2):
                     return
             except OSError:
                 time.sleep(0.1)
@@ -99,6 +102,7 @@ local 127.0.0.1
 port {port}
 topology subnet
 server 198.18.254.0 255.255.255.0
+server-ipv6 fd42:766e:6176:1::/64
 ca {folder}/ca.crt
 cert {folder}/server.crt
 key {folder}/server.key
@@ -109,7 +113,8 @@ data-ciphers AES-256-GCM:AES-128-GCM
 script-security 1
 verb 3
 """)
-        profile = f"""client
+        profile = f"""# VPNNAV_EXPECT_DUAL_STACK
+client
 dev tun
 proto tcp-client
 remote 127.0.0.1 {port}
@@ -146,8 +151,47 @@ verb 3
         result = run([probe, valid, invalid], ok=False, timeout=120)
         print(result.stdout, end='')
         assert result.returncode == 0, 'Installed helper TLS fixture failed: ' + result.stderr
+        # Exercise actual IPv6 data and the journal executor without changing defaults.
+        run([probe, '--connect-only', valid])
+        ping6 = run(['/sbin/ping6', '-n', '-c', '2', 'fd42:766e:6176:1::1'], ok=False, timeout=15)
+        assert ping6.returncode == 0, 'IPv6 tunnel data did not reach fixture server: ' + ping6.stdout + ping6.stderr
+        current_tunnel = None
+        for line in run(['/sbin/ifconfig', '-a']).stdout.splitlines():
+            if line and not line[0].isspace():
+                current_tunnel = line.split(':', 1)[0]
+            if 'inet 198.18.254.2 ' in line:
+                break
+        else:
+            raise AssertionError('Client fixture utun not found')
+        kernel = run(['sudo', '-n', 'env', 'GITHUB_ACTIONS=true', PAYLOAD / 'VPNNavigatorHelper', '--self-test-ipv6-kernel', current_tunnel])
+        print(kernel.stdout, end='')
+        run([probe, '--disconnect'])
+        print('PASS: real IPv6 echo traffic passes through the negotiated TLS/utun tunnel.')
         log.flush()
         assert 'unknown ca' in (folder / 'server.log').read_text().lower(), 'TLS server did not observe the controlled wrong-CA rejection'
+        # IPv6 transport and IPv6-only payload negotiate through the installed helper too.
+        saved_config, saved_port = config.read_text(), port
+        stop_server()
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as reservation6:
+            reservation6.bind(('::1', 0)); port = reservation6.getsockname()[1]
+        transport_host = '::1'
+        config6 = saved_config.replace('proto tcp4-server', 'proto tcp6-server').replace('local 127.0.0.1', 'local ::1').replace(f'port {saved_port}\n', f'port {port}\n')
+        config.write_text(config6)
+        text6 = profile.replace('proto tcp-client', 'proto tcp6-client').replace(f'remote 127.0.0.1 {saved_port}', f'remote ::1 {port}')
+        valid6, invalid6 = folder / 'ipv6-transport.ovpn', folder / 'ipv6-transport-wrong.ovpn'
+        valid6.write_text(text6); invalid6.write_text(text6.replace((folder / 'ca.crt').read_text(), (folder / 'wrong-ca.crt').read_text()))
+        valid6.chmod(0o600); invalid6.chmod(0o600)
+        start_server()
+        observed6 = run([probe, valid6, invalid6], timeout=120); print(observed6.stdout, end='')
+        print('PASS: IPv6 TCP transport negotiates a dual-stack tunnel through the installed helper.')
+        stop_server()
+        config.write_text(config6.replace('server 198.18.254.0 255.255.255.0', 'mode server\ntls-server'))
+        only6 = text6.replace('VPNNAV_EXPECT_DUAL_STACK', 'VPNNAV_EXPECT_IPV6_ONLY')
+        valid6.write_text(only6); invalid6.write_text(only6.replace((folder / 'ca.crt').read_text(), (folder / 'wrong-ca.crt').read_text()))
+        start_server()
+        observed6 = run([probe, valid6, invalid6], timeout=120); print(observed6.stdout, end='')
+        print('PASS: IPv6-only tunnel addresses are confirmed and DNS ownership is restored without an IPv4 tunnel address.')
+        stop_server(); config.write_text(saved_config); port = saved_port; transport_host = '127.0.0.1'; start_server()
         # Prove parent loss does not leave the privileged VPN engine alive.
         # launchctl addresses the exact daemon job, without a numeric PID kill.
         run([probe, '--connect-only', valid])
@@ -176,6 +220,7 @@ verb 3
         exercise_auth(folder, profile, ssl, probe, run, start_server, stop_server, config)
         for name in ['active.ovpn', 'routes.journal', 'dns.journal', 'pf-guard.json', 'openvpn-child.json']:
             assert run(['sudo', '/bin/test', '-e', '/var/run/vpn-navigator/' + name], ok=False).returncode != 0, 'Unresolved owned session: ' + name
+        assert defaults6(run(['/usr/sbin/netstat', '-rn', '-f', 'inet6']).stdout) == defaults6(before6), 'IPv6 fixture changed a default route'
         assert default_path() == before_route, 'Loopback TLS fixture changed the default network path'
     finally:
         if approved:

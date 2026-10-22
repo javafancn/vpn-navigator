@@ -127,7 +127,8 @@ struct MainView: View {
                     model.selectedID = model.profiles[0].id
                     if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-custom-routes-snapshot") { model.customRuleEditorProfile = model.profiles[0] }
                     else { model.showingRouteExplanation = true }
-                } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-troubleshooting-snapshot") { model.showingTroubleshooting = true }
+                } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-smart-connection-snapshot") { model.showingSmartConnection = true }
+                else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-troubleshooting-snapshot") { model.showingTroubleshooting = true }
             }
             if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-profile-recovery-snapshot") {
                 Task { await model.showProfileIndexRecoverySnapshot() }
@@ -171,6 +172,7 @@ struct MainView: View {
         }
         .sheet(isPresented: $model.showingMaintenance) { MaintenanceAssistantView().environmentObject(model) }
         .sheet(isPresented: $model.showingSetup) { SetupAssistantView().environmentObject(model) }
+        .sheet(isPresented: $model.showingSmartConnection) { SmartConnectionSettingsView().environmentObject(model) }
         .sheet(isPresented: $model.showingPreferences) { ClientPreferencesView().environmentObject(model) }
         .sheet(isPresented: $model.showingProfileIndexRecovery) { ProfileIndexRecoveryView().environmentObject(model) }
         .sheet(item: $model.customRuleEditorProfile) { profile in CustomRoutingEditorView(profile: profile).environmentObject(model) }
@@ -769,8 +771,8 @@ private struct RoutingWorkspace: View {
     private func subtitle(for mode: RoutingMode) -> String {
         switch mode {
         case .original: return "遵循配置文件及服务器下发的路由"
-        case .fullVPN: return "IPv4 默认流量走 VPN，局域网保持直连"
-        case .chinaDirect: return "中国 IPv4 直连，其他默认流量走 VPN"
+        case .fullVPN: return "服务器承载的 IPv4／IPv6 默认流量走 VPN"
+        case .chinaDirect: return "中国 IPv4／IPv6 直连，其余默认流量走 VPN"
         }
     }
 
@@ -778,7 +780,7 @@ private struct RoutingWorkspace: View {
         GeometryReader { geometry in
         ScrollView {
         VStack(alignment: .leading, spacing: 14) {
-            WorkspaceHeading(title: "路由与规则", subtitle: "管理 VPN 路由模式与中国 IPv4 规则", symbol: "point.3.connected.trianglepath.dotted")
+            WorkspaceHeading(title: "路由与规则", subtitle: "管理双栈 VPN 路由、国内规则和自定义例外", symbol: "point.3.connected.trianglepath.dotted")
             HStack(spacing: 8) {
                 Image(systemName: "doc.text").foregroundStyle(GlassPalette.blue)
                 Text("当前配置").foregroundStyle(.secondary)
@@ -796,7 +798,7 @@ private struct RoutingWorkspace: View {
                 Spacer(minLength: 0)
             }.font(.system(size: 13))
             if model.connected, let count = model.activeCustomRuleCount {
-                Text("助手核验的本次自定义规则：\(count) 条；编辑已连接配置需先断开。")
+                Text((model.activeIPStack?.title ?? "地址族待核验") + " · 本次自定义规则：\(count) 条；编辑该配置需先断开。")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             HStack(alignment: .top, spacing: 14) {
@@ -849,18 +851,18 @@ private struct RoutingWorkspace: View {
                         GlassIcon(symbol: "shield.lefthalf.filled", size: 44)
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Text("IPv6 规则（预览）").font(.system(size: 16, weight: .semibold))
+                                Text("中国 IPv6 规则").font(.system(size: 16, weight: .semibold))
                                 Spacer(minLength: 0)
-                                Text("预览").font(.system(size: 11)).foregroundStyle(.secondary)
+                                Text("APNIC").font(.system(size: 11)).foregroundStyle(.secondary)
                                     .padding(.horizontal, 8).padding(.vertical, 3)
                                     .background(Color.gray.opacity(0.09), in: Capsule())
                             }
-                            Text(model.ipv6Preview.map { "\($0.routes.count) 个 APNIC 前缀 · 仅供查看" } ?? "仅用于查看，不修改系统 IPv6 路由。")
+                            Text(model.ipv6Preview.map { "\($0.routes.count) 条注册归属前缀 · 连接时应用" } ?? "双栈规则模式连接前请先更新。")
                                 .font(.system(size: 12)).foregroundStyle(.secondary)
                         }
                         Button { Task { await model.updateIPv6Preview() } } label: {
                             Image(systemName: "arrow.clockwise").foregroundStyle(GlassPalette.blue)
-                        }.buttonStyle(.plain).disabled(model.busy).help("刷新 IPv6 预览")
+                        }.buttonStyle(.plain).disabled(model.busy).help("更新 IPv6 分流规则")
                     }
                     .padding(16)
                     .frame(height: 100)
@@ -1010,6 +1012,11 @@ struct SystemSettingsPane: View {
 
                 settingsSection("应用")
                 VStack(spacing: 0) {
+                settingsRow("智能连接与状态通知",
+                    subtitle: model.smartConnection.status,
+                    symbol: "bolt.shield") {
+                    Button("配置…") { model.quickAccess.openMainWindow(); model.showingSmartConnection = true }.buttonStyle(ReferenceSecondaryButton())
+                }
                 settingsRow("应用更新",
                     subtitle: "当前版本：\(version) (Build \(build))",
                     symbol: "arrow.triangle.2.circlepath") {
@@ -1042,7 +1049,7 @@ struct SystemSettingsPane: View {
                     Menu {
                         Text("macOS 13+")
                         Text("PF 断线保护为实验性功能")
-                        Text("IPv6 分流尚未实现")
+                        Text("支持 IPv4／IPv6 分流；需服务器提供对应隧道")
                     } label: {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 16, weight: .semibold))
@@ -1462,7 +1469,7 @@ struct ProfileDetail: View {
             if model.connected, model.activeProfileID == profile.id {
                 Text(model.routingModeStatus).font(.system(size: 12)).foregroundStyle(.secondary)
             }
-            Text("规则路由使用中国 IPv4 网段。规则与全局可在连接中切换；原始配置需先断开。IPv6 地区分流未提供。")
+            Text("规则路由使用中国 IPv4 及 APNIC 中国 IPv6 注册前缀。全局与规则可在线切换；IPv6 需服务器分配隧道地址及有效规则缓存。")
                 .font(.system(size: 14)).foregroundStyle(.secondary)
         }
         .padding(17)

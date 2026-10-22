@@ -13,7 +13,7 @@ public enum ProfileSafety {
         "keepalive", "ping", "ping-restart", "tun-mtu", "mssfix", "sndbuf",
         "rcvbuf", "float", "verify-x509-name", "auth-retry", "tls-timeout",
         "remote-random-hostname", "topology", "pull", "allow-compression", "static-challenge",
-        "redirect-gateway", "route", "route-ipv6", "dhcp-option", "dns"
+        "redirect-gateway", "route", "route-ipv6", "dhcp-option", "dns", "ifconfig-ipv6"
     ]
     private static let inlineTags: Set<String> = [
         "ca", "cert", "key", "tls-auth", "tls-crypt", "tls-crypt-v2", "pkcs12"
@@ -84,10 +84,15 @@ public enum ProfileSafety {
                     throw ProfileValidationError.unsupported(offset + 1, line)
                 }
             case "redirect-gateway":
-                let safeFlags: Set<String> = ["def1", "bypass-dhcp", "bypass-dns"]
+                let safeFlags: Set<String> = ["def1", "bypass-dhcp", "bypass-dns", "ipv6", "!ipv4"]
                 guard tokens.dropFirst().allSatisfy({ safeFlags.contains($0) }) else {
                     throw ProfileValidationError.unsupported(offset + 1, line)
                 }
+            case "ifconfig-ipv6":
+                guard tokens.count == 3, (try? IPv6CIDR(tokens[1])) != nil, IPAddress.isIPv6(tokens[2]) else { throw ProfileValidationError.invalidLine(offset + 1) }
+            case "route-ipv6":
+                guard (2...4).contains(tokens.count), (try? IPv6CIDR(tokens[1])) != nil,
+                      tokens.count < 3 || IPAddress.isIPv6(tokens[2]), tokens.count < 4 || UInt32(tokens[3]) != nil else { throw ProfileValidationError.invalidLine(offset + 1) }
             case "route":
                 guard (3...5).contains(tokens.count),
                       IPv4CIDR.parseAddress(tokens[1]) != nil,

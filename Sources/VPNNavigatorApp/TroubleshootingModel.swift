@@ -55,10 +55,10 @@ final class TroubleshootingModel: ObservableObject {
     }
     func start(model: AppModel, target: String, port: UInt16, hostname: String, timeout: UInt64 = 30_000_000_000) {
         cancel(); checks = []; stale = false
-        guard let address = IPv4CIDR.parseAddress(target), port > 0, DiagnosticTargetPolicy.validHostname(hostname) else {
-            status = "请输入有效的 IPv4、端口和域名。"; return
+        guard let address = IPAddress.canonical(target), port > 0, DiagnosticTargetPolicy.validHostname(hostname) else {
+            status = "请输入有效的 IPv4／IPv6、端口和域名。"; return
         }
-        let target = IPv4CIDR.parseAddressString(address)
+        let target = address
         let token = UUID(); generation = token; running = true; status = "正在核验助手与配置…"
         let profiles = model.profiles, selected = model.selected, countryCount = model.rules?.routes.count ?? 0
         deadline = Task { [weak self] in
@@ -91,7 +91,9 @@ final class TroubleshootingModel: ObservableObject {
                 checks.append(.init("local", "本机网络状态", .info,
                     "目标接口：\(local.interface.isEmpty ? "未知" : local.interface)；系统解析器：\(local.health.resolverCount) 个。"))
                 let safety = local.health.ipv6Safety
-                if safety == .noDefaultRoute { checks.append(.init("ipv6", "未发现 IPv6 默认路由", .info, "只代表当前系统路由表采样。")) }
+                if report?.ipStack == .dual || report?.ipStack == .ipv6 {
+                    checks.append(.init("ipv6", "助手已建立 IPv6 路由", .info, "当前连接包含 IPv6 隧道；实际目标路径仍需下面的路由核验。"))
+                } else if safety == .noDefaultRoute { checks.append(.init("ipv6", "未发现 IPv6 默认路由", .info, "只代表当前系统路由表采样。")) }
                 else if report?.firewallActive == true { checks.append(.init("ipv6", "助手报告保护已启用", .info, "IPv6 物理出口阻断仍需实际流量验收，此检查不提供无泄漏证明。")) }
                 else { checks.append(.init("ipv6", "IPv6 路径需要留意", .warning, "存在 IPv6 默认路由或无法确定其归属。", "受管 IPv4 模式要求核验 IPv6 条件；查看路由与连接保护说明。")) }
             } catch {

@@ -10,14 +10,15 @@ enum KeychainVault {
         let username: String
         let password: String
     }
-    static func load(id: UUID) -> Credentials? {
-        let query: [String: Any] = [
+    static func load(id: UUID, allowInteraction: Bool = true) -> Credentials? {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: id.uuidString,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
+        if !allowInteraction { query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail }
         var item: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
               let data = item as? Data else { return nil }

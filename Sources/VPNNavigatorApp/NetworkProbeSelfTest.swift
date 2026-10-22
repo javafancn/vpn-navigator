@@ -15,6 +15,9 @@ enum NetworkProbeSelfTest {
         defer { server.close() }
         let tcp = try await NetworkProbes.tcp("127.0.0.1", port: port)
         guard tcp.reachable else { throw ProbeError.commandFailed }
+        let server6 = try LoopbackProbeServer(address: "::1")
+        let port6 = try await server6.listen(); defer { server6.close() }
+        guard try await NetworkProbes.tcp("::1", port: port6).reachable else { throw ProbeError.commandFailed }
         let dns = try await NetworkProbes.dns("localhost")
         guard dns.contains("127.0.0.1") else { throw ProbeError.noDNSAnswer }
         let ping = try await NetworkProbes.ping("127.0.0.1")
@@ -37,9 +40,9 @@ final class LoopbackProbeServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "VPNNavigator.ProbeSelfTest")
     private var clients: [NWConnection] = []
     private var replied = false
-    init() throws {
+    init(address: String = "127.0.0.1") throws {
         let parameters = NWParameters.tcp
-        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(address), port: .any)
         listener = try NWListener(using: parameters)
     }
     func listen() async throws -> UInt16 {

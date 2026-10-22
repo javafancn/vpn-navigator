@@ -13,8 +13,8 @@ enum DNSJournalSelfTest {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
         defer { SCDynamicStoreRemoveValue(store, key); try? FileManager.default.removeItem(at: folder) }
-        let original = ["ServerAddresses": ["192.0.2.53"]] as CFDictionary
-        let applied = ["ServerAddresses": ["198.51.100.53"]] as CFDictionary
+        let original = ["ServerAddresses": ["192.0.2.53", "2001:db8::53"]] as CFDictionary
+        let applied = ["ServerAddresses": ["198.51.100.53", "2001:db8:1::53"]] as CFDictionary
         let other = ["ServerAddresses": ["203.0.113.53"]] as CFDictionary
         let journal = DNSRecoveryJournal(file: folder.appendingPathComponent("dns.journal"))
         guard SCDynamicStoreSetValue(store, key, original) else { throw DNSJournalError.unavailable }

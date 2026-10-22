@@ -8,6 +8,13 @@ public struct TunnelSnapshot: Equatable, Sendable {
     public let remoteIPv4: String?
     public let localTunnelIPv4: String?
     public let message: String
+    public let remoteIPv6: String?
+    public let localTunnelIPv6: String?
+    public init(state: TunnelState, remoteIPv4: String?, localTunnelIPv4: String?, message: String,
+                remoteIPv6: String? = nil, localTunnelIPv6: String? = nil) {
+        self.state = state; self.remoteIPv4 = remoteIPv4; self.localTunnelIPv4 = localTunnelIPv4; self.message = message
+        self.remoteIPv6 = remoteIPv6; self.localTunnelIPv6 = localTunnelIPv6
+    }
 }
 public struct TunnelTraffic: Equatable, Sendable {
     public let receivedBytes: UInt64
@@ -18,6 +25,8 @@ public struct TunnelTraffic: Equatable, Sendable {
     }
 }
 public struct SessionReport: Codable, Equatable, Sendable {
+    public let failureCode: DiagnosticCode?
+    public let ipStack: TunnelIPStack?
     public let state: TunnelState
     public let message: String
     public let activeProfileID: UUID?
@@ -34,7 +43,9 @@ public struct SessionReport: Codable, Equatable, Sendable {
     public let challenge: AuthenticationChallenge?
 
     public init(state: TunnelState, message: String, activeProfileID: UUID?,
-                receivedBytes: UInt64?, sentBytes: UInt64?, challenge: AuthenticationChallenge? = nil, firewallActive: Bool = false, firewallRecoveryRequired: Bool = false, attemptID: UUID? = nil, networkRecoveryRequired: Bool? = nil, routingMode: RoutingMode? = nil, routingRevision: UUID? = nil, customRuleDigest: String? = nil, customRuleCount: Int? = nil) {
+                receivedBytes: UInt64?, sentBytes: UInt64?, challenge: AuthenticationChallenge? = nil, firewallActive: Bool = false, firewallRecoveryRequired: Bool = false, attemptID: UUID? = nil, networkRecoveryRequired: Bool? = nil, routingMode: RoutingMode? = nil, routingRevision: UUID? = nil, customRuleDigest: String? = nil, customRuleCount: Int? = nil, ipStack: TunnelIPStack? = nil, failureCode: DiagnosticCode? = nil) {
+        self.failureCode = failureCode
+        self.ipStack = ipStack
         self.state = state
         self.message = message
         self.activeProfileID = activeProfileID
@@ -97,7 +108,9 @@ public enum ManagementParser {
         let local = fields.count > 3 && IPv4CIDR.parseAddress(fields[3]) != nil ? fields[3] : nil
         let remote = fields.count > 4 && IPv4CIDR.parseAddress(fields[4]) != nil ? fields[4] : nil
         return TunnelSnapshot(state: state, remoteIPv4: remote, localTunnelIPv4: local,
-                              message: fields.count > 2 ? fields[2] : "")
+                              message: fields.count > 2 ? fields[2] : "",
+                              remoteIPv6: fields.count > 4 && IPAddress.isIPv6(fields[4]) ? IPAddress.canonical(fields[4]) : nil,
+                              localTunnelIPv6: fields.count > 8 && IPAddress.isIPv6(fields[8]) ? IPAddress.canonical(fields[8]) : nil)
     }
     public static func parsePasswordChallenge(_ line: String) -> Bool {
         line.hasPrefix(">PASSWORD:Need 'Auth' username/password")

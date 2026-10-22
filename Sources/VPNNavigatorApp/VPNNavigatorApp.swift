@@ -7,6 +7,16 @@ import UniformTypeIdentifiers
 @MainActor
 final class AppModel: ObservableObject {
     @Published var profiles: [VPNProfile] = []
+    @Published var profileLibrary: ProfileLibraryQuery {
+        didSet {
+            if oldValue.sort != profileLibrary.sort { libraryDefaults.set(profileLibrary.sort.rawValue, forKey: "profileLibrarySort") }
+        }
+    }
+    private let libraryDefaults: UserDefaults
+    @Published private(set) var profileMetadataInProgress = false
+    var libraryProfiles: [VPNProfile] { profileLibrary.results(profiles) }
+    var libraryGroups: [ProfileGroupSummary] { ProfileLibraryQuery.groups(profiles) }
+
     @Published var showingImportReport = false
     @Published private(set) var importResults: [ProfileImportResult] = []
     @Published private(set) var profileImportInProgress = false
@@ -18,7 +28,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var profileDropLoading = false
     @Published var profilePickerPresented = false
     @Published private(set) var profileOpenReady = false
-    var profileTransferInProgress: Bool { profileImportInProgress || profileExportInProgress || profileIndexRecoveryInProgress }
+    var profileTransferInProgress: Bool { profileImportInProgress || profileExportInProgress || profileIndexRecoveryInProgress || profileMetadataInProgress }
     @Published var quickAccessShortcut = QuickAccessShortcut(rawValue: UserDefaults.standard.string(forKey: "quickAccessShortcut") ?? "") ?? .disabled {
         didSet { UserDefaults.standard.set(quickAccessShortcut.rawValue, forKey: "quickAccessShortcut") }
     }
@@ -110,7 +120,9 @@ final class AppModel: ObservableObject {
     private let ipv6Updater: APNICIPv6PreviewStore
     private let helper = HelperClient.shared
 
-    init(backgroundServiceDefaults: UserDefaults = .standard, profileStoreRoot: URL? = nil, routingModeService: RoutingModeService? = nil) {
+    init(backgroundServiceDefaults: UserDefaults = .standard, profileStoreRoot: URL? = nil, routingModeService: RoutingModeService? = nil, libraryDefaults: UserDefaults = .standard) {
+        self.libraryDefaults = libraryDefaults
+        profileLibrary = ProfileLibraryQuery(sort: ProfileLibrarySort(savedValue: libraryDefaults.string(forKey: "profileLibrarySort")))
         self.routingModeService = routingModeService ?? .live
         backgroundPreferences = BackgroundServicePreferences(defaults: backgroundServiceDefaults,
             existingLoginEnabled: UserServices.loginStatus == .enabled)
@@ -123,7 +135,7 @@ final class AppModel: ObservableObject {
         launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") { profileOpenReady = true; return }
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") { profileOpenReady = true; return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -139,7 +151,7 @@ final class AppModel: ObservableObject {
             profiles = names.map { name, file, favorite in
                 VPNProfile(name: name, sourceFilename: file,
                     relativePath: "ui-snapshot-only",
-                    group: "个人", isFavorite: favorite)
+                    group: name == "工作网络" ? "工作" : name == "家庭网络" ? "家庭" : name == "dy" ? "个人" : "节点", isFavorite: favorite)
             }
             selectedID = profiles.first?.id
             connectionStatus = "disconnected: UI composition fixture, no tunnel"
@@ -200,6 +212,7 @@ final class AppModel: ObservableObject {
     private func loadProfiles() async throws {
         do {
             profiles = try await store.list()
+            profileLibrary.reconcileGroups(profiles)
             profileIndexIssue = nil; profileIndexRecovery = nil; profileIndexRecoveryProblem = nil
         } catch {
             profiles = []; profileSizes = [:]; selectedID = nil
@@ -459,23 +472,38 @@ final class AppModel: ObservableObject {
         networkRecoveryRequired = true
         connectionStatus = "failed: 无法核验路由切换结果，请检查助手与网络恢复状态"
     }
-    func updateMetadata(name: String, group: String, notes: String, favorite: Bool) async {
-        guard !maintenanceInProgress, !routingModeSwitching, !profileTransferInProgress else { return }
-        profileMutations += 1; defer { profileMutations -= 1 }
-        guard var item = selected else { return }
+    func canEditProfileMetadata(_ id: UUID) -> Bool {
+        profileIndexIssue == nil && profiles.contains(where: { $0.id == id }) && !busy &&
+        !maintenanceInProgress && !routingModeSwitching && !profileTransferInProgress &&
+        !backgroundServicesBusy && profileMutations == 0
+    }
+    func updateMetadata(name: String, group: String, notes: String, favorite: Bool, for id: UUID) async {
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanGroup = group.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty, cleanName.count <= 100,
               !cleanGroup.isEmpty, cleanGroup.count <= 48, notes.count <= 4000 else {
-            message = "Profile name, group or notes exceed the supported limits."
-            return
+            message = "名称最多 100 字、类别最多 48 字、备注最多 4000 字，名称与类别不能为空。"; return
         }
-        item.name = cleanName
-        item.group = cleanGroup
-        item.notes = notes
-        item.isFavorite = favorite
-        do { try await store.update(item); await load() }
-        catch { message = error.localizedDescription }
+        await persistProfileMetadata(id) { item in
+            item.name = cleanName; item.group = cleanGroup; item.notes = notes; item.isFavorite = favorite
+        }
+    }
+    func setProfileFavorite(_ favorite: Bool, for id: UUID) async {
+        await persistProfileMetadata(id) { $0.isFavorite = favorite }
+    }
+    private func persistProfileMetadata(_ id: UUID, change: (inout VPNProfile) -> Void) async {
+        guard canEditProfileMetadata(id) else { return }
+        profileMetadataInProgress = true; profileMutations += 1
+        defer { profileMetadataInProgress = false; profileMutations -= 1 }
+        do {
+            // Resolve the pinned UUID afresh. Do not overwrite a newer routing
+            // preference with the inspector's earlier metadata snapshot.
+            let latest = try await store.list()
+            guard var item = latest.first(where: { $0.id == id }) else { throw StoreError.notFound }
+            change(&item)
+            try await store.update(item)
+            try await loadProfiles()
+        } catch { message = "无法保存配置信息：" + error.localizedDescription }
     }
 
     func editSource(for profile: VPNProfile) async -> String? {
@@ -525,12 +553,17 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func deleteSelected() async {
-        guard !maintenanceInProgress, !routingModeSwitching, !profileTransferInProgress else { return }
-        profileMutations += 1; defer { profileMutations -= 1 }
-        guard let item = selected else { return }
-        do { try await store.delete(id: item.id); KeychainVault.remove(id: item.id); selectedID = nil; await load() }
-        catch { message = error.localizedDescription }
+    func canDeleteProfile(_ id: UUID) -> Bool {
+        canEditProfileMetadata(id) && canQuit && activeProfileID == nil && !connecting && !stopping
+    }
+    func deleteProfile(_ id: UUID) async {
+        guard canDeleteProfile(id) else { message = "请先断开 VPN 并完成其它操作或网络恢复，再删除配置。"; return }
+        profileMetadataInProgress = true; profileMutations += 1
+        defer { profileMetadataInProgress = false; profileMutations -= 1 }
+        do {
+            try await store.delete(id: id); KeychainVault.remove(id: id)
+            try await loadProfiles()
+        } catch { message = "无法删除配置：" + error.localizedDescription }
     }
 
     func updateIPv6Preview() async {
@@ -1061,8 +1094,9 @@ final class AppModel: ObservableObject {
             else { throw LocalInstallError.command }
         } catch { message = "无法打开卸载包：\(error.localizedDescription)" }
     }
-    func exportProfile(kind: ProfileExportKind = .portable) async {
-        guard !maintenanceInProgress, !profileTransferInProgress, let profile = selected else { return }
+    func exportProfile(kind: ProfileExportKind = .portable, for id: UUID? = nil) async {
+        guard !maintenanceInProgress, !profileTransferInProgress,
+              let target = id ?? selectedID, let profile = profiles.first(where: { $0.id == target }) else { return }
         profileExportInProgress = true; profileMutations += 1
         defer { profileExportInProgress = false; profileMutations -= 1 }
         do {
@@ -1086,6 +1120,12 @@ struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
     @StateObject private var model = AppModel()
     init() {
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") {
+            Task {
+                do { try await ProfileLibrarySelfTest.run(); print("Profile library checks passed."); Darwin.exit(0) }
+                catch { print("Profile library self-test failed: \(error.localizedDescription)"); Darwin.exit(1) }
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") {
             Task {
                 do { try await ProfileRecoverySelfTest.run(); print("Profile index recovery checks passed."); Darwin.exit(0) }

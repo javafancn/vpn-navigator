@@ -107,6 +107,7 @@ struct RouteExplanationView: View {
             .onChange(of: model.activeRoutingIdentity) { _ in if live { clear(); issue = "会话状态改变，请重新核验。" } }
             .onChange(of: model.selectedID) { _ in if !live { clear() } }
             .onChange(of: model.profiles) { _ in if !live { clear() } }
+            .onChange(of: model.rules?.routes) { _ in if !live { clear() } }
             .onChange(of: ip) { _ in if !checking { decision = nil; observed = nil; issue = "" } }
             .onDisappear { clear() }
             .onAppear {

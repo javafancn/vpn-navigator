@@ -59,7 +59,9 @@ final class RouteExplanationTests: XCTestCase {
         let start = DiagnosticEvent(.starting, date: Date().addingTimeInterval(-4))
         let failure = DiagnosticEvent(.authentication, date: Date().addingTimeInterval(-3))
         let stop = DiagnosticEvent(.stopped, date: Date().addingTimeInterval(-2))
-        XCTAssertNotNil(TroubleshootingChecklist.recentFailure([start, failure, stop]))
+        XCTAssertEqual(TroubleshootingChecklist.recentFailure([start, failure, stop])?.detail, DiagnosticCode.authentication.summary)
+        XCTAssertNil(TroubleshootingChecklist.recentFailure([start, stop]))
+        XCTAssertNil(TroubleshootingChecklist.recentFailure([DiagnosticEvent(.recovery)]))
         XCTAssertNil(TroubleshootingChecklist.recentFailure([start, failure, DiagnosticEvent(.connected)]))
         XCTAssertNil(TroubleshootingChecklist.recentFailure([DiagnosticEvent(.authentication, date: Date().addingTimeInterval(-90_000))]))
     }

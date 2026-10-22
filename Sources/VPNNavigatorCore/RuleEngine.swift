@@ -73,7 +73,7 @@ public enum ProfileCompiler {
 
         }
         let direct = try custom.directPrefixes(country: mode == .chinaDirect ? rules : nil, local: [], endpoint: nil)
-        lines.append(contentsOf: direct.map { "route \(IPv4CIDR.addressString($0.network)) \($0.netmask) net_gateway" })
+        lines.append(contentsOf: direct.map { "route \(IPv4CIDR.parseAddressString($0.network)) \($0.netmask) net_gateway" })
         return lines.joined(separator: "\n") + "\n"
     }
 }

@@ -78,7 +78,12 @@ public struct CustomRuleSet: Sendable {
         }
         let additions = try active.filter { $0.action == .direct }.map { try Self.prefix($0.cidr) }
         let cuts = try active.filter { $0.action == .vpn }.map { interval(try Self.prefix($0.cidr)) }.sorted { $0.lo < $1.lo }
-        let source = (base + additions).map(interval).sorted { $0.lo == $1.lo ? $0.hi < $1.hi : $0.lo < $1.lo }
+        var source: [Interval] = []
+        for prefix in base + additions { source.append(interval(prefix)) }
+        source.sort { left, right in
+            if left.lo == right.lo { return left.hi < right.hi }
+            return left.lo < right.lo
+        }
         var merged: [Interval] = []
         for range in source {
             if let last = merged.last, range.lo <= last.hi + 1 { merged[merged.count - 1].hi = max(last.hi, range.hi) }
@@ -91,7 +96,7 @@ public struct CustomRuleSet: Sendable {
             while address <= hi {
                 var bits = min(24, address.trailingZeroBitCount)
                 while address + (UInt64(1) << bits) - 1 > hi { bits -= 1 }
-                let prefix = try IPv4CIDR(IPv4CIDR.addressString(UInt32(address)) + "/\(32 - bits)")
+                let prefix = try IPv4CIDR(IPv4CIDR.parseAddressString(UInt32(address)) + "/\(32 - bits)")
                 output.append(prefix)
                 guard output.count <= 30_000 else { throw CustomRouteError.complexity }
                 address += UInt64(1) << bits

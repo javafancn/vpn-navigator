@@ -534,6 +534,7 @@ final class ManagedTunnel {
     }
     private func verifyManagedRoutes(plan: RoutePlan, mode: RoutingMode, country: RuleSet?, allCustom: Bool = false) throws {
         for route in [plan.endpoint] + plan.vpnDefaults {
+            try ensureAttempt()
             let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", "-net", route.prefix.description])
             guard ObservedIPv4Route(commandOutput: raw).isExactly(route) else { throw TunnelError.routeVerificationFailed }
         }
@@ -541,13 +542,13 @@ final class ManagedTunnel {
               case .viaGateway(let gateway) = plan.endpoint.destination else { throw TunnelError.noTunnelInterface }
         if mode == .chinaDirect && country == nil { throw TunnelError.missingRules }
         if let direct = plan.direct.first {
-            let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", IPv4CIDR.addressString(direct.prefix.network)])
+            let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", IPv4CIDR.parseAddressString(direct.prefix.network)])
             guard Self.parseValue("gateway:", in: raw) == gateway,
                   Self.parseValue("interface:", in: raw)?.hasPrefix("en") == true else { throw TunnelError.routeVerificationFailed }
         }
         let samples = ["8.8.8.8", "1.1.1.1", "9.9.9.9", "208.67.222.222"]
         if let sample = samples.first(where: { ip in
-            ip != IPv4CIDR.addressString(plan.endpoint.prefix.network) &&
+            ip != IPv4CIDR.parseAddressString(plan.endpoint.prefix.network) &&
             !plan.direct.contains(where: { $0.prefix.contains(IPv4CIDR.parseAddress(ip)!) }) &&
             !protectedLocalNetworks.contains(where: { $0.contains(IPv4CIDR.parseAddress(ip)!) })
         }) {
@@ -556,8 +557,9 @@ final class ManagedTunnel {
         }
         let checks = allCustom ? custom.active : CustomRouteAction.allCases.compactMap { action in custom.active.first { $0.action == action } }
         for rule in checks {
+            try ensureAttempt()
             let prefix = try CustomRuleSet.prefix(rule.cidr)
-            let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", IPv4CIDR.addressString(prefix.network)])
+            let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", IPv4CIDR.parseAddressString(prefix.network)])
             let iface = Self.parseValue("interface:", in: raw) ?? ""
             guard (rule.action == .vpn ? iface == tunnel : iface.hasPrefix("en") && Self.parseValue("gateway:", in: raw) == gateway) else {
                 throw TunnelError.routeVerificationFailed
@@ -568,7 +570,7 @@ final class ManagedTunnel {
         guard state == .connected, process?.isRunning == true, activeProfileID == request.profileID,
               activeAttemptID == request.attemptID, routingRevision == request.revision, activeMode == request.mode else { throw RoutingModeSwitchError.stale }
         let decision = try RouteExplanation.decide(ip: request.ip, mode: activeMode, country: rules, custom: custom,
-            local: protectedLocalNetworks, endpoint: activePlan.map { IPv4CIDR.addressString($0.endpoint.prefix.network) },
+            local: protectedLocalNetworks, endpoint: activePlan.map { IPv4CIDR.parseAddressString($0.endpoint.prefix.network) },
             effectiveDirect: activePlan?.direct.map(\.prefix))
         let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", request.ip])
         let observed = Self.parseValue("interface:", in: raw) ?? ""

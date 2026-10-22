@@ -53,8 +53,18 @@ public enum TroubleshootingChecklist {
     public static func recentFailure(_ events: [DiagnosticEvent]) -> TroubleshootingCheck? {
         let sorted = events.sorted { $0.date < $1.date }
         let boundary = sorted.lastIndex { [.starting, .connected, .cancelled].contains($0.code) }.map { $0 + 1 } ?? 0
-        guard let event = sorted.dropFirst(boundary).last, Date().timeIntervalSince(event.date) >= 0,
+        let failures: [DiagnosticCode] = [.timeout, .authentication, .certificate, .tls, .dns, .transport,
+            .cipher, .route, .networkChanged, .unexpectedExit]
+        guard let event = sorted.dropFirst(boundary).last(where: { failures.contains($0.code) }), Date().timeIntervalSince(event.date) >= 0,
               Date().timeIntervalSince(event.date) < 86_400 else { return nil }
-        return .init("recent", "最近会话的故障类别", .warning, event.code.summary, "按该类别检查认证、证书或服务端配置；历史类别不替代本次网络探测。")
+        let suggestion: String
+        switch event.code {
+        case .authentication: suggestion = "核对账户与认证方式，必要时更新保存的凭据。"
+        case .certificate, .tls, .cipher: suggestion = "检查证书有效期、加密兼容性及服务端配置。"
+        case .route, .networkChanged: suggestion = "检查其它 VPN 与网络切换情况，断开后核验网络恢复结果。"
+        case .dns: suggestion = "检查服务器域名和系统解析器，避免直接覆盖企业 DNS。"
+        default: suggestion = "检查服务端状态、目标端口及当前网络，必要时查看脱敏诊断。"
+        }
+        return .init("recent", "最近会话的故障类别", .warning, event.code.summary, suggestion + "历史类别不替代本次网络探测。")
     }
 }

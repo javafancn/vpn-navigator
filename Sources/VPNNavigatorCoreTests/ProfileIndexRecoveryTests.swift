@@ -137,13 +137,14 @@ final class ProfileIndexRecoveryTests: XCTestCase {
     }
     func testCheckpointFailureDoesNotRollBackCommittedImport() async throws {
         let (folder, source, store) = try fixture()
-        _ = try await store.list()
+        let first = try await store.importProfile(from: source)
         let backup = folder.appendingPathComponent("profiles.backup.json")
+        try FileManager.default.removeItem(at: backup)
         try FileManager.default.createSymbolicLink(at: backup, withDestinationURL: source)
         let original = try Data(contentsOf: source)
         let profile = try await store.importProfile(from: source)
         let profiles = try await store.list(), runtime = try await store.runtimeConfig(for: profile)
-        XCTAssertEqual(profiles, [profile]); XCTAssertFalse(runtime.isEmpty)
+        XCTAssertEqual(profiles, [first, profile]); XCTAssertFalse(runtime.isEmpty)
         XCTAssertEqual(try Data(contentsOf: source), original)
         await reject { _ = try await store.indexBackupInfo() }
     }

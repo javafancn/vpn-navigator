@@ -30,6 +30,8 @@ final class RouteExplanationTests: XCTestCase {
         }
         let request = try RouteLookupRequest(report: report(), ip: "9.9.9.9")
         XCTAssertEqual(try RouteLookupRequest.decoded(request.json), request)
+        XCTAssertEqual(try RouteLookupRequest(report: report(), ip: "009.009.009.009").ip, "9.9.9.9")
+        XCTAssertThrowsError(try RouteLookupRequest.decoded(request.json.replacingOccurrences(of: "9.9.9.9", with: "009.009.009.009")))
         XCTAssertFalse(request.matches(report(.failed))); XCTAssertFalse(request.matches(report(profile: UUID())))
         XCTAssertFalse(request.matches(report(token: UUID()))); XCTAssertFalse(request.matches(report(revision: UUID())))
         XCTAssertFalse(request.matches(report(mode: .chinaDirect)))

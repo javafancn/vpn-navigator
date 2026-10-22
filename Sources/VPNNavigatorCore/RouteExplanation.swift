@@ -40,10 +40,10 @@ public struct RouteLookupRequest: Codable, Equatable, Sendable {
     public let revision: UUID?
     public let mode: RoutingMode
     public init(report: SessionReport, ip: String) throws {
-        guard IPv4CIDR.parseAddress(ip) != nil, report.state == .connected, report.challenge == nil,
+        guard let address = IPv4CIDR.parseAddress(ip), report.state == .connected, report.challenge == nil,
               let profileID = report.activeProfileID, let attemptID = report.attemptID,
               let mode = report.routingMode, mode == .original || report.routingRevision != nil else { throw RoutingModeSwitchError.stale }
-        self.ip = ip; self.profileID = profileID; self.attemptID = attemptID; revision = report.routingRevision; self.mode = mode
+        self.ip = IPv4CIDR.parseAddressString(address); self.profileID = profileID; self.attemptID = attemptID; revision = report.routingRevision; self.mode = mode
     }
     public func matches(_ report: SessionReport) -> Bool {
         report.state == .connected && report.challenge == nil && report.activeProfileID == profileID &&
@@ -53,7 +53,8 @@ public struct RouteLookupRequest: Codable, Equatable, Sendable {
     public static func decoded(_ text: String) throws -> Self {
         guard text.utf8.count <= 2048, let data = text.data(using: .utf8) else { throw RoutingModeSwitchError.stale }
         let value = try JSONDecoder().decode(Self.self, from: data)
-        guard IPv4CIDR.parseAddress(value.ip) != nil, value.mode == .original || value.revision != nil else { throw RoutingModeSwitchError.stale }
+        guard let address = IPv4CIDR.parseAddress(value.ip), IPv4CIDR.parseAddressString(address) == value.ip,
+              value.mode == .original || value.revision != nil else { throw RoutingModeSwitchError.stale }
         return value
     }
 }

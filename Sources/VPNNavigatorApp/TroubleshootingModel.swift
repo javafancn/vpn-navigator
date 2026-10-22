@@ -55,9 +55,10 @@ final class TroubleshootingModel: ObservableObject {
     }
     func start(model: AppModel, target: String, port: UInt16, hostname: String, timeout: UInt64 = 30_000_000_000) {
         cancel(); checks = []; stale = false
-        guard IPv4CIDR.parseAddress(target) != nil, port > 0, DiagnosticTargetPolicy.validHostname(hostname) else {
+        guard let address = IPv4CIDR.parseAddress(target), port > 0, DiagnosticTargetPolicy.validHostname(hostname) else {
             status = "请输入有效的 IPv4、端口和域名。"; return
         }
+        let target = IPv4CIDR.parseAddressString(address)
         let token = UUID(); generation = token; running = true; status = "正在核验助手与配置…"
         let profiles = model.profiles, selected = model.selected, countryCount = model.rules?.routes.count ?? 0
         deadline = Task { [weak self] in

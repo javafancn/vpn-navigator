@@ -42,6 +42,18 @@ final class ProfileOpenQueueTests: XCTestCase {
         XCTAssertEqual(queue.urls.count, 100)
         XCTAssertEqual(queue.overflowCount, 11)
     }
+    func testDifferentSymlinkSpellingIsNotResolvedForAdmission() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = root.appendingPathComponent("original.ovpn")
+        let alias = root.appendingPathComponent("alias.ovpn")
+        try Data("not read by admission".utf8).write(to: original)
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: original)
+        var queue = ProfileOpenQueue(); queue.append([original, alias])
+        XCTAssertEqual(queue.urls, [original, alias])
+        XCTAssertEqual(queue.duplicateCount, 0)
+    }
     func testMergeRetainsRejectionCategoriesAndClearDropsAllURLs() {
         var queue = ProfileOpenQueue()
         var incoming = ProfileOpenQueue()

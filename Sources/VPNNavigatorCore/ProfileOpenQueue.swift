@@ -21,8 +21,8 @@ public struct ProfileOpenQueue: Equatable, Sendable {
                   !url.hasDirectoryPath, url.pathExtension.lowercased() == "ovpn" else {
                 unsupportedCount = bounded(unsupportedCount, 1); continue
             }
-            let normalized = url.standardizedFileURL
-            guard !urls.contains(where: { $0.standardizedFileURL.path == normalized.path }) else {
+            let normalized = Self.lexicalPath(url)
+            guard !urls.contains(where: { Self.lexicalPath($0) == normalized }) else {
                 duplicateCount = bounded(duplicateCount, 1); continue
             }
             guard urls.count < Self.maximumFiles else { overflowCount = bounded(overflowCount, 1); continue }
@@ -43,4 +43,15 @@ public struct ProfileOpenQueue: Equatable, Sendable {
     }
     public mutating func clear() { self = Self() }
     private func bounded(_ existing: Int, _ added: Int) -> Int { existing + min(max(0, added), 1_000_000 - existing) }
+    private static func lexicalPath(_ url: URL) -> String {
+        // Foundation's file-path standardization can consult the filesystem.
+        // Admission only folds textual dot components; retain the original URL.
+        var components: [Substring] = []
+        for part in url.path.split(separator: "/") {
+            if part == "." { continue }
+            if part == ".." { if !components.isEmpty { components.removeLast() } }
+            else { components.append(part) }
+        }
+        return "/" + components.joined(separator: "/")
+    }
 }

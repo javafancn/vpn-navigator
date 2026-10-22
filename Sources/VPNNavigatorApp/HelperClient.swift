@@ -118,6 +118,14 @@ final class HelperClient {
     func recoverOrphanedRoutes() async -> String {
         await ask(timeout: 60) { helper, reply in helper.recoverOrphanedRoutes(reply: reply) }
     }
+    func lookupRoute(_ request: RouteLookupRequest) async throws -> RouteLookupResult {
+        let raw = await ask(timeout: 15) { helper, reply in helper.explainRoute(request.json, reply: reply) }
+        guard raw.utf8.count <= 16_000, let data = raw.data(using: .utf8),
+              let result = try? JSONDecoder().decode(RouteLookupResult.self, from: data),
+              result.request == request, result.decision.ip == request.ip,
+              result.observedInterface.utf8.count <= 64, result.observedGateway.utf8.count <= 128 else { throw ProbeError.commandFailed }
+        return result
+    }
     func updateRules(_ rules: String) async -> String {
         await ask(timeout: 600) { helper, reply in helper.updateRules(rules, reply: reply) }
     }

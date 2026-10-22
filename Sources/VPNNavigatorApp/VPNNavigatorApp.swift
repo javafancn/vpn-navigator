@@ -67,6 +67,15 @@ final class AppModel: ObservableObject {
     @Published var showingSetup = false
     @Published var showingPreferences = false
     @Published var showingDiagnostics = false
+    @Published var showingRouteExplanation = false
+    @Published var showingTroubleshooting = false
+    @Published var customRuleEditorProfile: VPNProfile?
+    @Published private(set) var activeCustomRuleDigest: String?
+    @Published private(set) var activeCustomRuleCount: Int?
+    var activeRoutingIdentity: String {
+        [connectionStatus.components(separatedBy: ":").first ?? "", activeProfileID?.uuidString ?? "",
+         helperAttemptID?.uuidString ?? "", routingRevision?.uuidString ?? "", activeRoutingMode?.rawValue ?? ""].joined(separator: "|")
+    }
     @Published var connectionTimeout = UserDefaults.standard.integer(forKey: "connectionTimeout") {
         didSet { UserDefaults.standard.set(connectionTimeout, forKey: "connectionTimeout") }
     }
@@ -135,7 +144,7 @@ final class AppModel: ObservableObject {
         launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") { profileOpenReady = true; return }
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -311,7 +320,7 @@ final class AppModel: ObservableObject {
         profileOpenReady && profileIndexIssue == nil && !incomingProfiles.isEmpty && !profileDropLoading && !profilePickerPresented &&
         !routingModeSwitching && !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress && !busy &&
         !connecting && !stopping && !showingImportReport && !showingSetup && !showingMaintenance &&
-        !showingPreferences && !showingDiagnostics && !showingProfileIndexRecovery && !showingAccountCredentials &&
+        !showingPreferences && !showingDiagnostics && !showingRouteExplanation && !showingTroubleshooting && customRuleEditorProfile == nil && !showingProfileIndexRecovery && !showingAccountCredentials &&
         authenticationChallenge == nil && message == nil
     }
     func receiveProfileOpenRequest(_ request: ProfileOpenQueue) {
@@ -468,7 +477,7 @@ final class AppModel: ObservableObject {
         item.mode = mode; try await store.update(item); try await loadProfiles()
     }
     private func markRoutingUnverified() {
-        activeRoutingMode = nil; routingRevision = nil; helperStateVerified = false
+        activeRoutingMode = nil; routingRevision = nil; activeCustomRuleDigest = nil; activeCustomRuleCount = nil; helperStateVerified = false
         networkRecoveryRequired = true
         connectionStatus = "failed: 无法核验路由切换结果，请检查助手与网络恢复状态"
     }
@@ -506,6 +515,32 @@ final class AppModel: ObservableObject {
         } catch { message = "无法保存配置信息：" + error.localizedDescription }
     }
 
+    func canEditCustomRules(_ id: UUID) -> Bool {
+        canEditProfileMetadata(id) && id != activeProfileID && !connecting && !stopping
+    }
+    func saveCustomRules(for id: UUID, original: [CustomRouteRule], draft: [CustomRouteRule]) async -> String? {
+        guard canEditCustomRules(id) else { return "请先断开该配置的连接并等待其它操作完成。" }
+        profileMetadataInProgress = true; profileMutations += 1
+        defer { profileMetadataInProgress = false; profileMutations -= 1 }
+        do {
+            let validated = try CustomRuleSet(draft)
+            let latest = try await store.list()
+            guard var item = latest.first(where: { $0.id == id }), item.customRules == original else { return "配置规则已改变，请关闭后重新打开编辑器。" }
+            item.customRules = validated.rules
+            try await store.update(item); try await loadProfiles()
+            return nil
+        } catch { return "未保存规则：" + error.localizedDescription }
+    }
+    func checkConfiguration(_ profile: VPNProfile?, mode: RoutingMode?) async -> ConfigurationCheckState {
+        guard let profile else { return .missing }
+        do {
+            let text = try await store.runtimeConfig(for: profile)
+            let parsed = try ProfileSafety.validate(text)
+            try ManagedRoutingPolicy.validate(parsed, mode: mode ?? profile.mode)
+            _ = try CustomRuleSet(profile.customRules)
+            return .valid
+        } catch { return .invalid }
+    }
     func editSource(for profile: VPNProfile) async -> String? {
         do { return try await store.runtimeConfig(for: profile) }
         catch { message = "Cannot open configuration: \(error.localizedDescription)"; return nil }
@@ -795,6 +830,7 @@ final class AppModel: ObservableObject {
         } catch { message = "Helper registration failed: \(error.localizedDescription)" }
     }
     func applyVerifiedSessionReport(_ report: SessionReport) {
+        activeCustomRuleDigest = report.customRuleDigest; activeCustomRuleCount = report.customRuleCount
         helperStateVerified = true
         if !(busy && connectionAttempt != nil && sessionState == .connecting && report.state == .disconnected) {
             connectionStatus = report.statusText
@@ -827,7 +863,7 @@ final class AppModel: ObservableObject {
                 applyVerifiedSessionReport(report)
             } else {
                 guard capturedEpoch == statusEpoch, !routingModeSwitching else { return }
-                activeRoutingMode = nil; routingRevision = nil
+                activeRoutingMode = nil; routingRevision = nil; activeCustomRuleDigest = nil; activeCustomRuleCount = nil
                 helperStateVerified = false
                 authenticationChallenge = nil
                 connectionStatus = "failed: 无法核验后台会话，请检查助手与网络恢复状态"
@@ -840,7 +876,7 @@ final class AppModel: ObservableObject {
             let unresolved = BuildChannel.isLocal && (helper.installationStatus == .requiresApproval || LocalInstallation.hasRecoveryEvidence)
             helperStateVerified = !unresolved
             connectionStatus = unresolved ? "failed: 本地安装未通过校验，请先恢复网络并修复安装" : "disconnected: Privileged helper not enabled"
-            activeRoutingMode = nil; routingRevision = nil
+            activeRoutingMode = nil; routingRevision = nil; activeCustomRuleDigest = nil; activeCustomRuleCount = nil
             activeProfileID = nil
             authenticationChallenge = nil
             traffic = nil
@@ -887,9 +923,11 @@ final class AppModel: ObservableObject {
             }
             let rulesText = (rules?.routes ?? []).map(\.description).joined(separator: "\n")
             guard connectionAttempt == attempt else { return }
+            var connectionPreferences = sessionPreferences
+            connectionPreferences.customRules = selected.mode == .original ? nil : try CustomRuleSet(selected.customRules).rules
             let result = await helper.connect(profile: text, profileID: selected.id,
                                               mode: selected.mode, rules: rulesText,
-                                              username: username, password: password, preferences: sessionPreferences, attemptID: attempt)
+                                              username: username, password: password, preferences: connectionPreferences, attemptID: attempt)
             guard connectionAttempt == attempt else { return }
             password = "" // never retain passwords in UI state after a connection attempt
             if result.hasPrefix("ERROR:") {
@@ -944,7 +982,7 @@ final class AppModel: ObservableObject {
         guard profiles.contains(where: { $0.id == id }) else { return .blocked }
         if connected && id != activeProfileID && quickAccessSession == nil { return .blocked }
         return QuickAccessAction.resolve(state: sessionState, profileID: id, activeProfileID: activeProfileID,
-            operationInProgress: showingProfileIndexRecovery || routingModeSwitching || busy || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || showingImportReport ||
+            operationInProgress: customRuleEditorProfile != nil || showingRouteExplanation || showingTroubleshooting || showingProfileIndexRecovery || routingModeSwitching || busy || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || showingImportReport ||
                 authenticationChallenge != nil || showingAccountCredentials,
             mayStart: canQuit)
     }
@@ -1101,7 +1139,7 @@ final class AppModel: ObservableObject {
         defer { profileExportInProgress = false; profileMutations -= 1 }
         do {
             let runtime = try await store.runtimeConfig(for: profile)
-            let generated = try ProfileExport.render(runtime: runtime, kind: kind, mode: profile.mode, rules: rules)
+            let generated = try ProfileExport.render(runtime: runtime, kind: kind, mode: profile.mode, rules: rules, custom: try CustomRuleSet(profile.customRules))
             let panel = NSSavePanel()
             panel.allowedContentTypes = [.init(filenameExtension: "ovpn")!]
             panel.nameFieldStringValue = ProfileExport.filename(name: profile.name, kind: kind)
@@ -1120,6 +1158,12 @@ struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
     @StateObject private var model = AppModel()
     init() {
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") {
+            Task {
+                do { try await RoutingToolsSelfTest.run(); print("Routing tools checks passed."); Darwin.exit(0) }
+                catch { print("Routing tools self-test failed: \(error.localizedDescription)"); Darwin.exit(1) }
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") {
             Task {
                 do { try await ProfileLibrarySelfTest.run(); print("Profile library checks passed."); Darwin.exit(0) }

@@ -1,0 +1,60 @@
+import Foundation
+
+public enum CheckSeverity: String, Sendable { case pass, info, warning, failure, skipped }
+public struct TroubleshootingCheck: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let title: String
+    public let severity: CheckSeverity
+    public let detail: String
+    public let suggestion: String
+    public init(_ id: String, _ title: String, _ severity: CheckSeverity, _ detail: String, _ suggestion: String = "") {
+        self.id = id; self.title = title; self.severity = severity; self.detail = detail; self.suggestion = suggestion
+    }
+}
+public enum ConfigurationCheckState: Sendable { case valid, invalid, missing }
+public enum TroubleshootingChecklist {
+    public static func session(_ report: SessionReport?) -> [TroubleshootingCheck] {
+        guard let report else { return [.init("helper", "助手状态无法核验", .failure, "未取得可信助手的会话快照。", "检查助手安装、系统后台服务授权或安装修复入口；不要删除恢复记录。") ] }
+        var values = [TroubleshootingCheck("helper", "助手可访问", .pass, "已取得可信 XPC 助手快照。")]
+        if report.challenge != nil { values.append(.init("session", "等待身份验证", .warning, "当前会话仍有认证请求。", "回到连接窗口完成验证或明确取消。")) }
+        else if report.state == .connected { values.append(.init("session", "助手报告已连接", .info, "隧道状态已连接，目标连通性和实际路由仍需下面的探测。")) }
+        else if ConnectionControl.inProgress(report.state) { values.append(.init("session", "连接正在变化", .warning, "连接或断开尚未结束。", "等待状态稳定后重新检查。")) }
+        else if report.requiresNetworkRecovery { values.append(.init("session", "网络恢复尚未完成", .failure, "助手保留了待处理的网络恢复状态。", "先查看安全恢复结果；无法核验所有权时保留记录并人工处理。")) }
+        else { values.append(.init("session", "当前没有已连接隧道", report.state == .failed ? .warning : .info, "后面的探测反映当前系统网络，不表示流量已经过 VPN。", "需要 VPN 时先连接，再核验实际路径。")) }
+        return values
+    }
+    public static func configuration(_ state: ConfigurationCheckState) -> TroubleshootingCheck {
+        switch state {
+        case .valid: return .init("profile", "配置安全预检通过", .pass, "本机保存的配置格式、受支持指令和自定义规则通过检查；不代表证书握手或认证已成功。")
+        case .invalid: return .init("profile", "配置预检未通过", .failure, "本机配置或规则存在不支持的内容。", "检查配置编辑器、外部材料和重叠规则，保留原始文件后修正。")
+        case .missing: return .init("profile", "没有可检查的配置", .skipped, "未选择配置，或活动配置不在本机列表中。", "选择配置；索引损坏时先查看配置列表恢复。")
+        }
+    }
+    public static func rules(mode: RoutingMode?, count: Int) -> TroubleshootingCheck {
+        guard mode == .chinaDirect else { return .init("rules", "地区规则检查", .info, "当前模式不依赖中国 IPv4 直连库。") }
+        return count >= 100 ? .init("rules", "地区规则已缓存", .pass, "已取得 \(count) 条已解析前缀，实际命中还需路由核验。") :
+            .init("rules", "地区规则不足", .failure, "规则路由需要至少 100 条有效前缀。", "在路由与规则中更新或导入可信规则文件。")
+    }
+    public static func tcp(_ reachable: Bool) -> TroubleshootingCheck {
+        reachable ? .init("tcp", "目标 TCP 可连接", .pass, "所选目标端口在本次探测时可达，不代表所有站点可用。") :
+            .init("tcp", "目标 TCP 未连通", .warning, "目标可能关闭端口、拒绝连接或暂时不可达。", "确认目标及端口，换一个允许访问的目标交叉检查；不能单凭此项断定 VPN 故障。")
+    }
+    public static func dns(_ answered: Bool) -> TroubleshootingCheck {
+        answered ? .init("dns", "系统 DNS 查询有结果", .pass, "所选域名返回了地址；此项不验证解析服务器的归属或是否泄漏。") :
+            .init("dns", "系统 DNS 查询未成功", .warning, "所选域名没有取得可用结果。", "确认域名，检查系统 DNS、企业分域解析和当前网络；不要直接覆盖系统 DNS。")
+    }
+    public static func route(_ result: RouteLookupResult) -> TroubleshootingCheck {
+        if let matches = result.matchesExpected {
+            return matches ? .init("route", "实际路由与本次策略相符", .pass, "采样接口：" + result.observedInterface + "；" + result.decision.reason) :
+                .init("route", "实际路由与本次策略不符", .failure, "系统实际出口与助手的预期出口不一致。", "检查其它 VPN、更具体的系统路由及规则；停止连接并确认网络恢复后重试。")
+        }
+        return .init("route", "系统管理的实际路由", .info, "实际接口：" + result.observedInterface + "。" + result.decision.reason)
+    }
+    public static func recentFailure(_ events: [DiagnosticEvent]) -> TroubleshootingCheck? {
+        let sorted = events.sorted { $0.date < $1.date }
+        let boundary = sorted.lastIndex { [.starting, .connected, .cancelled].contains($0.code) }.map { $0 + 1 } ?? 0
+        guard let event = sorted.dropFirst(boundary).last, Date().timeIntervalSince(event.date) >= 0,
+              Date().timeIntervalSince(event.date) < 86_400 else { return nil }
+        return .init("recent", "最近会话的故障类别", .warning, event.code.summary, "按该类别检查认证、证书或服务端配置；历史类别不替代本次网络探测。")
+    }
+}

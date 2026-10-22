@@ -158,7 +158,8 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
             challenge: engine.challenge, firewallActive: engine.firewallActive,
             firewallRecoveryRequired: engine.firewallRecoveryRequired, attemptID: engine.activeAttemptID,
             networkRecoveryRequired: engine.networkRecoveryRequired,
-            routingMode: engine.routingMode, routingRevision: engine.routingRevision)
+            routingMode: engine.routingMode, routingRevision: engine.routingRevision,
+            customRuleDigest: engine.customRuleDigest, customRuleCount: engine.customRuleCount)
     }
     func activeProfile(reply: @escaping (String) -> Void) {
         queue.async { reply(self.engine.activeProfileID?.uuidString ?? "") }
@@ -196,6 +197,17 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
             }
             do { try self.engine.changeRules(text); reply("Rules applied") }
             catch { reply("ERROR: \(error.localizedDescription)") }
+        }
+    }
+    func explainRoute(_ text: String, reply: @escaping (String) -> Void) {
+        queue.async {
+            guard !self.retiring, !BuildChannel.isLocal || !LocalInstallation.isInstallationPending else { reply("ERROR: Service unavailable"); return }
+            do {
+                let request = try RouteLookupRequest.decoded(text)
+                guard request.matches(self.currentSessionReport()) else { throw RoutingModeSwitchError.stale }
+                let result = try self.engine.explainRoute(request)
+                reply(String(decoding: try JSONEncoder().encode(result), as: UTF8.self))
+            } catch { reply("ERROR: " + error.localizedDescription) }
         }
     }
     func switchRoutingMode(mode: String, rules: String, expectedProfileID: String, expectedAttemptID: String,

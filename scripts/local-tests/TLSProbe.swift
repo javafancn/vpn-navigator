@@ -11,6 +11,7 @@ import Darwin
     func disconnectSession(expectedProfileID: String, expectedAttemptID: String, reply: @escaping (String) -> Void)
     func switchRoutingMode(mode: String, rules: String, expectedProfileID: String, expectedAttemptID: String,
                            expectedMode: String, expectedRevision: String, reply: @escaping (String) -> Void)
+    func explainRoute(_ request: String, reply: @escaping (String) -> Void)
     func recoverOrphanedRoutes(reply: @escaping (String) -> Void)
     func connectionStatus(reply: @escaping (String) -> Void)
     func sessionSnapshot(reply: @escaping (String) -> Void)
@@ -185,6 +186,19 @@ func exercise(_ profile: String, shouldConnect: Bool, disconnectAtEnd: Bool = tr
               snapshot["state"] as? String == "connected", snapshot["attemptID"] as? String == attemptID,
               snapshot["activeProfileID"] as? String == profileID, snapshot["routingMode"] as? String == "Original" else { return false }
         print("PASS: installed XPC rejects unsupported live route switching without changing the real TLS session.")
+        let routeRequest: [String: Any] = ["ip": "127.0.0.1", "profileID": profileID, "attemptID": attemptID, "mode": "Original"]
+        guard let requestData = try? JSONSerialization.data(withJSONObject: routeRequest) else { return false }
+        let routeReply = await ask { $0.explainRoute(String(decoding: requestData, as: UTF8.self), reply: $1) }
+        guard let routeData = routeReply.data(using: .utf8), let route = (try? JSONSerialization.jsonObject(with: routeData)) as? [String: Any],
+              route["observedInterface"] as? String == "lo0", (route["decision"] as? [String: Any])?["path"] as? String == "system" else { return false }
+        for changes in [["attemptID": UUID().uuidString], ["ip": "127.0.0.1;delete"]] {
+            var invalid = routeRequest; for (key, value) in changes { invalid[key] = value }
+            guard let bytes = try? JSONSerialization.data(withJSONObject: invalid) else { return false }
+            let response = await ask { $0.explainRoute(String(decoding: bytes, as: UTF8.self), reply: $1) }
+            guard response.hasPrefix("ERROR:"), (await ask { $0.connectionStatus(reply: $1) }).hasPrefix("connected:") else { return false }
+        }
+        print("PASS: installed read-only route inspection observes lo0, rejects stale/malformed requests and leaves real TLS connected.")
+
     }
     if !disconnectAtEnd { return matched }
     let cleaned: Bool

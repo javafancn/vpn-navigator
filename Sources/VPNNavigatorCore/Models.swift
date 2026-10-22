@@ -23,18 +23,19 @@ public struct VPNProfile: Codable, Identifiable, Equatable, Sendable {
     public var importedAt: Date
     public var group: String
     public var notes: String
+    public var customRules: [CustomRouteRule]
     public var isFavorite: Bool
 
     public init(id: UUID = UUID(), name: String, sourceFilename: String,
                 relativePath: String, mode: RoutingMode = .original, importedAt: Date = Date(),
-                group: String = "Personal", notes: String = "", isFavorite: Bool = false) {
+                group: String = "Personal", notes: String = "", isFavorite: Bool = false, customRules: [CustomRouteRule] = []) {
         self.id = id; self.name = name; self.sourceFilename = sourceFilename
         self.relativePath = relativePath; self.mode = mode; self.importedAt = importedAt
-        self.group = group; self.notes = notes; self.isFavorite = isFavorite
+        self.group = group; self.notes = notes; self.isFavorite = isFavorite; self.customRules = customRules
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, sourceFilename, relativePath, mode, importedAt, group, notes, isFavorite
+        case id, name, sourceFilename, relativePath, mode, importedAt, group, notes, isFavorite, customRules
     }
 
     public init(from decoder: Decoder) throws {
@@ -48,6 +49,7 @@ public struct VPNProfile: Codable, Identifiable, Equatable, Sendable {
         group = try container.decodeIfPresent(String.self, forKey: .group) ?? "Personal"
         notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
         isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
+        customRules = try container.decodeIfPresent([CustomRouteRule].self, forKey: .customRules) ?? []
     }
 }
 

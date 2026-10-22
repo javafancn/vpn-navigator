@@ -51,6 +51,9 @@ final class ManagedTunnel {
     private(set) var routingRevision: UUID?
     var routingMode: RoutingMode? { activeProfileID == nil ? nil : activeMode }
     private(set) var activeProfileID: UUID?
+    private var custom = CustomRuleSet.empty
+    var customRuleDigest: String? { activeProfileID == nil ? nil : custom.digest }
+    var customRuleCount: Int? { activeProfileID == nil ? nil : custom.active.count }
     private var rules: RuleSet?
     private var activePlan: RoutePlan?
     private var protectedLocalNetworks: [IPv4CIDR] = []
@@ -125,6 +128,7 @@ final class ManagedTunnel {
         self.activeAttemptID = attemptID
         self.cancellationGeneration = capturedGeneration
         self.preferences = preferences
+        custom = mode == .original ? .empty : try CustomRuleSet(preferences.customRules ?? [])
         attemptExpiresAt = expiresAt
         var validated = try ProfileSafety.validate(text)
         try ManagedRoutingPolicy.validate(validated, mode: mode)
@@ -170,7 +174,8 @@ final class ManagedTunnel {
             let table = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
             let local = LocalIPv4Networks.parse(netstat: table, physicalInterface: physical)
             let policy = try LeakGuardPolicy(physical: physical, endpoint: numeric, port: endpoint.port,
-                transport: endpoint.transport, local: local, country: mode == .chinaDirect ? rules?.routes ?? [] : [])
+                transport: endpoint.transport, local: local, country: [],
+                managedDirect: try custom.directPrefixes(country: mode == .chinaDirect ? rules : nil, local: local, endpoint: numeric))
             validated = try ProfileSafety.validate(endpoint.pinnedProfile(validated.text, address: numeric))
             try ensureAttempt()
             if reusingGuard { try packetGuard.replaceRules(policy.rules(tunnel: nil), resetExistingStates: true) }
@@ -486,13 +491,14 @@ final class ManagedTunnel {
             guard !localPrefixes.isEmpty else { throw TunnelError.noPhysicalGateway }
             let plan = try RoutePlanner.build(serverIPv4: remote, physicalGateway: gateway,
                                               vpnInterface: utun, localPrefixes: localPrefixes,
-                                              china: activeMode == .chinaDirect ? rules : nil)
+                                              china: activeMode == .chinaDirect ? rules : nil, custom: custom)
             let executor = RouteExecutor(journal: workdir.appendingPathComponent("routes.journal"), shouldCancel: { [weak self] in self?.cancellationRequested == true || self?.attemptExpired == true })
             // Own the executor *before* mutating routes. If installation or
             // verification fails, stop() must still find the rollback journal.
             routing = executor
             try executor.apply(plan.installOrder)
-            try verifyManagedRoutes(plan: plan, mode: activeMode, country: rules)
+            protectedLocalNetworks = localPrefixes
+            try verifyManagedRoutes(plan: plan, mode: activeMode, country: rules, allCustom: true)
             activePlan = plan
             protectedLocalNetworks = localPrefixes
             protectedPhysicalInterface = physicalInterface
@@ -526,43 +532,53 @@ final class ManagedTunnel {
         }
         return nil
     }
-    private func verifyForeignVPNRoute(knownTunnel: String?) throws {
-        let observation = try RouteExecutor.command("/sbin/route", ["-n", "get", "8.8.8.8"])
-        guard let path = Self.parseValue("interface:", in: observation),
-              path.hasPrefix("utun"),
-              knownTunnel == nil || path == knownTunnel else {
-            throw TunnelError.routeVerificationFailed
-        }
-    }
-
-    private func verifySplitRoutes(plan: RoutePlan, country: RuleSet) throws {
-        guard case .interface(let utun) = plan.vpnDefaults[0].destination,
-              case .viaGateway(let physical) = plan.endpoint.destination,
-              let direct = plan.direct.first(where: { $0.prefix.prefix < 32 })?.prefix else {
-            throw TunnelError.routeVerificationFailed
-        }
-        let sample = IPv4CIDR.parseAddressString(direct.network + 1)
-        let observation = try RouteExecutor.command("/sbin/route", ["-n", "get", sample])
-        guard Self.parseValue("gateway:", in: observation) == physical,
-              Self.parseValue("interface:", in: observation)?.hasPrefix("en") == true else {
-            throw TunnelError.routeVerificationFailed
-        }
-        try verifyForeignVPNRoute(knownTunnel: utun)
-    }
-
-    private func verifyManagedRoutes(plan: RoutePlan, mode: RoutingMode, country: RuleSet?) throws {
+    private func verifyManagedRoutes(plan: RoutePlan, mode: RoutingMode, country: RuleSet?, allCustom: Bool = false) throws {
         for route in [plan.endpoint] + plan.vpnDefaults {
             let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", "-net", route.prefix.description])
             guard ObservedIPv4Route(commandOutput: raw).isExactly(route) else { throw TunnelError.routeVerificationFailed }
         }
-        guard let first = plan.vpnDefaults.first, case .interface(let tunnel) = first.destination else {
-            throw TunnelError.noTunnelInterface
+        guard let first = plan.vpnDefaults.first, case .interface(let tunnel) = first.destination,
+              case .viaGateway(let gateway) = plan.endpoint.destination else { throw TunnelError.noTunnelInterface }
+        if mode == .chinaDirect && country == nil { throw TunnelError.missingRules }
+        if let direct = plan.direct.first {
+            let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", IPv4CIDR.addressString(direct.prefix.network)])
+            guard Self.parseValue("gateway:", in: raw) == gateway,
+                  Self.parseValue("interface:", in: raw)?.hasPrefix("en") == true else { throw TunnelError.routeVerificationFailed }
         }
-        try verifyForeignVPNRoute(knownTunnel: tunnel)
-        if mode == .chinaDirect {
-            guard let country else { throw TunnelError.missingRules }
-            try verifySplitRoutes(plan: plan, country: country)
+        let samples = ["8.8.8.8", "1.1.1.1", "9.9.9.9", "208.67.222.222"]
+        if let sample = samples.first(where: { ip in
+            ip != IPv4CIDR.addressString(plan.endpoint.prefix.network) &&
+            !plan.direct.contains(where: { $0.prefix.contains(IPv4CIDR.parseAddress(ip)!) }) &&
+            !protectedLocalNetworks.contains(where: { $0.contains(IPv4CIDR.parseAddress(ip)!) })
+        }) {
+            let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", sample])
+            guard Self.parseValue("interface:", in: raw) == tunnel else { throw TunnelError.routeVerificationFailed }
         }
+        let checks = allCustom ? custom.active : CustomRouteAction.allCases.compactMap { action in custom.active.first { $0.action == action } }
+        for rule in checks {
+            let prefix = try CustomRuleSet.prefix(rule.cidr)
+            let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", IPv4CIDR.addressString(prefix.network)])
+            let iface = Self.parseValue("interface:", in: raw) ?? ""
+            guard (rule.action == .vpn ? iface == tunnel : iface.hasPrefix("en") && Self.parseValue("gateway:", in: raw) == gateway) else {
+                throw TunnelError.routeVerificationFailed
+            }
+        }
+    }
+    func explainRoute(_ request: RouteLookupRequest) throws -> RouteLookupResult {
+        guard state == .connected, process?.isRunning == true, activeProfileID == request.profileID,
+              activeAttemptID == request.attemptID, routingRevision == request.revision, activeMode == request.mode else { throw RoutingModeSwitchError.stale }
+        let decision = try RouteExplanation.decide(ip: request.ip, mode: activeMode, country: rules, custom: custom,
+            local: protectedLocalNetworks, endpoint: activePlan.map { IPv4CIDR.addressString($0.endpoint.prefix.network) },
+            effectiveDirect: activePlan?.direct.map(\.prefix))
+        let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", request.ip])
+        let observed = Self.parseValue("interface:", in: raw) ?? ""
+        let gateway = Self.parseValue("gateway:", in: raw) ?? ""
+        let expected: String? = decision.path == .vpn ? protectedVPNInterface : decision.path == .direct ? protectedPhysicalInterface : nil
+        var matches = expected.map { !$0.isEmpty && $0 == observed }
+        if decision.path == .direct, !protectedLocalNetworks.contains(where: { $0.contains(IPv4CIDR.parseAddress(request.ip)!) }),
+           let plan = activePlan, case .viaGateway(let physical) = plan.endpoint.destination { matches = matches == true && gateway == physical }
+        return RouteLookupResult(request: request, decision: decision, expectedInterface: expected,
+            observedInterface: observed, observedGateway: gateway, matchesExpected: matches)
     }
 
     private func verifyManagedEnvironment() throws {
@@ -664,69 +680,27 @@ final class ManagedTunnel {
     }
     func changeRules(_ text: String) throws {
         guard state == .connected, process?.isRunning == true, activeMode == .chinaDirect, let oldRules = rules,
-              let plan = activePlan, let executor = routing else { throw TunnelError.noActiveRoutePlan }
+              activePlan != nil, routing != nil else { throw TunnelError.noActiveRoutePlan }
         let next = try RuleSet(text: text)
         guard next.routes.count >= 100 else { throw TunnelError.missingRules }
         try RuleUpdater.validateChange(previous: oldRules, next: next)
-        let gateway: String
-        let vpnInterface: String
-        switch plan.endpoint.destination {
-        case .viaGateway(let value): gateway = value
-        case .interface: throw TunnelError.noPhysicalGateway
-        }
-        guard let interfaceRoute = plan.vpnDefaults.first,
-              case .interface(let tun) = interfaceRoute.destination else {
-            throw TunnelError.noTunnelInterface
-        }
-        vpnInterface = tun
-
-        // Rebuild the effective routing plan, not the raw downloaded CIDR diff.
-        // Otherwise a newly added CN prefix could hijack a connected local subnet.
-        let updated = try RoutePlanner.build(
-            serverIPv4: IPv4CIDR.parseAddressString(plan.endpoint.prefix.network),
-            physicalGateway: gateway, vpnInterface: vpnInterface,
-            localPrefixes: protectedLocalNetworks, china: next)
-        let oldSet = Set(plan.direct)
-        let nextSet = Set(updated.direct)
-        let additions = nextSet.subtracting(oldSet).sorted { $0.prefix < $1.prefix }
-        let removals = oldSet.subtracting(nextSet).sorted { $0.prefix < $1.prefix }
-
-        do {
-            if let current = guardPolicy {
-                let policy = try LeakGuardPolicy(physical: current.physical, endpoint: current.endpoint, port: current.port,
-                    transport: current.transport, local: protectedLocalNetworks, country: next.routes)
-                try packetGuard.replaceRules(policy.rules(tunnel: vpnInterface), resetExistingStates: !removals.isEmpty)
-                guardPolicy = policy
-            }
-            try executor.refreshDirectRoutes(added: additions, removed: removals)
-            try verifySplitRoutes(plan: updated, country: next)
-            activePlan = updated
-            rules = next
-            routingRevision = UUID()
-            message = "Routes refreshed; OpenVPN remains connected"
-        } catch {
-            // A partially failed route transaction may violate the selected
-            // direct/VPN policy. Disconnect rather than leave a silently
-            // incorrect split route table active.
-            let reason = "Route update failed, VPN disconnected for safety: \(error.localizedDescription)"
-            stop()
-            lastError = reason
-            state = .failed
-            message = reason
-            throw error
-        }
+        try transitionManagedRoutes(to: .chinaDirect, ruleText: text)
     }
     func switchRoutingMode(to mode: RoutingMode, ruleText: String) throws {
         guard state == .connected, process?.isRunning == true, activeMode != .original,
-              mode != .original, let plan = activePlan, let executor = routing,
-              let tunnel = protectedVPNInterface else { throw RoutingModeSwitchError.unavailable }
+              mode != .original, activePlan != nil, routing != nil,
+              protectedVPNInterface != nil else { throw RoutingModeSwitchError.unavailable }
         guard mode != activeMode else { return }
+        try transitionManagedRoutes(to: mode, ruleText: ruleText)
+    }
+    private func transitionManagedRoutes(to mode: RoutingMode, ruleText: String) throws {
+        guard let plan = activePlan, let executor = routing, let tunnel = protectedVPNInterface else { throw TunnelError.noActiveRoutePlan }
         // Bad input is rejected before touching the current live policy.
         let change = try ManagedRouteTransition(current: plan, target: mode, ruleText: ruleText,
-                                                 local: protectedLocalNetworks)
+                                                 local: protectedLocalNetworks, custom: custom)
         let nextProtection = try guardPolicy.map { current in
             try LeakGuardPolicy(physical: current.physical, endpoint: current.endpoint, port: current.port,
-                transport: current.transport, local: protectedLocalNetworks, country: change.rules?.routes ?? [])
+                transport: current.transport, local: protectedLocalNetworks, country: [], managedDirect: change.plan.direct.map(\.prefix))
         }
         do {
             try ensureAttempt()
@@ -739,7 +713,7 @@ final class ManagedTunnel {
             }, verify: {
                 try self.ensureAttempt()
                 guard self.process?.isRunning == true else { throw RoutingModeSwitchError.stale }
-                try self.verifyManagedRoutes(plan: change.plan, mode: mode, country: change.rules)
+                try self.verifyManagedRoutes(plan: change.plan, mode: mode, country: change.rules, allCustom: true)
             })
             try ensureAttempt()
             guard process?.isRunning == true else { throw RoutingModeSwitchError.stale }

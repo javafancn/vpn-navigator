@@ -19,6 +19,7 @@ import Foundation
     func updateRules(_ text: String, reply: @escaping (String) -> Void)
     func switchRoutingMode(mode: String, rules: String, expectedProfileID: String, expectedAttemptID: String,
                            expectedMode: String, expectedRevision: String, reply: @escaping (String) -> Void)
+    func explainRoute(_ request: String, reply: @escaping (String) -> Void)
     func recoverOrphanedRoutes(reply: @escaping (String) -> Void)
 }
 

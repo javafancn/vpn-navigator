@@ -48,14 +48,14 @@ final class ManagedTunnel {
         FileManager.default.fileExists(atPath: workdir.appendingPathComponent("routes.journal").path)
     }
     private var activeMode: RoutingMode = .original
+    private(set) var routingRevision: UUID?
+    var routingMode: RoutingMode? { activeProfileID == nil ? nil : activeMode }
     private(set) var activeProfileID: UUID?
     private var rules: RuleSet?
     private var activePlan: RoutePlan?
     private var protectedLocalNetworks: [IPv4CIDR] = []
     private var protectedPhysicalInterface: String?
     private var protectedVPNInterface: String?
-    private var fullVPNEndpointIPv4: String?
-    private var fullVPNGateway: String?
     private var lastError: String?
     private var orphanRecordFile: URL { workdir.appendingPathComponent("openvpn-child.json") }
     private var hasPersistentSessionEvidence: Bool {
@@ -121,6 +121,7 @@ final class ManagedTunnel {
         protectionTeardownBlocked = false
         guard !dnsRecovery.exists else { throw DNSJournalError.conflict }
         guard process == nil else { throw TunnelError.alreadyRunning }
+        routingRevision = nil
         self.activeAttemptID = attemptID
         self.cancellationGeneration = capturedGeneration
         self.preferences = preferences
@@ -130,6 +131,7 @@ final class ManagedTunnel {
         // IPv4-only routing cannot protect IPv6. Refuse a non-original split or
         // full-VPN mode while native IPv6 has a non-tunnel path (fail closed).
         if mode != .original && !preferences.killSwitch { try checkIPv6Bypass() }
+        if mode != .chinaDirect { rules = nil }
         if mode == .chinaDirect {
             rules = try RuleSet(text: ruleText)
             guard let rules, rules.routes.count >= 100 else { throw TunnelError.missingRules }
@@ -459,51 +461,13 @@ final class ManagedTunnel {
             if attemptExpiresAt == nil { attemptExpiresAt = DispatchTime.now().uptimeNanoseconds + UInt64(preferences.connectionTimeout) * 1_000_000_000 }
             startAttemptDeadline()
         }
-        if snapshot.state == .connected && activeMode == .chinaDirect {
-            state = .connecting
-            message = "Applying and validating China IPv4 routes"
-        }
-        if snapshot.state == .connected, activeMode == .fullVPN {
-            do {
-                guard let remote = snapshot.remoteIPv4,
-                      let localIP = snapshot.localTunnelIPv4 else {
-                    throw TunnelError.routeVerificationFailed
-                }
-                let interfaces = try RouteExecutor.command("/sbin/ifconfig", ["-a"])
-                guard let expectedTunnel = Self.findTunnel(containing: localIP, in: interfaces) else {
-                    throw TunnelError.noTunnelInterface
-                }
-                try verifyForeignVPNRoute(knownTunnel: expectedTunnel)
-                let endpoint = try RouteExecutor.command("/sbin/route", ["-n", "get", remote])
-                guard let physical = Self.parseValue("interface:", in: endpoint),
-                      physical.hasPrefix("en"),
-                      let gateway = Self.parseValue("gateway:", in: endpoint),
-                      !gateway.isEmpty else { throw TunnelError.noPhysicalGateway }
-                protectedVPNInterface = expectedTunnel
-                protectedPhysicalInterface = physical
-                fullVPNEndpointIPv4 = remote
-                fullVPNGateway = gateway
-                try ensureAttempt(); completeAttempt()
-                state = .connected
-                message = "Connected · global VPN route verified"
-                eventStore.append(.connected)
-                startNetworkWatchdog()
-            } catch {
-                let reason = "Full VPN routing is not active: \(error.localizedDescription)"
-                stop()
-                lastError = reason
-                state = .failed
-                message = reason
-            }
-            return
-        }
-        guard snapshot.state == .connected, activeMode == .chinaDirect, routing == nil else { return }
-        guard let remote = snapshot.remoteIPv4, let tunnelIP = snapshot.localTunnelIPv4, let rules else {
+        guard snapshot.state == .connected, activeMode != .original, routing == nil else { return }
+        state = .connecting
+        message = "正在应用并核验 IPv4 路由"
+        guard let remote = snapshot.remoteIPv4, let tunnelIP = snapshot.localTunnelIPv4,
+              activeMode != .chinaDirect || rules != nil else {
             let failure = "OpenVPN did not report a usable IPv4 endpoint or tunnel address."
-            stop()
-            lastError = failure
-            state = .failed
-            message = failure
+            stop(); lastError = failure; state = .failed; message = failure
             return
         }
         do {
@@ -522,20 +486,21 @@ final class ManagedTunnel {
             guard !localPrefixes.isEmpty else { throw TunnelError.noPhysicalGateway }
             let plan = try RoutePlanner.build(serverIPv4: remote, physicalGateway: gateway,
                                               vpnInterface: utun, localPrefixes: localPrefixes,
-                                              china: rules)
+                                              china: activeMode == .chinaDirect ? rules : nil)
             let executor = RouteExecutor(journal: workdir.appendingPathComponent("routes.journal"), shouldCancel: { [weak self] in self?.cancellationRequested == true || self?.attemptExpired == true })
             // Own the executor *before* mutating routes. If installation or
             // verification fails, stop() must still find the rollback journal.
             routing = executor
             try executor.apply(plan.installOrder)
-            try verifySplitRoutes(plan: plan, country: rules)
+            try verifyManagedRoutes(plan: plan, mode: activeMode, country: rules)
             activePlan = plan
             protectedLocalNetworks = localPrefixes
             protectedPhysicalInterface = physicalInterface
             protectedVPNInterface = utun
             try ensureAttempt(); completeAttempt()
+            routingRevision = UUID()
             state = .connected
-            message = "Connected · China IPv4 split routing enabled"
+            message = "已连接 · " + activeMode.title
             eventStore.append(.connected)
             startNetworkWatchdog()
         } catch {
@@ -585,6 +550,34 @@ final class ManagedTunnel {
         try verifyForeignVPNRoute(knownTunnel: utun)
     }
 
+    private func verifyManagedRoutes(plan: RoutePlan, mode: RoutingMode, country: RuleSet?) throws {
+        for route in [plan.endpoint] + plan.vpnDefaults {
+            let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", "-net", route.prefix.description])
+            guard ObservedIPv4Route(commandOutput: raw).isExactly(route) else { throw TunnelError.routeVerificationFailed }
+        }
+        guard let first = plan.vpnDefaults.first, case .interface(let tunnel) = first.destination else {
+            throw TunnelError.noTunnelInterface
+        }
+        try verifyForeignVPNRoute(knownTunnel: tunnel)
+        if mode == .chinaDirect {
+            guard let country else { throw TunnelError.missingRules }
+            try verifySplitRoutes(plan: plan, country: country)
+        }
+    }
+
+    private func verifyManagedEnvironment() throws {
+        if packetGuard.active { try packetGuard.verify() } else { try checkIPv6Bypass() }
+        guard let plan = activePlan, let physical = protectedPhysicalInterface,
+              case .viaGateway(let gateway) = plan.endpoint.destination else { throw TunnelError.noActiveRoutePlan }
+        let observed = try RouteExecutor.command("/sbin/route", ["-n", "get", "default"])
+        guard Self.parseValue("gateway:", in: observed) == gateway,
+              Self.parseValue("interface:", in: observed) == physical else { throw TunnelError.noPhysicalGateway }
+        let table = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
+        let local = LocalIPv4Networks.parse(netstat: table, physicalInterface: physical)
+        guard !local.isEmpty, Set(local) == Set(protectedLocalNetworks) else { throw TunnelError.noPhysicalGateway }
+        try verifyManagedRoutes(plan: plan, mode: activeMode, country: rules)
+    }
+
     private func startNetworkWatchdog() {
         networkWatchdog?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -597,41 +590,7 @@ final class ManagedTunnel {
     func verifyPhysicalNetwork() {
         guard state == .connected, activeMode != .original else { return }
         do {
-            if packetGuard.active { try packetGuard.verify() }
-            else { try checkIPv6Bypass() }
-            if activeMode == .fullVPN {
-                guard let expectedTunnel = protectedVPNInterface,
-                      let remote = fullVPNEndpointIPv4,
-                      let expectedGateway = fullVPNGateway,
-                      let expectedPhysical = protectedPhysicalInterface else {
-                    throw TunnelError.routeVerificationFailed
-                }
-                try verifyForeignVPNRoute(knownTunnel: expectedTunnel)
-                let endpoint = try RouteExecutor.command("/sbin/route", ["-n", "get", remote])
-                guard Self.parseValue("interface:", in: endpoint) == expectedPhysical,
-                      Self.parseValue("gateway:", in: endpoint) == expectedGateway else {
-                    throw TunnelError.noPhysicalGateway
-                }
-                return
-            }
-            guard activeMode == .chinaDirect, let plan = activePlan,
-                  let physicalInterface = protectedPhysicalInterface,
-                  case .viaGateway(let expected) = plan.endpoint.destination else {
-                throw TunnelError.routeVerificationFailed
-            }
-            let defaultRoute = try RouteExecutor.command("/sbin/route", ["-n", "get", "default"])
-            guard Self.parseValue("gateway:", in: defaultRoute) == expected,
-                  Self.parseValue("interface:", in: defaultRoute) == physicalInterface else {
-                throw TunnelError.noPhysicalGateway
-            }
-            let localTable = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
-            let onLink = LocalIPv4Networks.parse(
-                netstat: localTable, physicalInterface: physicalInterface)
-            guard !onLink.isEmpty, Set(onLink) == Set(protectedLocalNetworks) else {
-                throw TunnelError.noPhysicalGateway
-            }
-            guard let rules else { throw TunnelError.missingRules }
-            try verifySplitRoutes(plan: plan, country: rules)
+            try verifyManagedEnvironment()
         } catch {
             eventStore.append(.networkChanged)
             if scheduleGuardedReconnect() { return }
@@ -704,7 +663,7 @@ final class ManagedTunnel {
         return message
     }
     func changeRules(_ text: String) throws {
-        guard activeMode == .chinaDirect, let oldRules = rules,
+        guard state == .connected, process?.isRunning == true, activeMode == .chinaDirect, let oldRules = rules,
               let plan = activePlan, let executor = routing else { throw TunnelError.noActiveRoutePlan }
         let next = try RuleSet(text: text)
         guard next.routes.count >= 100 else { throw TunnelError.missingRules }
@@ -743,6 +702,7 @@ final class ManagedTunnel {
             try verifySplitRoutes(plan: updated, country: next)
             activePlan = updated
             rules = next
+            routingRevision = UUID()
             message = "Routes refreshed; OpenVPN remains connected"
         } catch {
             // A partially failed route transaction may violate the selected
@@ -753,6 +713,45 @@ final class ManagedTunnel {
             lastError = reason
             state = .failed
             message = reason
+            throw error
+        }
+    }
+    func switchRoutingMode(to mode: RoutingMode, ruleText: String) throws {
+        guard state == .connected, process?.isRunning == true, activeMode != .original,
+              mode != .original, let plan = activePlan, let executor = routing,
+              let tunnel = protectedVPNInterface else { throw RoutingModeSwitchError.unavailable }
+        guard mode != activeMode else { return }
+        // Bad input is rejected before touching the current live policy.
+        let change = try ManagedRouteTransition(current: plan, target: mode, ruleText: ruleText,
+                                                 local: protectedLocalNetworks)
+        let nextProtection = try guardPolicy.map { current in
+            try LeakGuardPolicy(physical: current.physical, endpoint: current.endpoint, port: current.port,
+                transport: current.transport, local: protectedLocalNetworks, country: change.rules?.routes ?? [])
+        }
+        do {
+            try ensureAttempt()
+            try verifyManagedEnvironment()
+            try RouteTransitionExecutor.apply(change, executor: executor, updateProtection: {
+                if let nextProtection {
+                    try self.packetGuard.replaceRules(nextProtection.rules(tunnel: tunnel), resetExistingStates: change.tightensDirectAccess)
+                    self.guardPolicy = nextProtection
+                }
+            }, verify: {
+                try self.ensureAttempt()
+                guard self.process?.isRunning == true else { throw RoutingModeSwitchError.stale }
+                try self.verifyManagedRoutes(plan: change.plan, mode: mode, country: change.rules)
+            })
+            try ensureAttempt()
+            guard process?.isRunning == true else { throw RoutingModeSwitchError.stale }
+            activePlan = change.plan; rules = change.rules; activeMode = mode; routingRevision = UUID()
+            if let context = reconnectContext {
+                reconnectContext = ReconnectContext(profile: context.profile, profileID: context.profileID,
+                    attemptID: context.attemptID, mode: mode, username: context.username, password: context.password)
+            }
+            message = "已连接 · " + mode.title
+        } catch {
+            let reason = "路由切换未通过核验，VPN 已停止：" + error.localizedDescription
+            stop(); lastError = reason; state = .failed; message = reason
             throw error
         }
     }
@@ -849,8 +848,7 @@ final class ManagedTunnel {
         protectedLocalNetworks = []
         protectedPhysicalInterface = nil
         protectedVPNInterface = nil
-        fullVPNEndpointIPv4 = nil
-        fullVPNGateway = nil
+        routingRevision = nil
         process = nil
         activeProfileID = nil
         traffic = nil

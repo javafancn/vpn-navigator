@@ -23,7 +23,8 @@ final class ApplicationLifecycle: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) { model?.quickAccess.shutdown() }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model else { return .terminateNow }
-        guard !model.maintenanceInProgress, !model.backgroundServicesBusy, !model.profileTransferInProgress else { return .terminateCancel }
+        guard !model.maintenanceInProgress, !model.backgroundServicesBusy, !model.profileTransferInProgress,
+              !model.routingModeSwitching else { return .terminateCancel }
         guard !model.canQuit else { return .terminateNow }
         guard !quitting else { return .terminateCancel }
         quitting = true

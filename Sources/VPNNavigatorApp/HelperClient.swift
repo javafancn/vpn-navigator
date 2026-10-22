@@ -121,6 +121,13 @@ final class HelperClient {
     func updateRules(_ rules: String) async -> String {
         await ask(timeout: 600) { helper, reply in helper.updateRules(rules, reply: reply) }
     }
+    func switchRoutingMode(_ request: RoutingModeSwitchRequest, rules: String) async -> String {
+        await ask(timeout: 600) { helper, reply in
+            helper.switchRoutingMode(mode: request.target.rawValue, rules: rules,
+                expectedProfileID: request.profileID.uuidString, expectedAttemptID: request.attemptID.uuidString,
+                expectedMode: request.previous.rawValue, expectedRevision: request.revision.uuidString, reply: reply)
+        }
+    }
 }
 
 /// NSXPC errors and callbacks can arrive concurrently. Resume continuations exactly once.

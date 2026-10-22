@@ -100,7 +100,7 @@ final class RouteExecutor {
     func refreshDirectRoutes(added: [RouteTarget], removed: [RouteTarget]) throws {
         guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
         // The owning tunnel is disconnected by the caller if any mutation fails.
-        for route in added { try apply(route) }
+        if !added.isEmpty { try apply(added) }
         for route in removed {
             guard !shouldCancel() else { throw CancellationError() }
             guard installed.contains(route) else { continue }

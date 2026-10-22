@@ -389,14 +389,15 @@ private struct ConnectionOverview: View {
                         quickRow("路由模式") {
                             Menu {
                                 ForEach(RoutingMode.allCases) { mode in
-                                    Button(mode.rawValue) { Task { await model.setMode(mode) } }
+                                    Button(mode.title) { Task { await model.setMode(mode) } }
+                                        .disabled(!model.canSetRoutingMode(mode, for: model.selectedID))
                                 }
                             } label: {
-                                selectionField(model.selected?.mode.rawValue ?? "Original", stepper: false)
+                                selectionField(model.displayedRoutingMode(for: model.selectedID)?.title ?? "待核验", stepper: false)
                             }
                                                         .menuIndicator(.hidden)
                             .buttonStyle(.plain)
-                            .disabled(model.selected == nil || model.busy || model.connected || model.connecting)
+                            .disabled(model.selected == nil || model.busy || model.routingModeSwitching || model.connecting || model.stopping)
                         }
                         quickRow("源文件") {
                             Text(model.selected?.sourceFilename ?? "未选择配置")
@@ -687,18 +688,12 @@ private struct RoutingWorkspace: View {
     @State private var snapshotToRestore: RuleSnapshot?
     @State private var importingRules = false
 
-    private func title(for mode: RoutingMode) -> String {
-        switch mode {
-        case .original: return "Original"
-        case .fullVPN: return "Full VPN"
-        case .chinaDirect: return "中国 IPv4 直连"
-        }
-    }
+    private func title(for mode: RoutingMode) -> String { mode.title }
     private func subtitle(for mode: RoutingMode) -> String {
         switch mode {
-        case .original: return "不修改 VPN，保留原始网络连接"
-        case .fullVPN: return "所有 IPv4 流量通过 VPN 连接"
-        case .chinaDirect: return "仅中国 IPv4 流量直连，其他流量走 VPN"
+        case .original: return "遵循配置文件及服务器下发的路由"
+        case .fullVPN: return "IPv4 默认流量走 VPN，局域网保持直连"
+        case .chinaDirect: return "中国 IPv4 直连，其他默认流量走 VPN"
         }
     }
 
@@ -711,7 +706,7 @@ private struct RoutingWorkspace: View {
                 Text("当前配置").foregroundStyle(.secondary)
                 Text(model.selected?.name ?? "尚未选择").fontWeight(.medium)
                 Spacer()
-                Text("切换模式在下次连接时生效").foregroundStyle(.secondary)
+                Text(model.connected && model.selectedID == model.activeProfileID ? model.routingModeStatus : "保存后在下次连接生效").foregroundStyle(.secondary)
             }
             .font(.system(size: 12))
             .padding(.vertical, 4)
@@ -720,7 +715,7 @@ private struct RoutingWorkspace: View {
                     Text("路由模式").font(.system(size: 20, weight: .semibold))
                     ForEach(RoutingMode.allCases) { mode in routeOption(mode) }
                     Spacer(minLength: 8)
-                    Text("路由策略按配置保存，连接期间无法更改。")
+                    Text("规则与全局直接切换，不主动重连。原始配置需先断开；收紧断线保护会重置网络连接。")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -809,7 +804,7 @@ private struct RoutingWorkspace: View {
     }
 
     private func routeOption(_ mode: RoutingMode) -> some View {
-        let selected = model.selected?.mode ?? .original
+        let selected = model.displayedRoutingMode(for: model.selectedID)
         return Button {
             Task { await model.setMode(mode) }
         } label: {
@@ -831,7 +826,7 @@ private struct RoutingWorkspace: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 11)
-            .frame(maxWidth: .infinity, minHeight: 94, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
             .background(selected == mode ?
                         GlassPalette.blue.opacity(0.10) : Color.white.opacity(0.10),
                         in: RoundedRectangle(cornerRadius: 12))
@@ -844,8 +839,7 @@ private struct RoutingWorkspace: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(ReferenceQuietButton(cornerRadius: 12))
-        .disabled(model.selected == nil || model.busy ||
-                  model.connected || model.connecting)
+        .disabled(!model.canSetRoutingMode(mode, for: model.selectedID))
     }
 
     private func ruleDetail(_ label: String, _ value: String) -> some View {
@@ -1357,17 +1351,19 @@ struct ProfileDetail: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("所选配置的默认路由策略")
                 .font(.system(size: 16, weight: .medium))
-            Picker("模式", selection: Binding(
-                get: { profile.mode },
-                set: { value in Task { await model.setMode(value) } }
-            )) {
-                Text("遵循原始配置").tag(RoutingMode.original)
-                Text("全局 VPN").tag(RoutingMode.fullVPN)
-                Text("中国 IPv4 直连").tag(RoutingMode.chinaDirect)
+            ForEach(RoutingMode.allCases) { mode in
+                Button { Task { await model.setMode(mode, for: profile.id) } } label: {
+                    HStack {
+                        Image(systemName: model.displayedRoutingMode(for: profile.id) == mode ? "largecircle.fill.circle" : "circle")
+                        Text(mode.title)
+                        Spacer()
+                    }.contentShape(Rectangle())
+                }.buttonStyle(.plain).disabled(!model.canSetRoutingMode(mode, for: profile.id))
             }
-            .pickerStyle(.radioGroup)
-            .disabled(model.busy || model.connected || model.connecting)
-            Text("中国 IPv4 直连需要已经下载的网段规则；IPv6 地区分流未提供；断线保护可在连接偏好中启用。")
+            if model.connected, model.activeProfileID == profile.id {
+                Text(model.routingModeStatus).font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            Text("规则路由使用中国 IPv4 网段。规则与全局可在连接中切换；原始配置需先断开。IPv6 地区分流未提供。")
                 .font(.system(size: 14)).foregroundStyle(.secondary)
         }
         .padding(17)

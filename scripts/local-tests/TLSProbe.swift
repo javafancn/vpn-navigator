@@ -9,6 +9,8 @@ import Darwin
                  reply: @escaping (String) -> Void)
     func disconnect(cancelAttemptID: String, reply: @escaping (String) -> Void)
     func disconnectSession(expectedProfileID: String, expectedAttemptID: String, reply: @escaping (String) -> Void)
+    func switchRoutingMode(mode: String, rules: String, expectedProfileID: String, expectedAttemptID: String,
+                           expectedMode: String, expectedRevision: String, reply: @escaping (String) -> Void)
     func recoverOrphanedRoutes(reply: @escaping (String) -> Void)
     func connectionStatus(reply: @escaping (String) -> Void)
     func sessionSnapshot(reply: @escaping (String) -> Void)
@@ -173,6 +175,16 @@ func exercise(_ profile: String, shouldConnect: Bool, disconnectAtEnd: Bool = tr
             guard refused.hasPrefix("ERROR:"), (await ask { $0.connectionStatus(reply: $1) }).hasPrefix("connected:") else { return false }
         }
         print("PASS: stale/malformed switch identities leave the real TLS session connected.")
+        let refusedMode = await ask {
+            $0.switchRoutingMode(mode: "Full VPN", rules: "", expectedProfileID: profileID,
+                expectedAttemptID: attemptID, expectedMode: "Original", expectedRevision: UUID().uuidString, reply: $1)
+        }
+        let unchanged = await ask { $0.sessionSnapshot(reply: $1) }
+        guard refusedMode.hasPrefix("ERROR:"), let bytes = unchanged.data(using: .utf8),
+              let snapshot = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any],
+              snapshot["state"] as? String == "connected", snapshot["attemptID"] as? String == attemptID,
+              snapshot["activeProfileID"] as? String == profileID, snapshot["routingMode"] as? String == "Original" else { return false }
+        print("PASS: installed XPC rejects unsupported live route switching without changing the real TLS session.")
     }
     if !disconnectAtEnd { return matched }
     let cleaned: Bool

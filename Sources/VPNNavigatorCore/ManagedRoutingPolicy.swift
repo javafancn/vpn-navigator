@@ -39,17 +39,13 @@ public enum ManagedRoutingPolicy {
     /// isolation guarantee (OpenVPN's own manual warns about whitespace).
     public static func openVPNArguments(mode: RoutingMode) -> [String] {
         guard mode != .original else { return [] }
-        var options = [
+        let options = [
             "--pull-filter", "ignore", "redirect-gateway",
             "--pull-filter", "ignore", "redirect-private",
             "--pull-filter", "ignore", "route-ipv6",
-            "--pull-filter", "ignore", "route "
+            "--pull-filter", "ignore", "route ",
+            "--route-noexec"
         ]
-        if mode == .chinaDirect {
-            options += ["--route-noexec"]
-        } else if mode == .fullVPN {
-            options += ["--redirect-gateway", "def1"]
-        }
         return options
     }
 }

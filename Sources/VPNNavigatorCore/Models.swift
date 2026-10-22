@@ -5,6 +5,13 @@ public enum RoutingMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case fullVPN = "Full VPN"
     case chinaDirect = "China Direct"
     public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .original: return "原始配置"
+        case .fullVPN: return "全局路由"
+        case .chinaDirect: return "规则路由"
+        }
+    }
 }
 
 public struct VPNProfile: Codable, Identifiable, Equatable, Sendable {

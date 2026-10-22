@@ -157,7 +157,8 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
             receivedBytes: engine.traffic?.receivedBytes, sentBytes: engine.traffic?.sentBytes,
             challenge: engine.challenge, firewallActive: engine.firewallActive,
             firewallRecoveryRequired: engine.firewallRecoveryRequired, attemptID: engine.activeAttemptID,
-            networkRecoveryRequired: engine.networkRecoveryRequired)
+            networkRecoveryRequired: engine.networkRecoveryRequired,
+            routingMode: engine.routingMode, routingRevision: engine.routingRevision)
     }
     func activeProfile(reply: @escaping (String) -> Void) {
         queue.async { reply(self.engine.activeProfileID?.uuidString ?? "") }
@@ -195,6 +196,26 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
             }
             do { try self.engine.changeRules(text); reply("Rules applied") }
             catch { reply("ERROR: \(error.localizedDescription)") }
+        }
+    }
+    func switchRoutingMode(mode: String, rules: String, expectedProfileID: String, expectedAttemptID: String,
+                           expectedMode: String, expectedRevision: String, reply: @escaping (String) -> Void) {
+        queue.async {
+            guard !self.retiring, !BuildChannel.isLocal || !LocalInstallation.isInstallationPending else {
+                reply("ERROR: " + LocalInstallError.incomplete.localizedDescription); return
+            }
+            do {
+                guard let target = RoutingMode(rawValue: mode) else { throw RoutingModeSwitchError.unavailable }
+                let request = try RoutingModeSwitchRequest(report: self.currentSessionReport(), target: target)
+                guard UUID(uuidString: expectedProfileID) == request.profileID,
+                      UUID(uuidString: expectedAttemptID) == request.attemptID,
+                      UUID(uuidString: expectedRevision) == request.revision,
+                      RoutingMode(rawValue: expectedMode) == request.previous else { throw RoutingModeSwitchError.stale }
+                // Check and mutate on the same serial queue; stale requests
+                // cannot affect a later connection or a newer route revision.
+                try self.engine.switchRoutingMode(to: target, ruleText: rules)
+                reply("Routing mode applied")
+            } catch { reply("ERROR: " + error.localizedDescription) }
         }
     }
 }

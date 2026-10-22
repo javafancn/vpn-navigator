@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import LocalAuthentication
 
 /// Credentials are optional, per profile, and never written to a .ovpn file or app logs.
 /// Passwords stay in the user's login Keychain, not in root-owned profile storage.
@@ -18,7 +19,10 @@ enum KeychainVault {
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
-        if !allowInteraction { query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail }
+        if !allowInteraction {
+            let context = LAContext(); context.interactionNotAllowed = true
+            query[kSecUseAuthenticationContext as String] = context
+        }
         var item: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
               let data = item as? Data else { return nil }

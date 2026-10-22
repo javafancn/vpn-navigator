@@ -41,6 +41,6 @@ API 参考：[NWPathMonitor](https://developer.apple.com/documentation/network/n
 
 ## 当前验证状态（2026-10-22）
 
-本地完成 157 个 Swift 文件的语法解析、工作流 YAML／Info.plist 格式检查、Python 测试夹具语法检查和差异空白检查。新增 18 项 SmartConnection 核心测试，原生自检和设置页截图步骤已加入流水线。当前环境没有 Swift／macOS 编译器，因此 XCTest、原生自检、系统权限和真实网络验收尚未执行。
+本地完成 157 个 Swift 文件的语法解析、工作流 YAML／Info.plist 格式检查、Python 测试夹具语法检查和差异空白检查。新增 18 项 SmartConnection 核心测试，原生自检和设置页截图步骤已加入流水线。本地环境没有 Swift／macOS 编译器；编译、XCTest、原生自检及截图由 macOS CI 执行，系统权限和真实网络仍需单独验收。
 
 本次与 IPv6／双栈改动一并提交审查。macOS 编译、XCTest、原生自检和截图以对应提交的 CI 结果为准；真实网络与系统权限验收仍须单独完成。

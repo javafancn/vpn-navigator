@@ -80,6 +80,12 @@ final class AppModel: ObservableObject {
     @Published var availableInstaller: URL?
     @Published var availableReleasePage: URL?
     @Published var connectionStatus = "disconnected: Not connected"
+    @Published private(set) var activeRoutingMode: RoutingMode?
+    @Published private(set) var routingModeTarget: RoutingMode?
+    var routingModeSwitching: Bool { routingModeTarget != nil }
+    private var routingRevision: UUID?
+    private var statusEpoch: UInt64 = 0
+    private let routingModeService: RoutingModeService
     @Published var activeProfileID: UUID?
     @Published var traffic: TunnelTraffic?
     @Published var receiveTrend = TrafficTrend()
@@ -98,7 +104,8 @@ final class AppModel: ObservableObject {
     private let ipv6Updater: APNICIPv6PreviewStore
     private let helper = HelperClient.shared
 
-    init(backgroundServiceDefaults: UserDefaults = .standard, profileStoreRoot: URL? = nil) {
+    init(backgroundServiceDefaults: UserDefaults = .standard, profileStoreRoot: URL? = nil, routingModeService: RoutingModeService? = nil) {
+        self.routingModeService = routingModeService ?? .live
         backgroundPreferences = BackgroundServicePreferences(defaults: backgroundServiceDefaults,
             existingLoginEnabled: UserServices.loginStatus == .enabled)
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -110,7 +117,7 @@ final class AppModel: ObservableObject {
         launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") { profileOpenReady = true; return }
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") { profileOpenReady = true; return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -158,7 +165,7 @@ final class AppModel: ObservableObject {
     var connected: Bool { sessionState == .connected }
     var connecting: Bool { [.connecting, .authenticating, .reconnecting].contains(sessionState) }
     var stopping: Bool { sessionState == .stopping }
-    var canQuit: Bool { !profileTransferInProgress && !backgroundServicesBusy && ((repairExitAuthorized && canRepairInterruptedInstallation) || SessionExitPolicy.mayExit(state: sessionState, activeProfileID: activeProfileID, helperVerified: helperStateVerified, recoveryRequired: firewallRecoveryRequired || networkRecoveryRequired)) }
+    var canQuit: Bool { !routingModeSwitching && !profileTransferInProgress && !backgroundServicesBusy && ((repairExitAuthorized && canRepairInterruptedInstallation) || SessionExitPolicy.mayExit(state: sessionState, activeProfileID: activeProfileID, helperVerified: helperStateVerified, recoveryRequired: firewallRecoveryRequired || networkRecoveryRequired)) }
     var canRepairInterruptedInstallation: Bool {
         guard BuildChannel.isLocal, !maintenanceInProgress, !backgroundServicesBusy, !busy, !connected, !connecting, !stopping,
               activeProfileID == nil, profileMutations == 0,
@@ -196,7 +203,7 @@ final class AppModel: ObservableObject {
     }
     var incomingPresentationReady: Bool {
         profileOpenReady && !incomingProfiles.isEmpty && !profileDropLoading && !profilePickerPresented &&
-        !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress && !busy &&
+        !routingModeSwitching && !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress && !busy &&
         !connecting && !stopping && !showingImportReport && !showingSetup && !showingMaintenance &&
         !showingPreferences && !showingDiagnostics && !showingAccountCredentials &&
         authenticationChallenge == nil && message == nil
@@ -230,17 +237,17 @@ final class AppModel: ObservableObject {
         await importFiles(urls)
     }
     var canConfirmIncomingProfiles: Bool {
-        reviewingIncomingProfiles && !incomingProfiles.urls.isEmpty &&
+        !routingModeSwitching && reviewingIncomingProfiles && !incomingProfiles.urls.isEmpty &&
         !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress &&
         !busy && !connecting && !stopping
     }
     var canChooseProfileFiles: Bool {
-        !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress &&
+        !routingModeSwitching && !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress &&
         !showingImportReport && !busy && !connecting && !stopping
     }
     func importFiles(_ urls: [URL], presentReport: Bool = true) async {
         guard !reviewingIncomingProfiles, !maintenanceInProgress, !backgroundServicesBusy,
-              !profileTransferInProgress, !busy, !connecting, !stopping else {
+              !profileTransferInProgress, !routingModeSwitching, !busy, !connecting, !stopping else {
             message = "请等待当前操作完成后再导入配置。"; return
         }
         guard !urls.isEmpty, urls.count <= ProfileBatchImporter.maximumFiles else {
@@ -286,16 +293,81 @@ final class AppModel: ObservableObject {
         ]
         showingImportReport = true
     }
-    func setMode(_ mode: RoutingMode) async {
-        guard !maintenanceInProgress else { return }
+    func displayedRoutingMode(for id: UUID?) -> RoutingMode? {
+        if activeProfileID != nil, id == activeProfileID { return connected ? activeRoutingMode : nil }
+        return profiles.first(where: { $0.id == id })?.mode
+    }
+    var routingModeStatus: String {
+        if let target = routingModeTarget { return "正在切换为" + target.title + "…" }
+        if connected { return "实际路由：" + (activeRoutingMode?.title ?? "尚未核验") }
+        if activeProfileID != nil { return "连接状态变化中，路由待核验" }
+        return "保存后在下次连接生效"
+    }
+    func canSetRoutingMode(_ mode: RoutingMode, for id: UUID?) -> Bool {
+        guard let id, profiles.contains(where: { $0.id == id }), !busy, !routingModeSwitching,
+              !maintenanceInProgress, !backgroundServicesBusy, !profileTransferInProgress,
+              !showingImportReport, !connecting, !stopping else { return false }
+        if id == activeProfileID {
+            guard connected, let current = activeRoutingMode else { return false }
+            if mode == current { return true }
+            return current != .original && mode != .original && routingRevision != nil && helperAttemptID != nil &&
+                (mode != .chinaDirect || (rules?.routes.count ?? 0) >= 100)
+        }
+        return true
+    }
+    func setMode(_ mode: RoutingMode, for profileID: UUID? = nil) async {
+        let id = profileID ?? selectedID
+        guard canSetRoutingMode(mode, for: id), let id else { return }
+        guard displayedRoutingMode(for: id) != mode else { return }
         profileMutations += 1; defer { profileMutations -= 1 }
-        guard var item = selected else { return }
-        item.mode = mode
-        do { try await store.update(item); await load() }
-        catch { message = error.localizedDescription }
+        if connected, activeProfileID == id {
+            guard let expectedAttempt = helperAttemptID, let revision = routingRevision,
+                  let previous = activeRoutingMode else { return }
+            statusEpoch &+= 1; routingModeTarget = mode; busy = true
+            let operationEpoch = statusEpoch
+            defer { statusEpoch &+= 1; routingModeTarget = nil; busy = maintenanceInProgress }
+            do {
+                guard let report = await routingModeService.snapshot() else {
+                    markRoutingUnverified(); throw RoutingModeSwitchError.stale
+                }
+                guard statusEpoch == operationEpoch else { throw RoutingModeSwitchError.stale }
+                applyVerifiedSessionReport(report)
+                guard report.activeProfileID == id, report.attemptID == expectedAttempt,
+                      report.routingRevision == revision, report.routingMode == previous else { throw RoutingModeSwitchError.stale }
+                let request = try RoutingModeSwitchRequest(report: report, target: mode)
+                let ruleText = mode == .chinaDirect ? (rules?.routes ?? []).map(\.description).joined(separator: "\n") : ""
+                let response = await routingModeService.apply(request, ruleText)
+                let confirmed = await routingModeService.snapshot()
+                guard statusEpoch == operationEpoch else { throw RoutingModeSwitchError.stale }
+                if let confirmed { applyVerifiedSessionReport(confirmed) }
+                else { markRoutingUnverified() }
+                guard response == "Routing mode applied", let confirmed,
+                      confirmed.state == .connected, confirmed.activeProfileID == id,
+                      confirmed.attemptID == expectedAttempt, confirmed.routingMode == mode,
+                      let confirmedRevision = confirmed.routingRevision, confirmedRevision != revision else {
+                    message = "路由切换未确认：" + response; return
+                }
+                do { try await persistMode(mode, id: id) }
+                catch { message = "实际路由已切换为" + mode.title + "，但默认策略保存失败，请在下次连接前重新选择。" }
+            } catch { message = "未切换路由：" + error.localizedDescription }
+        } else {
+            do { try await persistMode(mode, id: id) }
+            catch { message = "无法保存路由策略：" + error.localizedDescription }
+        }
+    }
+    private func persistMode(_ mode: RoutingMode, id: UUID) async throws {
+        // Reload metadata after a potentially long route transaction.
+        let latest = try await store.list()
+        guard var item = latest.first(where: { $0.id == id }) else { throw StoreError.notFound }
+        item.mode = mode; try await store.update(item); try await loadProfiles()
+    }
+    private func markRoutingUnverified() {
+        activeRoutingMode = nil; routingRevision = nil; helperStateVerified = false
+        networkRecoveryRequired = true
+        connectionStatus = "failed: 无法核验路由切换结果，请检查助手与网络恢复状态"
     }
     func updateMetadata(name: String, group: String, notes: String, favorite: Bool) async {
-        guard !maintenanceInProgress else { return }
+        guard !maintenanceInProgress, !routingModeSwitching else { return }
         profileMutations += 1; defer { profileMutations -= 1 }
         guard var item = selected else { return }
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -361,7 +433,7 @@ final class AppModel: ObservableObject {
     }
 
     func deleteSelected() async {
-        guard !maintenanceInProgress else { return }
+        guard !maintenanceInProgress, !routingModeSwitching else { return }
         profileMutations += 1; defer { profileMutations -= 1 }
         guard let item = selected else { return }
         do { try await store.delete(id: item.id); KeychainVault.remove(id: item.id); selectedID = nil; await load() }
@@ -369,7 +441,7 @@ final class AppModel: ObservableObject {
     }
 
     func updateIPv6Preview() async {
-        guard !busy else { return }
+        guard !busy, !routingModeSwitching else { return }
         busy = true
         defer { busy = false }
         do {
@@ -380,7 +452,7 @@ final class AppModel: ObservableObject {
         }
     }
     func refreshRules() async {
-        guard !busy, !connecting, !stopping else { return }
+        guard !busy, !routingModeSwitching, !connecting, !stopping else { return }
         busy = true; defer { busy = false }
         do {
             let candidate = try await updater.fetchCandidate()
@@ -544,7 +616,7 @@ final class AppModel: ObservableObject {
         }
     }
     func restoreRuleSnapshot(_ id: UUID) async {
-        guard !busy, !connecting, !stopping else { return }
+        guard !busy, !routingModeSwitching, !connecting, !stopping else { return }
         busy = true
         defer { busy = false }
         do {
@@ -596,30 +668,40 @@ final class AppModel: ObservableObject {
             message = "Enable the background helper in System Settings if requested. A signed .app distribution is required."
         } catch { message = "Helper registration failed: \(error.localizedDescription)" }
     }
+    func applyVerifiedSessionReport(_ report: SessionReport) {
+        helperStateVerified = true
+        if !(busy && connectionAttempt != nil && sessionState == .connecting && report.state == .disconnected) {
+            connectionStatus = report.statusText
+        }
+        helperAttemptID = report.attemptID
+        activeProfileID = report.activeProfileID
+        authenticationChallenge = report.challenge
+        firewallActive = report.firewallActive
+        firewallRecoveryRequired = report.firewallRecoveryRequired
+        networkRecoveryRequired = report.requiresNetworkRecovery
+        traffic = report.traffic
+        if report.state == .connected, let value = report.traffic {
+            receiveTrend.record(cumulativeBytes: value.receivedBytes)
+            sendTrend.record(cumulativeBytes: value.sentBytes)
+        } else {
+            receiveTrend.reset()
+            sendTrend.reset()
+        }
+        activeRoutingMode = report.routingMode
+        routingRevision = report.routingRevision
+    }
     func refreshConnectionStatus() async {
+        let capturedEpoch = statusEpoch
+        guard !routingModeSwitching else { return }
         installationIssue = helper.localInstallationIssue
         helperStatus = displayHelperStatus(helper.installationStatus)
         if helper.installationStatus == .enabled {
             if let report = await helper.sessionReport() {
-                helperStateVerified = true
-                if !(busy && connectionAttempt != nil && sessionState == .connecting && report.state == .disconnected) {
-                    connectionStatus = report.statusText
-                }
-                helperAttemptID = report.attemptID
-                activeProfileID = report.activeProfileID
-                authenticationChallenge = report.challenge
-                firewallActive = report.firewallActive
-                firewallRecoveryRequired = report.firewallRecoveryRequired
-                networkRecoveryRequired = report.requiresNetworkRecovery
-                traffic = report.traffic
-                if report.state == .connected, let value = report.traffic {
-                    receiveTrend.record(cumulativeBytes: value.receivedBytes)
-                    sendTrend.record(cumulativeBytes: value.sentBytes)
-                } else {
-                    receiveTrend.reset()
-                    sendTrend.reset()
-                }
+                guard capturedEpoch == statusEpoch, !routingModeSwitching else { return }
+                applyVerifiedSessionReport(report)
             } else {
+                guard capturedEpoch == statusEpoch, !routingModeSwitching else { return }
+                activeRoutingMode = nil; routingRevision = nil
                 helperStateVerified = false
                 authenticationChallenge = nil
                 connectionStatus = "failed: 无法核验后台会话，请检查助手与网络恢复状态"
@@ -632,6 +714,7 @@ final class AppModel: ObservableObject {
             let unresolved = BuildChannel.isLocal && (helper.installationStatus == .requiresApproval || LocalInstallation.hasRecoveryEvidence)
             helperStateVerified = !unresolved
             connectionStatus = unresolved ? "failed: 本地安装未通过校验，请先恢复网络并修复安装" : "disconnected: Privileged helper not enabled"
+            activeRoutingMode = nil; routingRevision = nil
             activeProfileID = nil
             authenticationChallenge = nil
             traffic = nil
@@ -645,6 +728,7 @@ final class AppModel: ObservableObject {
             message = helper.localInstallationIssue; showingSetup = true; return
         }
         guard !busy, !connecting, !connected, !stopping, let selected else { return }
+        statusEpoch &+= 1
         let attempt = UUID(); connectionAttempt = attempt
         connectionStatus = "connecting: 正在准备连接"
         busy = true
@@ -734,7 +818,7 @@ final class AppModel: ObservableObject {
         guard profiles.contains(where: { $0.id == id }) else { return .blocked }
         if connected && id != activeProfileID && quickAccessSession == nil { return .blocked }
         return QuickAccessAction.resolve(state: sessionState, profileID: id, activeProfileID: activeProfileID,
-            operationInProgress: busy || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || showingImportReport ||
+            operationInProgress: routingModeSwitching || busy || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || showingImportReport ||
                 authenticationChallenge != nil || showingAccountCredentials,
             mayStart: canQuit)
     }
@@ -750,6 +834,7 @@ final class AppModel: ObservableObject {
         else { await connectSelected() }
     }
     func disconnect() async {
+        statusEpoch &+= 1
         guard !stopping else { return }
         let cancelledAttempt = connectionAttempt ?? helperAttemptID
         connectionAttempt = nil
@@ -790,7 +875,7 @@ final class AppModel: ObservableObject {
         } catch { message = "诊断报告保存失败：\(error.localizedDescription)" }
     }
     func importRules(_ url: URL) async {
-        guard !busy, !connecting, !stopping else { return }
+        guard !busy, !routingModeSwitching, !connecting, !stopping else { return }
         let granted = url.startAccessingSecurityScopedResource()
         defer { if granted { url.stopAccessingSecurityScopedResource() } }
         busy = true; defer { busy = false }
@@ -908,6 +993,12 @@ struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
     @StateObject private var model = AppModel()
     init() {
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") {
+            Task {
+                do { try await RoutingModeSelfTest.run(); print("Routing mode model checks passed."); Darwin.exit(0) }
+                catch { print("Routing mode self-test failed: \(error.localizedDescription)"); Darwin.exit(1) }
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") {
             Task {
                 do { try await ProfileTransferSelfTest.run(); print("Profile import model checks passed."); Darwin.exit(0) }

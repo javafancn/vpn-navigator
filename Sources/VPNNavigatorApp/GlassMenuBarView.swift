@@ -51,6 +51,20 @@ struct GlassMenuBarView: View {
             }
             .padding(14).frame(maxWidth: .infinity, alignment: .leading)
             .glassCard(cornerRadius: 15)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(model.routingModeStatus).font(.system(size: 12)).foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    ForEach([RoutingMode.chinaDirect, .fullVPN]) { mode in
+                        let id = model.connected ? model.activeProfileID : model.selectedID
+                        Button { Task { await model.setMode(mode, for: id) } } label: {
+                            Label(mode.title, systemImage: model.displayedRoutingMode(for: id) == mode ? "checkmark.circle.fill" : "circle")
+                                .frame(maxWidth: .infinity)
+                        }.buttonStyle(ReferenceSecondaryButton())
+                            .tint(model.displayedRoutingMode(for: id) == mode ? GlassPalette.blue : .secondary)
+                            .disabled(!model.canSetRoutingMode(mode, for: id))
+                    }
+                }
+            }.padding(12).glassCard(cornerRadius: 15)
             VStack(spacing: 0) {
                 Button { model.quickAccess.toggle() } label: { menuRow("快速打开…", symbol: "magnifyingglass") }
                     .buttonStyle(ReferenceQuietButton())

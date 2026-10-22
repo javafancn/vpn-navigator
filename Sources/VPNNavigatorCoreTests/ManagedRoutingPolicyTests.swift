@@ -40,7 +40,8 @@ final class ManagedRoutingPolicyTests: XCTestCase {
         XCTAssertTrue(options.contains("route "))
         XCTAssertTrue(options.contains("route-ipv6"))
         XCTAssertFalse(options.contains("route-gateway"))
-        XCTAssertTrue(options.suffix(2).elementsEqual(["--redirect-gateway", "def1"]))
+        XCTAssertTrue(options.contains("--route-noexec"))
+        XCTAssertFalse(options.contains("--redirect-gateway"))
         XCTAssertEqual(ManagedRoutingPolicy.openVPNArguments(mode: .original), [])
     }
 

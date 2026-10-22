@@ -62,6 +62,14 @@ jobs:
           import subprocess
           subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-profile-transfer-self-test'], check=True, timeout=40)
           PYTEST
+      - name: Verify live routing mode model and persistence failures
+        # Routing tests call the same AppModel with an injected helper. They
+        # never launch a VPN or mutate the runner's network.
+        run: |
+          python3 - <<'PYTEST'
+          import subprocess
+          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-routing-mode-self-test'], check=True, timeout=40)
+          PYTEST
       - name: Ad-hoc sign development UI for local integrity checks
         run: |
           APP='dist/VPN Navigator.app'

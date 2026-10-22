@@ -17,7 +17,8 @@ public struct ProfileOpenQueue: Equatable, Sendable {
         for url in incoming.prefix(Self.maximumFiles) {
             guard url.isFileURL, (url.host ?? "").isEmpty || url.host?.lowercased() == "localhost",
                   url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
-                  url.absoluteString.utf8.count <= 16_384, !url.path.contains("\0"),
+                  url.absoluteString.utf8.count <= 16_384,
+                  !url.absoluteString.lowercased().contains("%00"), !url.path.contains("\0"),
                   !url.hasDirectoryPath, url.pathExtension.lowercased() == "ovpn" else {
                 unsupportedCount = bounded(unsupportedCount, 1); continue
             }

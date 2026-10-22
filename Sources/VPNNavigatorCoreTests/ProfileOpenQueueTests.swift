@@ -12,14 +12,19 @@ final class ProfileOpenQueueTests: XCTestCase {
     }
     func testRejectsRemoteAndAmbiguousURLs() {
         var queue = ProfileOpenQueue()
-        queue.append([URL(string: "https://example.com/a.ovpn")!,
+        let rejected = [URL(string: "https://example.com/a.ovpn")!,
                       URL(string: "file://remote.invalid/a.ovpn")!,
                       URL(string: "file:///tmp/a.ovpn?token=secret")!,
                       URL(string: "file:///tmp/a.ovpn#fragment")!,
                       URL(string: "file://user:password@localhost/a.ovpn")!,
                       URL(fileURLWithPath: "/tmp/folder.ovpn", isDirectory: true),
                       URL(fileURLWithPath: "/tmp/a.txt"),
-                      URL(string: "file:///tmp/zero%00.ovpn")!])
+                      URL(string: "file:///tmp/zero%00.ovpn")!]
+        for (index, url) in rejected.enumerated() {
+            var single = ProfileOpenQueue(); single.append([url])
+            XCTAssertTrue(single.urls.isEmpty, "Rejected URL fixture index \(index)")
+        }
+        queue.append(rejected)
         XCTAssertTrue(queue.urls.isEmpty)
         XCTAssertEqual(queue.unsupportedCount, 8)
         XCTAssertFalse(queue.isEmpty)

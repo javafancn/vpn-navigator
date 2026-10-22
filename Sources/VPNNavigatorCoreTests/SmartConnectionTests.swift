@@ -109,6 +109,9 @@ final class SmartConnectionTests: XCTestCase {
         XCTAssertEqual(reducer.observe(report(.connected)), [])
         XCTAssertEqual(reducer.observe(report(.reconnecting)), [.reconnecting])
         XCTAssertEqual(reducer.observe(report(.reconnecting)), [])
+        XCTAssertEqual(reducer.observe(report(.connected)), [.connected])
+        XCTAssertEqual(reducer.observe(report(.connected)), [])
+        XCTAssertEqual(reducer.observe(report(.reconnecting)), [.reconnecting])
     }
     func testIntentionalAndUnexpectedDisconnectAreDistinct() {
         var reducer = StatusNoticeReducer(); _ = reducer.observe(report(.connected))
@@ -116,6 +119,13 @@ final class SmartConnectionTests: XCTestCase {
         var other = StatusNoticeReducer(); _ = other.observe(report(.connected))
         XCTAssertEqual(other.observe(report(.disconnected)), [.lost])
         XCTAssertEqual(other.observe(report(.disconnected)), [])
+    }
+    func testFailedActiveSessionIsALossAndManualRecoveryFailureIsNotALoss() {
+        var reducer = StatusNoticeReducer(); _ = reducer.observe(report(.connected))
+        XCTAssertEqual(reducer.observe(report(.failed, recovery: true, failure: .networkChanged)), [.lost, .recovery])
+        XCTAssertEqual(reducer.observe(report(.failed, recovery: true, failure: .networkChanged)), [])
+        var manual = StatusNoticeReducer(); _ = manual.observe(report(.connected))
+        XCTAssertEqual(manual.observe(report(.failed, recovery: true), expectedDisconnect: true), [.recovery])
     }
     func testAuthenticationAndRecoveryRemainDistinctAndDeduplicated() {
         var reducer = StatusNoticeReducer()

@@ -169,6 +169,7 @@ public struct StatusNoticeReducer: Sendable {
     private var seen = Set<String>()
     private var unavailable = false
     private var lastUnavailableAt: Date?
+    private var transitionSerial: UInt64 = 0
     public init() { }
     public mutating func observe(_ report: SessionReport?, expectedDisconnect: Bool = false, at now: Date = Date()) -> [VPNStatusNotice] {
         guard let report else {
@@ -179,6 +180,7 @@ public struct StatusNoticeReducer: Sendable {
         }
         unavailable = false
         let old = previous; previous = report
+        if let old, old.state != report.state || old.attemptID != report.attemptID { transitionSerial &+= 1 }
         let identity = (report.activeProfileID?.uuidString ?? old?.activeProfileID?.uuidString ?? "none") + ":" + (report.attemptID?.uuidString ?? old?.attemptID?.uuidString ?? "none")
         func key(_ notice: VPNStatusNotice, _ detail: String = "") -> String { identity + ":" + notice.rawValue + ":" + detail }
         var notices: [(VPNStatusNotice, String)] = []
@@ -187,14 +189,15 @@ public struct StatusNoticeReducer: Sendable {
             let notice: VPNStatusNotice
             if report.failureCode == .authentication { notice = .authenticationFailed }
             else if report.failureCode.map({ [DiagnosticCode.certificate, .tls].contains($0) }) == true { notice = .certificateFailed }
+            else if let old, !expectedDisconnect, old.state == .connected || old.state == .reconnecting { notice = .lost }
             else { notice = report.requiresNetworkRecovery ? .recovery : .failure }
             notices.append((notice, key(notice)))
             if report.requiresNetworkRecovery { notices.append((.recovery, key(.recovery))) }
         } else if report.state != .connected, !ConnectionControl.inProgress(report.state), report.requiresNetworkRecovery {
             notices.append((.recovery, key(.recovery)))
         } else if let old, report.state == .connected && (old.state != .connected || old.attemptID != report.attemptID) {
-            if report.routingMode == .original || report.routingRevision != nil { notices.append((.connected, key(.connected, report.routingRevision?.uuidString ?? ""))) }
-        } else if let old, report.state == .reconnecting && old.state != .reconnecting { notices.append((.reconnecting, key(.reconnecting))) }
+            if report.routingMode == .original || report.routingRevision != nil { notices.append((.connected, key(.connected, (report.routingRevision?.uuidString ?? "") + ":" + String(transitionSerial)))) }
+        } else if let old, report.state == .reconnecting && old.state != .reconnecting { notices.append((.reconnecting, key(.reconnecting, String(transitionSerial)))) }
         else if let old, report.state == .disconnected && old.state != .disconnected && (old.state == .connected || ConnectionControl.inProgress(old.state)) {
             let notice: VPNStatusNotice = expectedDisconnect ? .disconnected : .lost; notices.append((notice, key(notice)))
         }

@@ -44,16 +44,16 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
     func start() {
         guard monitor == nil, !stopped else { return }
         let monitor = NWPathMonitor(); self.monitor = monitor
-        monitor.pathUpdateHandler = { [weak self] path in Task { @MainActor in self?.path = path; self?.refreshNetwork() } }
+        monitor.pathUpdateHandler = { [weak self] path in Task { @MainActor [weak self] in self?.path = path; self?.refreshNetwork() } }
         monitor.start(queue: DispatchQueue(label: "com.javafancn.vpnnav.smart-network"))
         let center = NSWorkspace.shared.notificationCenter
         observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.sleeping = true; self?.cancelPending() }
+            Task { @MainActor [weak self] in self?.sleeping = true; self?.cancelPending() }
         })
         observers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.sleeping = false; self?.refreshNetwork(); self?.schedule(.wake) }
+            Task { @MainActor [weak self] in self?.sleeping = false; self?.refreshNetwork(); self?.schedule(.wake) }
         })
-        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in Task { @MainActor in self?.refreshNetwork() } }
+        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in Task { @MainActor [weak self] in self?.refreshNetwork() } }
         if preferences.notifications { Task { await refreshNotificationPermission() } }
     }
     func stop() {

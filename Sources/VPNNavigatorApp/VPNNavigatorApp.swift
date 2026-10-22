@@ -906,7 +906,7 @@ final class AppModel: ObservableObject {
         .init(state: sessionState, activeProfileID: activeProfileID,
               helperReady: helperStateVerified && helper.installationStatus == .enabled,
               recoveryRequired: networkRecoveryRequired || firewallRecoveryRequired,
-              occupied: (busy && !preparingAutomatic) || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || profileMutations != 0 ||
+              occupied: !profileOpenReady || profileIndexIssue != nil || (busy && !preparingAutomatic) || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || profileMutations != 0 ||
                 routingModeSwitching || showingImportReport || showingSetup || showingMaintenance || showingPreferences ||
                 showingSmartConnection || showingDiagnostics || showingRouteExplanation || showingTroubleshooting ||
                 customRuleEditorProfile != nil || showingProfileIndexRecovery || profilePickerPresented ||

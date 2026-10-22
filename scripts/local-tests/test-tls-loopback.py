@@ -8,6 +8,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from auth_suite import exercise_auth
 
@@ -153,36 +154,66 @@ verb 3
         assert result.returncode == 0, 'Installed helper TLS fixture failed: ' + result.stderr
         # Exercise actual IPv6 data and the journal executor without changing defaults.
         run([probe, '--connect-only', valid])
-        # Both ends run on one host, with the same connected IPv6 prefix.
-        # Explicitly bind the sending socket to the client utun and address;
-        # otherwise macOS can select the server utun (or a local shortcut).
+        # Both ends run on one host. Bind BOTH UDP sockets to their respective
+        # utuns: a kernel-generated ICMP reply can otherwise take a local route
+        # to the client's address and never return through the encrypted stream.
+        interface_addresses = {}
         current_tunnel = None
         for line in run(['/sbin/ifconfig', '-a']).stdout.splitlines():
             if line and not line[0].isspace():
                 current_tunnel = line.split(':', 1)[0]
+                interface_addresses[current_tunnel] = []
+            if current_tunnel and line.split()[:1] == ['inet6']:
+                interface_addresses[current_tunnel].append(line.split()[1].split('%')[0])
             if 'inet 198.18.254.2 ' in line:
-                break
-        else:
-            raise AssertionError('Client fixture utun not found')
-        assert current_tunnel.startswith('utun') and current_tunnel[4:].isdigit()
-        client6 = next(line.split()[1].split('%')[0] for line in run(['/sbin/ifconfig', current_tunnel]).stdout.splitlines()
-                       if line.split()[:1] == ['inet6'] and line.split()[1].startswith('fd42:766e:6176:1:'))
-        time.sleep(1.2)  # Let the first management byte-count receipt settle.
-        before_data = json.loads(run([probe, '--traffic']).stdout)
-        ping6 = run(['/sbin/ping6', '-n', '-B', current_tunnel, '-S', client6, '-s', '1200', '-c', '3',
-                     'fd42:766e:6176:1::1'], ok=False, timeout=15)
-        assert ping6.returncode == 0, 'Bound IPv6 echo failed: ' + ping6.stdout + ping6.stderr
+                client_tunnel = current_tunnel
+        assert 'client_tunnel' in locals(), 'Client fixture utun not found'
+        assert client_tunnel.startswith('utun') and client_tunnel[4:].isdigit()
+        client6 = next(address for address in interface_addresses[client_tunnel] if address.startswith('fd42:766e:6176:1:'))
+        server6 = 'fd42:766e:6176:1::1'
+        server_tunnel = next(name for name, addresses in interface_addresses.items() if server6 in addresses)
+        assert server_tunnel != client_tunnel and server_tunnel.startswith('utun') and server_tunnel[4:].isdigit()
+        # Darwin bsd/netinet6/in6.h defines IPV6_BOUND_IF as 125; some Python
+        # builds do not export the constant. Never binds a physical interface.
+        bound_if = getattr(socket, 'IPV6_BOUND_IF', 125)
+        echo_errors = []
+        with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as echo, socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as sender:
+            echo.setsockopt(socket.IPPROTO_IPV6, bound_if, socket.if_nametoindex(server_tunnel))
+            sender.setsockopt(socket.IPPROTO_IPV6, bound_if, socket.if_nametoindex(client_tunnel))
+            echo.bind((server6, 0)); sender.bind((client6, 0))
+            echo.settimeout(5); sender.settimeout(5)
+            def echo_packets():
+                try:
+                    for _ in range(3):
+                        packet, peer = echo.recvfrom(2048)
+                        echo.sendto(packet, peer)
+                except OSError as error:
+                    echo_errors.append(type(error).__name__)
+            echo_thread = threading.Thread(target=echo_packets, daemon=True)
+            echo_thread.start()
+            time.sleep(1.2)  # Let the first management byte-count receipt settle.
+            before_data = json.loads(run([probe, '--traffic']).stdout)
+            try:
+                for number in range(3):
+                    packet = bytes([number]) + os.urandom(1199)
+                    sender.sendto(packet, echo.getsockname())
+                    reply, _ = sender.recvfrom(2048)
+                    assert reply == packet, 'IPv6 UDP echo payload changed'
+            finally:
+                echo_thread.join(timeout=6)
+            assert not echo_errors and not echo_thread.is_alive(), 'Bound IPv6 UDP responder did not finish: ' + str(echo_errors)
+        current_tunnel = client_tunnel
         for _ in range(30):
             after_data = json.loads(run([probe, '--traffic']).stdout)
             if all(after_data[key] - before_data[key] >= 3000 for key in ['sent', 'received']):
                 break
             time.sleep(0.2)
         else:
-            raise AssertionError('IPv6 echo did not traverse both encrypted data directions: ' + str(before_data) + ' -> ' + str(after_data))
+            raise AssertionError('IPv6 UDP echo did not traverse both encrypted data directions: ' + str(before_data) + ' -> ' + str(after_data))
         kernel = run(['sudo', '-n', 'env', 'GITHUB_ACTIONS=true', PAYLOAD / 'VPNNavigatorHelper', '--self-test-ipv6-kernel', current_tunnel])
         print(kernel.stdout, end='')
         run([probe, '--disconnect'])
-        print('PASS: real IPv6 echo traffic passes through the negotiated TLS/utun tunnel.')
+        print('PASS: real IPv6 UDP echo traffic passes through both encrypted TLS/utun data directions.')
         log.flush()
         assert 'unknown ca' in (folder / 'server.log').read_text().lower(), 'TLS server did not observe the controlled wrong-CA rejection'
         # IPv6 transport and IPv6-only payload negotiate through the installed helper too.

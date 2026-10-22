@@ -2,6 +2,7 @@ import SwiftUI
 import VPNNavigatorCore
 
 struct NetworkDiagnosticsView: View {
+    @EnvironmentObject private var model: AppModel
     @State private var address = "223.5.5.5"
     @State private var hostname = "www.apple.com"
     @State private var port = "443"
@@ -65,6 +66,7 @@ struct NetworkDiagnosticsView: View {
                     }.referenceSegments().frame(width: 420)
                         .animation(GlassMotion.selection(reduceMotion), value: selectedTab)
                     Spacer(minLength: 0)
+                    Button("一键排障…") { cancel(); model.showingTroubleshooting = true }.buttonStyle(ReferenceSecondaryButton())
                     Button {
                         if checking { cancel() } else { run() }
                     } label: { Label(checking ? "取消探测" : "重新检查", systemImage: checking ? "xmark" : "arrow.clockwise") }
@@ -120,7 +122,7 @@ struct NetworkDiagnosticsView: View {
                 Spacer(minLength: 0)
             }.padding(.horizontal, GlassLayout.pageInset).padding(.top, GlassLayout.pageTop).padding(.bottom, 20)
         }
-        .onAppear { run() }
+        .onAppear { if !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot") { run() } }
         .onChange(of: selectedTab) { _ in run() }
         .onDisappear { cancel() }
     }

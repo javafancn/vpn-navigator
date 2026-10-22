@@ -74,6 +74,26 @@ enum RouteSwitchSelfTest {
             throw Failure.unexpectedSuccess
         } catch is CancellationError { }
         guard cancelled.installed == full.installOrder, cancelOS.trace.isEmpty else { throw Failure.check }
+        let custom = try CustomRuleSet([.init(cidr: "9.9.9.9", action: .direct), .init(cidr: "11.0.4.0/24", action: .vpn)])
+        let customFull = try RoutePlanner.build(serverIPv4: "8.8.8.8", physicalGateway: "192.168.1.1", vpnInterface: "utun4", localPrefixes: local, china: nil, custom: custom)
+        let customSplit = try ManagedRouteTransition(current: customFull, target: .chinaDirect, ruleText: text, local: local, custom: custom)
+        let customBack = try ManagedRouteTransition(current: customSplit.plan, target: .fullVPN, ruleText: "", local: local, custom: custom)
+        let customOS = Fixture(); customOS.known = customFull.installOrder + customSplit.added
+        let customExecutor = RouteExecutor(journal: root.appendingPathComponent("custom"), run: customOS.run)
+        try customExecutor.apply(customFull.installOrder); customOS.trace = []
+        try RouteTransitionExecutor.apply(customSplit, executor: customExecutor,
+            updateProtection: { customOS.trace.append("relax") }, verify: { customOS.trace.append("verified") })
+        guard customOS.trace.suffix(2).elementsEqual(["verified", "relax"]),
+              !customExecutor.installed.contains(where: { $0.prefix.contains(IPv4CIDR.parseAddress("11.0.4.1")!) && $0 != customFull.vpnDefaults.first && $0 != customFull.vpnDefaults.last }),
+              Set(customExecutor.installed) == Set(customSplit.plan.installOrder) else { throw Failure.check }
+        customOS.trace = []
+        try RouteTransitionExecutor.apply(customBack, executor: customExecutor,
+            updateProtection: { customOS.trace.append("tighten") }, verify: { customOS.trace.append("verified") })
+        guard customOS.trace.first == "tighten", Set(customExecutor.installed) == Set(customFull.installOrder),
+              customExecutor.installed.contains(where: { $0.prefix.description == "9.9.9.9/32" }) else { throw Failure.check }
+        customExecutor.rollback()
+        guard customExecutor.installed.isEmpty else { throw Failure.check }
+        print("PASS: custom direct exception retained across live mode round trip, VPN exception removed from physical routes, and PF ordered around actual journaled mutations; injected OS commands only.")
         print("PASS: live route transition add/remove order, PF tightening/relaxing, retained endpoint/defaults, cancellation and ambiguous journal; injected OS commands only.")
     }
     enum Failure: Error { case check, unexpectedSuccess }

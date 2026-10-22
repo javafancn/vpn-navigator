@@ -82,6 +82,12 @@ jobs:
           import subprocess
           subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-profile-library-self-test'], check=True, timeout=40)
           PYTEST
+      - name: Verify custom routing tools and one-click loopback diagnostics
+        run: |
+          python3 - <<'PYTEST'
+          import subprocess
+          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-routing-tools-self-test'], check=True, timeout=40)
+          PYTEST
       - name: Ad-hoc sign development UI for local integrity checks
         run: |
           APP='dist/VPN Navigator.app'
@@ -212,6 +218,14 @@ jobs:
             test -s "$RUNNER_TEMP/VPNNavigator-library-$STATE.png"
             killall VPNNavigatorApp 2>/dev/null || true
           done
+          for TOOL in custom-routes route-explanation troubleshooting; do
+            open -n "$APP" --args --vpnnav-ui-tab=routing --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot "--vpnnav-ui-$TOOL-snapshot"
+            sleep 7
+            WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift")"
+            screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-tool-$TOOL.png"
+            test -s "$RUNNER_TEMP/VPNNavigator-tool-$TOOL.png"
+            killall VPNNavigatorApp 2>/dev/null || true
+          done
           for SCENE in cool warm; do
             swift scripts/capture-glass-calibration.swift "$SCENE" "$RUNNER_TEMP"
             sleep 3
@@ -237,6 +251,7 @@ jobs:
             ${{ runner.temp }}/VPNNavigator-import-review.png
             ${{ runner.temp }}/VPNNavigator-profile-recovery.png
             ${{ runner.temp }}/VPNNavigator-library-*.png
+            ${{ runner.temp }}/VPNNavigator-tool-*.png
             ${{ runner.temp }}/VPNNavigator-Desktop-Before.png
             ${{ runner.temp }}/*-bounds.txt
             ${{ runner.temp }}/VPNNavigator-glass-*.png

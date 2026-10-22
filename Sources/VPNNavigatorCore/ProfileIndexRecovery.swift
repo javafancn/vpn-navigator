@@ -52,6 +52,7 @@ struct ProfileIndexRepository {
         return try ProfileFileIO.read(url, maximumBytes: Self.maximumBytes)
     }
     private func validate(_ profiles: [VPNProfile]) throws {
+        for profile in profiles { _ = try CustomRuleSet(profile.customRules) }
         guard profiles.count <= 10_000, Set(profiles.map(\.id)).count == profiles.count,
               profiles.allSatisfy({ $0.relativePath == "\($0.id.uuidString).ovpn" && $0.importedAt.timeIntervalSince1970.isFinite }) else {
             throw ProfileIndexFailure.invalidIndex

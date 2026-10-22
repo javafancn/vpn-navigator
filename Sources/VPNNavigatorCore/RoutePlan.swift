@@ -40,7 +40,7 @@ public enum RoutePlanner {
     /// capture rollback state, then apply and validate this plan transactionally.
     public static func build(
         serverIPv4: String, physicalGateway: String, vpnInterface: String,
-        localPrefixes: [IPv4CIDR], china: RuleSet?
+        localPrefixes: [IPv4CIDR], china: RuleSet?, custom: CustomRuleSet = .empty
     ) throws -> RoutePlan {
         guard let physical = IPv4CIDR.parseAddress(physicalGateway),
               physical != 0 else { throw RoutePlanningError.invalidGateway }
@@ -58,11 +58,7 @@ public enum RoutePlanner {
         let host = try IPv4CIDR("\(serverIPv4)/32")
         let endpoint = RouteTarget(host, .viaGateway(physicalGateway))
         // Retain the system's connected/local routes; do not create conflicting routes.
-        let localSet = Set(localPrefixes)
-        let direct = (china?.routes ?? []).filter { candidate in
-            !localSet.contains(where: { candidate.overlaps($0) }) &&
-            candidate != host
-        }
+        let direct = try custom.directPrefixes(country: china, local: localPrefixes, endpoint: serverIPv4)
             .map { RouteTarget($0, .viaGateway(physicalGateway)) }
         let defaults: [RouteTarget] = [
             RouteTarget(try IPv4CIDR("0.0.0.0/1"), .interface(vpnInterface)),

@@ -23,6 +23,8 @@ public struct SessionReport: Codable, Equatable, Sendable {
     public let activeProfileID: UUID?
     public let attemptID: UUID?
     public let routingMode: RoutingMode?
+    public let customRuleDigest: String?
+    public let customRuleCount: Int?
     public let routingRevision: UUID?
     public let receivedBytes: UInt64?
     public let sentBytes: UInt64?
@@ -32,13 +34,14 @@ public struct SessionReport: Codable, Equatable, Sendable {
     public let challenge: AuthenticationChallenge?
 
     public init(state: TunnelState, message: String, activeProfileID: UUID?,
-                receivedBytes: UInt64?, sentBytes: UInt64?, challenge: AuthenticationChallenge? = nil, firewallActive: Bool = false, firewallRecoveryRequired: Bool = false, attemptID: UUID? = nil, networkRecoveryRequired: Bool? = nil, routingMode: RoutingMode? = nil, routingRevision: UUID? = nil) {
+                receivedBytes: UInt64?, sentBytes: UInt64?, challenge: AuthenticationChallenge? = nil, firewallActive: Bool = false, firewallRecoveryRequired: Bool = false, attemptID: UUID? = nil, networkRecoveryRequired: Bool? = nil, routingMode: RoutingMode? = nil, routingRevision: UUID? = nil, customRuleDigest: String? = nil, customRuleCount: Int? = nil) {
         self.state = state
         self.message = message
         self.activeProfileID = activeProfileID
         self.attemptID = attemptID
         self.routingMode = routingMode
         self.routingRevision = routingRevision
+        self.customRuleDigest = customRuleDigest; self.customRuleCount = customRuleCount
         self.receivedBytes = receivedBytes
         self.sentBytes = sentBytes
         self.challenge = challenge

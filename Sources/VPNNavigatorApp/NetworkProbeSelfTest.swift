@@ -32,7 +32,7 @@ enum NetworkProbeSelfTest {
     }
 }
 
-private final class LoopbackProbeServer: @unchecked Sendable {
+final class LoopbackProbeServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "VPNNavigator.ProbeSelfTest")
     private var clients: [NWConnection] = []

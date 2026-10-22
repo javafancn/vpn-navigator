@@ -10,12 +10,14 @@ public struct LeakGuardPolicy: Sendable {
     public let transport: FirewallRulePreview.Transport
     public let direct: [IPv4CIDR]
     public init(physical: String, endpoint: String, port: UInt16,
-                transport: FirewallRulePreview.Transport, local: [IPv4CIDR], country: [IPv4CIDR]) throws {
+                transport: FirewallRulePreview.Transport, local: [IPv4CIDR], country: [IPv4CIDR], managedDirect: [IPv4CIDR] = []) throws {
         guard Self.validPhysical(physical), IPv4CIDR.parseAddress(endpoint) != nil, port > 0,
               !local.isEmpty, local.allSatisfy({ $0.prefix >= 8 }), country.allSatisfy({ $0.prefix >= 8 }) else { throw LeakGuardError.invalid }
         if !country.isEmpty { _ = try RuleSet(text: country.map(\.description).joined(separator: "\n")) }
+        guard managedDirect.count <= 30_000 else { throw LeakGuardError.invalid }
+        for prefix in managedDirect { _ = try CustomRuleSet.prefix(prefix.description) }
         self.physical = physical; self.endpoint = endpoint; self.port = port; self.transport = transport
-        direct = Array(Set(local + country)).sorted()
+        direct = Array(Set(local + country + managedDirect)).sorted()
     }
     public func rules(tunnel: String?) throws -> String {
         if let tunnel, !DNSRecoveryPolicy.validTunnel(tunnel) { throw LeakGuardError.invalid }

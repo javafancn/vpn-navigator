@@ -55,7 +55,7 @@ public enum RuleError: Error, LocalizedError {
 
 public enum ProfileCompiler {
     // The only exporter in the MVP: never run downloaded OpenVPN scripts as root.
-    public static func render(original: String, mode: RoutingMode, rules: RuleSet?) throws -> String {
+    public static func render(original: String, mode: RoutingMode, rules: RuleSet?, custom: CustomRuleSet = .empty) throws -> String {
         let marker = "# VPNNAVIGATOR GENERATED ROUTES"
         guard !original.contains(marker) else { throw CompilerError.alreadyGenerated }
         let normalized = original.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -69,8 +69,11 @@ public enum ProfileCompiler {
         case .chinaDirect:
             guard let rules else { throw CompilerError.missingRules }
             lines.append("redirect-gateway def1")
-            lines.append(contentsOf: rules.routes.map { "route \(IPv4CIDR.parseAddressString($0.network)) \($0.netmask) net_gateway" })
+            _ = rules
+
         }
+        let direct = try custom.directPrefixes(country: mode == .chinaDirect ? rules : nil, local: [], endpoint: nil)
+        lines.append(contentsOf: direct.map { "route \(IPv4CIDR.parseAddressString($0.network)) \($0.netmask) net_gateway" })
         return lines.joined(separator: "\n") + "\n"
     }
 }

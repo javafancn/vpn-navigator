@@ -118,6 +118,17 @@ struct MainView: View {
                     model.profileLibrary.scope = .favorites; model.profileLibrary.query = "工作"
                 }
             }
+            if ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
+               ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot"), !model.profiles.isEmpty {
+                if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-custom-routes-snapshot") ||
+                   ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-route-explanation-snapshot") {
+                    model.profiles[0].customRules = [CustomRouteRule(cidr: "9.9.9.9/32", action: .direct), CustomRouteRule(cidr: "10.66.0.0/16", action: .vpn)]
+                    model.profiles[0].mode = .fullVPN
+                    model.selectedID = model.profiles[0].id
+                    if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-custom-routes-snapshot") { model.customRuleEditorProfile = model.profiles[0] }
+                    else { model.showingRouteExplanation = true }
+                } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-troubleshooting-snapshot") { model.showingTroubleshooting = true }
+            }
             if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-profile-recovery-snapshot") {
                 Task { await model.showProfileIndexRecoverySnapshot() }
             }
@@ -162,6 +173,9 @@ struct MainView: View {
         .sheet(isPresented: $model.showingSetup) { SetupAssistantView().environmentObject(model) }
         .sheet(isPresented: $model.showingPreferences) { ClientPreferencesView().environmentObject(model) }
         .sheet(isPresented: $model.showingProfileIndexRecovery) { ProfileIndexRecoveryView().environmentObject(model) }
+        .sheet(item: $model.customRuleEditorProfile) { profile in CustomRoutingEditorView(profile: profile).environmentObject(model) }
+        .sheet(isPresented: $model.showingRouteExplanation) { RouteExplanationView().environmentObject(model) }
+        .sheet(isPresented: $model.showingTroubleshooting) { OneClickTroubleshootingView().environmentObject(model) }
         .sheet(isPresented: $model.showingDiagnostics) { DiagnosticHistoryView().environmentObject(model) }
         .sheet(isPresented: $model.showingImportReport) {
             if model.reviewingIncomingProfiles { ProfileOpenReviewView().environmentObject(model) }
@@ -762,6 +776,7 @@ private struct RoutingWorkspace: View {
 
     var body: some View {
         GeometryReader { geometry in
+        ScrollView {
         VStack(alignment: .leading, spacing: 14) {
             WorkspaceHeading(title: "路由与规则", subtitle: "管理 VPN 路由模式与中国 IPv4 规则", symbol: "point.3.connected.trianglepath.dotted")
             HStack(spacing: 8) {
@@ -773,6 +788,17 @@ private struct RoutingWorkspace: View {
             }
             .font(.system(size: 12))
             .padding(.vertical, 4)
+            HStack(spacing: 10) {
+                Button("自定义规则 (\(model.selected?.customRules.filter(\.enabled).count ?? 0))") { model.customRuleEditorProfile = model.selected }
+                    .buttonStyle(ReferenceSecondaryButton()).disabled(model.selected == nil || model.profileTransferInProgress || model.busy)
+                Button("路由解释…") { model.showingRouteExplanation = true }.buttonStyle(ReferenceSecondaryButton())
+                Button("一键排障…") { model.showingTroubleshooting = true }.buttonStyle(ReferenceSecondaryButton())
+                Spacer(minLength: 0)
+            }.font(.system(size: 13))
+            if model.connected, let count = model.activeCustomRuleCount {
+                Text("助手核验的本次自定义规则：\(count) 条；编辑已连接配置需先断开。")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
             HStack(alignment: .top, spacing: 14) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("路由模式").font(.system(size: 20, weight: .semibold))
@@ -849,6 +875,7 @@ private struct RoutingWorkspace: View {
         .padding(.horizontal, GlassLayout.pageInset)
         .padding(.top, GlassLayout.pageTop)
         .padding(.bottom, 20)
+        }
         .fileImporter(isPresented: $importingRules, allowedContentTypes: [.plainText]) { result in
             if case .success(let url) = result { Task { await model.importRules(url) } }
         }
@@ -1225,6 +1252,8 @@ struct ProfileDetail: View {
                     .help(profile.isFavorite ? "取消收藏" : "收藏此配置")
                     .disabled(!model.canEditProfileMetadata(profile.id))
                     Menu {
+                        Button("自定义分流规则…") { model.customRuleEditorProfile = profile }
+                            .disabled(model.profileTransferInProgress || model.maintenanceInProgress)
                         Button("导出可迁移配置…") { Task { await model.exportProfile(for: profile.id) } }
                             .disabled(model.profileTransferInProgress || model.maintenanceInProgress)
                         Button("导出路由预览…") { Task { await model.exportProfile(kind: .routePreview, for: profile.id) } }

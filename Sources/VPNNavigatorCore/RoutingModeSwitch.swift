@@ -28,7 +28,7 @@ public struct ManagedRouteTransition: Sendable {
     public let added: [RouteTarget]
     public let removed: [RouteTarget]
     public var tightensDirectAccess: Bool { !removed.isEmpty }
-    public init(current: RoutePlan, target: RoutingMode, ruleText: String, local: [IPv4CIDR]) throws {
+    public init(current: RoutePlan, target: RoutingMode, ruleText: String, local: [IPv4CIDR], custom: CustomRuleSet = .empty) throws {
         guard ruleText.utf8.count <= 2_000_000 else { throw RuleError.tooLarge }
         guard target != .original, case .viaGateway(let gateway) = current.endpoint.destination,
               let first = current.vpnDefaults.first, case .interface(let tunnel) = first.destination else {
@@ -41,7 +41,7 @@ public struct ManagedRouteTransition: Sendable {
             country = parsed
         } else { country = nil }
         let next = try RoutePlanner.build(serverIPv4: IPv4CIDR.parseAddressString(current.endpoint.prefix.network),
-            physicalGateway: gateway, vpnInterface: tunnel, localPrefixes: local, china: country)
+            physicalGateway: gateway, vpnInterface: tunnel, localPrefixes: local, china: country, custom: custom)
         guard current.endpoint == next.endpoint, current.vpnDefaults == next.vpnDefaults else {
             throw RoutingModeSwitchError.unavailable
         }

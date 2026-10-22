@@ -2,14 +2,14 @@ import Foundation
 
 public enum ProfileExportKind: Equatable, Sendable { case portable, routePreview }
 public enum ProfileExport {
-    public static func render(runtime: String, kind: ProfileExportKind, mode: RoutingMode, rules: RuleSet?) throws -> Data {
+    public static func render(runtime: String, kind: ProfileExportKind, mode: RoutingMode, rules: RuleSet?, custom: CustomRuleSet = .empty) throws -> Data {
         // Runtime material is already self-contained. Never resolve original
         // external paths, read Keychain or serialize the UI credential fields.
         let validated = try ProfileSafety.validate(runtime)
         let text: String
         switch kind {
         case .portable: text = validated.text
-        case .routePreview: text = try ProfileCompiler.render(original: validated.text, mode: mode, rules: rules)
+        case .routePreview: text = try ProfileCompiler.render(original: validated.text, mode: mode, rules: rules, custom: custom)
         }
         return Data(text.utf8)
     }

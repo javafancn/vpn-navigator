@@ -116,7 +116,7 @@ jobs:
           }
           exit(1)
           SWIFT
-          APP='dist/VPN Navigator.app'
+          APP="$PWD/dist/VPN Navigator.app"
           for PAGE in overview profiles routing diagnostics settings; do
             killall VPNNavigatorApp 2>/dev/null || true
             sleep 1

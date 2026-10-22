@@ -57,7 +57,8 @@ struct GlassMenuBarView: View {
                     ForEach([RoutingMode.chinaDirect, .fullVPN]) { mode in
                         let id = model.connected ? model.activeProfileID : model.selectedID
                         Button { Task { await model.setMode(mode, for: id) } } label: {
-                            Text(mode.title).frame(maxWidth: .infinity)
+                            Label(mode.title, systemImage: model.displayedRoutingMode(for: id) == mode ? "checkmark.circle.fill" : "circle")
+                                .frame(maxWidth: .infinity)
                         }.buttonStyle(ReferenceSecondaryButton())
                             .tint(model.displayedRoutingMode(for: id) == mode ? GlassPalette.blue : .secondary)
                             .disabled(!model.canSetRoutingMode(mode, for: id))

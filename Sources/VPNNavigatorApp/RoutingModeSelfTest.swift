@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import VPNNavigatorCore
 
 @MainActor
@@ -43,8 +44,12 @@ enum RoutingModeSelfTest {
         model.applyVerifiedSessionReport(service.report!)
         model.rules = try RuleSet(text: (0..<100).map { "11.0.\($0).0/24" }.joined(separator: "\n"))
         var blockedExit = false
+        let lifecycle = ApplicationLifecycle(); lifecycle.model = model
         service.beforeApply = { [weak model] in
-            if let model { blockedExit = blockedExit || (!model.canQuit && model.routingModeSwitching) }
+            if let model {
+                blockedExit = blockedExit || (!model.canQuit && model.routingModeSwitching &&
+                    lifecycle.applicationShouldTerminate(NSApplication.shared) == .terminateCancel)
+            }
         }
         await model.setMode(.chinaDirect)
         await model.setMode(.fullVPN)
@@ -77,7 +82,8 @@ enum RoutingModeSelfTest {
               model.selected?.mode == .fullVPN, model.message?.contains("保存失败") == true else { throw Failure.check }
         service.report = nil; model.message = nil
         await model.setMode(.fullVPN)
-        guard model.activeRoutingMode == nil, !model.canQuit, service.calls == 4 else { throw Failure.check }
+        guard model.activeRoutingMode == nil, model.displayedRoutingMode(for: id) == nil,
+              !model.canQuit, service.calls == 4 else { throw Failure.check }
         print("PASS: production routing model round trip, session/traffic preservation, stale revision, missing rules, rejected switch, unverified snapshot and actual mode after preference failure; injected helper only.")
     }
     enum Failure: Error { case check }

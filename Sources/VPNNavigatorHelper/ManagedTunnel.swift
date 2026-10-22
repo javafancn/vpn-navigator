@@ -750,8 +750,11 @@ final class ManagedTunnel {
             }
             message = "已连接 · " + mode.title
         } catch {
-            let reason = "路由切换未通过核验，VPN 已停止：" + error.localizedDescription
-            stop(); lastError = reason; state = .failed; message = reason
+            let cause = error.localizedDescription
+            stop()
+            let pending = networkRecoveryRequired || process?.isRunning == true
+            let reason = (pending ? "路由切换失败，连接或网络恢复未完成：" : "路由切换失败，VPN 已断开：") + cause
+            lastError = reason; state = .failed; message = reason
             throw error
         }
     }

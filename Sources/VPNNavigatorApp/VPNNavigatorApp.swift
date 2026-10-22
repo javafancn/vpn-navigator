@@ -294,12 +294,13 @@ final class AppModel: ObservableObject {
         showingImportReport = true
     }
     func displayedRoutingMode(for id: UUID?) -> RoutingMode? {
-        if connected, id == activeProfileID { return activeRoutingMode }
+        if activeProfileID != nil, id == activeProfileID { return connected ? activeRoutingMode : nil }
         return profiles.first(where: { $0.id == id })?.mode
     }
     var routingModeStatus: String {
         if let target = routingModeTarget { return "正在切换为" + target.title + "…" }
         if connected { return "实际路由：" + (activeRoutingMode?.title ?? "尚未核验") }
+        if activeProfileID != nil { return "连接状态变化中，路由待核验" }
         return "保存后在下次连接生效"
     }
     func canSetRoutingMode(_ mode: RoutingMode, for id: UUID?) -> Bool {

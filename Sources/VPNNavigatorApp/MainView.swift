@@ -54,6 +54,15 @@ struct MainView: View {
                 sidebar.frame(width: 228)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
                 VStack(spacing: 0) {
+                    if let issue = model.profileIndexIssue {
+                        HStack(spacing: 12) {
+                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                            Text(issue).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                            Button("查看恢复…") { Task { await model.inspectProfileIndex() } }
+                                .buttonStyle(ReferenceSecondaryButton()).disabled(model.busy || model.profileTransferInProgress)
+                        }.padding(12).glassCard(cornerRadius: 12).padding(.horizontal, 16).padding(.top, 16)
+                    }
                     Group {
                         switch tab {
                         case .overview: ConnectionOverview()
@@ -100,6 +109,9 @@ struct MainView: View {
             if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-quick-access-snapshot") {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.quickAccess.show() }
             }
+            if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-profile-recovery-snapshot") {
+                Task { await model.showProfileIndexRecoverySnapshot() }
+            }
             if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-import-report-snapshot") {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.showImportReportSnapshot() }
             }
@@ -140,6 +152,7 @@ struct MainView: View {
         .sheet(isPresented: $model.showingMaintenance) { MaintenanceAssistantView().environmentObject(model) }
         .sheet(isPresented: $model.showingSetup) { SetupAssistantView().environmentObject(model) }
         .sheet(isPresented: $model.showingPreferences) { ClientPreferencesView().environmentObject(model) }
+        .sheet(isPresented: $model.showingProfileIndexRecovery) { ProfileIndexRecoveryView().environmentObject(model) }
         .sheet(isPresented: $model.showingDiagnostics) { DiagnosticHistoryView().environmentObject(model) }
         .sheet(isPresented: $model.showingImportReport) {
             if model.reviewingIncomingProfiles { ProfileOpenReviewView().environmentObject(model) }
@@ -894,6 +907,14 @@ struct SystemSettingsPane: View {
                     }
                     .menuIndicator(.hidden).buttonStyle(.plain)
                     .fixedSize()
+                }
+
+                settingsRow("配置列表备份",
+                    subtitle: model.profileIndexBackupStatus,
+                    symbol: "externaldrive.badge.timemachine") {
+                    Button("检查与恢复…") { Task { await model.inspectProfileIndex() } }
+                        .buttonStyle(ReferenceSecondaryButton())
+                        .disabled(model.busy || model.profileTransferInProgress || model.maintenanceInProgress)
                 }
 
                 settingsRow("安全恢复",

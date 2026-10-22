@@ -18,10 +18,16 @@ final class AppModel: ObservableObject {
     @Published private(set) var profileDropLoading = false
     @Published var profilePickerPresented = false
     @Published private(set) var profileOpenReady = false
-    var profileTransferInProgress: Bool { profileImportInProgress || profileExportInProgress }
+    var profileTransferInProgress: Bool { profileImportInProgress || profileExportInProgress || profileIndexRecoveryInProgress }
     @Published var quickAccessShortcut = QuickAccessShortcut(rawValue: UserDefaults.standard.string(forKey: "quickAccessShortcut") ?? "") ?? .disabled {
         didSet { UserDefaults.standard.set(quickAccessShortcut.rawValue, forKey: "quickAccessShortcut") }
     }
+    @Published private(set) var profileIndexIssue: String?
+    @Published private(set) var profileIndexRecovery: ProfileIndexRecoveryPreview?
+    @Published private(set) var profileIndexRecoveryProblem: String?
+    @Published private(set) var profileIndexBackupStatus = "尚未检查"
+    @Published private(set) var profileIndexRecoveryInProgress = false
+    @Published var showingProfileIndexRecovery = false
     @Published var quickAccessShortcutStatus = "全局快捷键已关闭"
     lazy var quickAccess = QuickAccessCoordinator(model: self)
     @Published var selectedID: UUID? {
@@ -117,7 +123,7 @@ final class AppModel: ObservableObject {
         launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") { profileOpenReady = true; return }
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") { profileOpenReady = true; return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -179,8 +185,8 @@ final class AppModel: ObservableObject {
     }
 
     func load() async {
+        do { try await loadProfiles() } catch { /* Persistent recovery banner owns this failure. */ }
         do {
-            try await loadProfiles()
             rules = try await updater.cached()
             if rules == nil, let seed = Bundle.main.url(forResource: "china-ipv4", withExtension: "txt", subdirectory: "Rules") {
                 rules = try await updater.bootstrap(seed)
@@ -192,11 +198,98 @@ final class AppModel: ObservableObject {
         } catch { message = error.localizedDescription }
     }
     private func loadProfiles() async throws {
-        profiles = try await store.list()
+        do {
+            profiles = try await store.list()
+            profileIndexIssue = nil; profileIndexRecovery = nil; profileIndexRecoveryProblem = nil
+        } catch {
+            profiles = []; profileSizes = [:]; selectedID = nil
+            profileIndexIssue = error.localizedDescription
+            await refreshProfileIndexRecovery()
+            throw error
+        }
         var sizes: [UUID: Int] = [:]
         for item in profiles { sizes[item.id] = try? await store.fileSize(for: item) }
         profileSizes = sizes
-        if selectedID == nil { selectedID = profiles.first?.id }
+        if !profiles.contains(where: { $0.id == selectedID }) { selectedID = profiles.first?.id }
+        await refreshProfileIndexBackupStatus()
+    }
+    private func refreshProfileIndexBackupStatus() async {
+        do {
+            let info = try await store.indexBackupInfo()
+            profileIndexBackupStatus = info.matchesCurrentIndex ?
+                "已备份 \(info.profileCount) 个配置 · " + info.savedAt.formatted(date: .abbreviated, time: .shortened) :
+                "备份与当前列表不一致，请保留原始配置文件。"
+        } catch { profileIndexBackupStatus = "暂无可用备份：" + error.localizedDescription }
+    }
+    private func refreshProfileIndexRecovery() async {
+        await refreshProfileIndexBackupStatus()
+        do {
+            profileIndexRecovery = try await store.indexRecoveryPreview()
+            profileIndexRecoveryProblem = nil
+        } catch {
+            profileIndexRecovery = nil; profileIndexRecoveryProblem = error.localizedDescription
+        }
+    }
+    var canManageProfileIndex: Bool {
+        !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot") && !profileTransferInProgress &&
+        !busy && !maintenanceInProgress && !backgroundServicesBusy && !routingModeSwitching &&
+        profileMutations == 0 && sessionState == .disconnected && activeProfileID == nil && !showingImportReport
+    }
+    var canRecoverProfileIndex: Bool {
+        canManageProfileIndex && profileIndexIssue != nil && profileIndexRecovery != nil
+    }
+    func refreshProfileIndexBackup() async {
+        guard canManageProfileIndex, profileIndexIssue == nil else { return }
+        profileIndexRecoveryInProgress = true; profileMutations += 1
+        defer { profileIndexRecoveryInProgress = false; profileMutations -= 1 }
+        do {
+            try await store.refreshIndexBackup()
+            await refreshProfileIndexBackupStatus()
+            profileIndexRecoveryProblem = "配置列表备份已更新。"
+        } catch { profileIndexRecoveryProblem = "未更新备份：" + error.localizedDescription }
+    }
+    func inspectProfileIndex() async {
+        guard !busy, !profileTransferInProgress, !maintenanceInProgress, !backgroundServicesBusy,
+              !routingModeSwitching, profileMutations == 0 else { return }
+        profileIndexRecoveryInProgress = true
+        defer { profileIndexRecoveryInProgress = false }
+        do { try await loadProfiles() } catch { /* Show the recovery result in the sheet. */ }
+        showingProfileIndexRecovery = true
+    }
+    func recoverProfileIndex() async {
+        guard canRecoverProfileIndex, let preview = profileIndexRecovery else { return }
+        profileIndexRecoveryInProgress = true; profileMutations += 1
+        defer { profileIndexRecoveryInProgress = false; profileMutations -= 1 }
+        do {
+            try await store.recoverIndex(preview)
+            try await loadProfiles()
+            profileIndexRecoveryProblem = "配置列表已恢复。"
+        } catch {
+            // Keep the confirmation disabled until the user explicitly inspects
+            // again. A stale confirmation must never become a new approval.
+            profileIndexRecovery = nil
+            profileIndexRecoveryProblem = "未恢复：" + error.localizedDescription
+        }
+    }
+    func showProfileIndexRecoverySnapshot() async {
+        guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
+              ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot") else { return }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("vpnnav-index-snapshot-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let source = root.appendingPathComponent("工作网络.ovpn")
+            try "client\ndev tun\nremote fixture.example 1194\n<ca>\nFAKE\n</ca>\n".write(to: source, atomically: true, encoding: .utf8)
+            let folder = root.appendingPathComponent("profiles"), fixture = ProfileStore(root: root.appendingPathComponent("profiles"))
+            var item = try await fixture.importProfile(from: source)
+            item.group = "公司"; item.isFavorite = true; item.mode = .chinaDirect
+            try await fixture.update(item)
+            try Data("fixture damage".utf8).write(to: folder.appendingPathComponent("profiles.json"))
+            profileIndexRecovery = try await fixture.indexRecoveryPreview()
+            profileIndexIssue = ProfileIndexFailure.invalidIndex.localizedDescription
+            profileIndexBackupStatus = "已备份 1 个配置 · 本机故障恢复预览"
+            showingProfileIndexRecovery = true
+        } catch { message = "恢复界面预览未能生成。" }
     }
     func importFile(_ url: URL) async {
         await importFiles([url], presentReport: false)
@@ -205,7 +298,7 @@ final class AppModel: ObservableObject {
         profileOpenReady && !incomingProfiles.isEmpty && !profileDropLoading && !profilePickerPresented &&
         !routingModeSwitching && !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress && !busy &&
         !connecting && !stopping && !showingImportReport && !showingSetup && !showingMaintenance &&
-        !showingPreferences && !showingDiagnostics && !showingAccountCredentials &&
+        !showingPreferences && !showingDiagnostics && !showingProfileIndexRecovery && !showingAccountCredentials &&
         authenticationChallenge == nil && message == nil
     }
     func receiveProfileOpenRequest(_ request: ProfileOpenQueue) {
@@ -237,17 +330,17 @@ final class AppModel: ObservableObject {
         await importFiles(urls)
     }
     var canConfirmIncomingProfiles: Bool {
-        !routingModeSwitching && reviewingIncomingProfiles && !incomingProfiles.urls.isEmpty &&
+        !routingModeSwitching && profileIndexIssue == nil && reviewingIncomingProfiles && !incomingProfiles.urls.isEmpty &&
         !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress &&
         !busy && !connecting && !stopping
     }
     var canChooseProfileFiles: Bool {
         !routingModeSwitching && !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress &&
-        !showingImportReport && !busy && !connecting && !stopping
+        !showingImportReport && !showingProfileIndexRecovery && profileIndexIssue == nil && !busy && !connecting && !stopping
     }
     func importFiles(_ urls: [URL], presentReport: Bool = true) async {
         guard !reviewingIncomingProfiles, !maintenanceInProgress, !backgroundServicesBusy,
-              !profileTransferInProgress, !routingModeSwitching, !busy, !connecting, !stopping else {
+              !profileTransferInProgress, !routingModeSwitching, profileIndexIssue == nil, !busy, !connecting, !stopping else {
             message = "请等待当前操作完成后再导入配置。"; return
         }
         guard !urls.isEmpty, urls.count <= ProfileBatchImporter.maximumFiles else {
@@ -818,7 +911,7 @@ final class AppModel: ObservableObject {
         guard profiles.contains(where: { $0.id == id }) else { return .blocked }
         if connected && id != activeProfileID && quickAccessSession == nil { return .blocked }
         return QuickAccessAction.resolve(state: sessionState, profileID: id, activeProfileID: activeProfileID,
-            operationInProgress: routingModeSwitching || busy || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || showingImportReport ||
+            operationInProgress: showingProfileIndexRecovery || routingModeSwitching || busy || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || showingImportReport ||
                 authenticationChallenge != nil || showingAccountCredentials,
             mayStart: canQuit)
     }
@@ -993,6 +1086,12 @@ struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
     @StateObject private var model = AppModel()
     init() {
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") {
+            Task {
+                do { try await ProfileRecoverySelfTest.run(); print("Profile index recovery checks passed."); Darwin.exit(0) }
+                catch { print("Profile index recovery self-test failed: \(error.localizedDescription)"); Darwin.exit(1) }
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") {
             Task {
                 do { try await RoutingModeSelfTest.run(); print("Routing mode model checks passed."); Darwin.exit(0) }

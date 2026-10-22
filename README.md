@@ -2,7 +2,7 @@
 
 原生 macOS OpenVPN 客户端，提供配置管理、Original / 全局 VPN / 中国 IPv4 直连策略、菜单栏控制与网络诊断。
 
-当前开发版本：**0.3.7**。提供开发预览、本地测试及 Developer ID 发布构建三种通道。本地测试通道无需付费开发者证书，包含引擎并经管理员批准固定程序身份；尚待真实网络及用户 Mac 安装验收。正式分发仍须签名、公证及发布验收。
+当前开发版本：**0.3.8**。提供开发预览、本地测试及 Developer ID 发布构建三种通道。本地测试通道无需付费开发者证书，包含引擎并经管理员批准固定程序身份；尚待真实网络及用户 Mac 安装验收。正式分发仍须签名、公证及发布验收。
 
 ## 已实现
 
@@ -55,3 +55,5 @@ zsh scripts/build-app.sh
 配置可能包含私钥，默认只保存在本机私有目录；请勿提交真实 `.ovpn`、密码、私钥或签名证书。
 
 初始地区规则来自 [misakaio/chnroutes2](https://github.com/misakaio/chnroutes2)，保留 CC BY-SA 2.0 标识、来源和快照 blob SHA，见 `Resources/Rules/README.md`。OpenVPN/OpenSSL 的原始许可证与对应源码归档由源码构建/签名流程收集并随正式应用提供；分发前仍须审阅实际依赖与通知。
+
+配置列表支持本机私有备份和损坏后的确认恢复，见 [配置列表恢复](docs/PROFILE_INDEX_RECOVERY.md)。

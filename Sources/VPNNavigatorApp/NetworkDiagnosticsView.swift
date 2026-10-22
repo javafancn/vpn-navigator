@@ -194,11 +194,11 @@ struct NetworkDiagnosticsView: View {
     private var targetEditor: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("诊断目标").font(.headline)
-            TextField("目标 IPv4", text: $address).textFieldStyle(.plain).referenceInput()
+            TextField("目标 IPv4／IPv6", text: $address).textFieldStyle(.plain).referenceInput()
             TextField("TCP 端口", text: $port).textFieldStyle(.plain).referenceInput()
             TextField("DNS 查询域名", text: $hostname).textFieldStyle(.plain).referenceInput()
             Button("应用并检查") { showingTarget = false; run() }.buttonStyle(ReferencePrimaryButton())
-                .disabled(IPv4CIDR.parseAddress(address) == nil || UInt16(port).map { $0 > 0 } != true || !DiagnosticTargetPolicy.validHostname(hostname))
+                .disabled(IPAddress.canonical(address) == nil || UInt16(port).map { $0 > 0 } != true || !DiagnosticTargetPolicy.validHostname(hostname))
         }.padding(18).frame(width: 300)
     }
     private func cancel() {
@@ -206,7 +206,7 @@ struct NetworkDiagnosticsView: View {
     }
     private func run() {
         cancel()
-        guard IPv4CIDR.parseAddress(address) != nil, let portNumber = UInt16(port), portNumber > 0,
+        guard IPAddress.canonical(address) != nil, let portNumber = UInt16(port), portNumber > 0,
               DiagnosticTargetPolicy.validHostname(hostname) else { error = ProbeError.invalidTarget.localizedDescription; return }
         let token = UUID(); attempt = token
         let tab = selectedTab, target = address, name = hostname

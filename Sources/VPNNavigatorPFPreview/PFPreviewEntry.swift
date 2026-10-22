@@ -7,6 +7,12 @@ import VPNNavigatorCore
 @main
 enum VPNNavigatorPFPreview {
     static func main() throws {
+        if CommandLine.arguments.contains("--dual-stack") {
+            let policy = try LeakGuardPolicy(physical: "en0", endpoint: "2606:4700::1111", port: 1194, transport: .udp,
+                local: [IPv4CIDR("192.168.1.0/24")], country: [], physical4: "en0", physical6: "en0",
+                local6: [IPv6CIDR("fd12::/64")], managedDirect6: [IPv6CIDR("240e::/20")], ipv6Tunnel: true)
+            print(try policy.rules(tunnel: "utun4")); return
+        }
         if CommandLine.arguments.contains("--strict") {
             let guardPolicy = try LeakGuardPolicy(physical: "en0", endpoint: "8.8.8.8", port: 1194,
                 transport: .udp, local: [IPv4CIDR("192.168.1.0/24")], country: [IPv4CIDR("223.5.5.0/24")])

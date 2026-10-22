@@ -39,6 +39,15 @@ if CommandLine.arguments.dropFirst().first == "--self-test-dns-journal" {
 }
 #endif
 
+#if VPNNAV_LOCAL_TEST
+if CommandLine.arguments.dropFirst().first == "--self-test-ipv6-kernel" {
+    guard getuid() == 0, CommandLine.arguments.count == 3, ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
+          let approval = try? LocalInstallation.load(), LocalInstallation.selfMatches([.helper], approval: approval) else { exit(1) }
+    do { try IPv6KernelSelfTest.run(tunnel: CommandLine.arguments[2]); exit(0) }
+    catch { fputs("IPv6 kernel fixture failed: \(error.localizedDescription)\n", stderr); exit(1) }
+}
+#endif
+
 if BuildChannel.isLocal {
     guard let approval = try? LocalInstallation.load(), LocalInstallation.selfMatches([.helper], approval: approval) else { exit(1) }
 }
@@ -159,7 +168,7 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
             firewallRecoveryRequired: engine.firewallRecoveryRequired, attemptID: engine.activeAttemptID,
             networkRecoveryRequired: engine.networkRecoveryRequired,
             routingMode: engine.routingMode, routingRevision: engine.routingRevision,
-            customRuleDigest: engine.customRuleDigest, customRuleCount: engine.customRuleCount)
+            customRuleDigest: engine.customRuleDigest, customRuleCount: engine.customRuleCount, ipStack: engine.ipStack, failureCode: engine.state == .failed ? engine.failureCode : nil)
     }
     func activeProfile(reply: @escaping (String) -> Void) {
         queue.async { reply(self.engine.activeProfileID?.uuidString ?? "") }

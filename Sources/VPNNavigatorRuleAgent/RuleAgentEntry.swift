@@ -9,11 +9,15 @@ enum RuleAgent {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("VPNNavigator/Rules", isDirectory: true)
         let manager = RuleUpdater(folder: support)
+        let manager6 = APNICIPv6PreviewStore(root: support)
         do {
-            let candidate = try await manager.fetchCandidate()
+            async let feed4 = manager.fetchCandidate()
+            async let feed6 = manager6.fetchCandidate()
+            let (candidate, candidate6) = try await (feed4, feed6)
             let current = try await manager.cached()
-            if current?.routes == candidate.routes {
-                print("China IPv4 rules unchanged.")
+            let current6 = try await manager6.cached()
+            if current?.routes == candidate.routes, current6?.routes == candidate6.routes {
+                print("China IPv4/IPv6 rules unchanged.")
                 return
             }
             // If the signed root helper has an active split-tunnel, use its typed update API.
@@ -29,7 +33,7 @@ enum RuleAgent {
             } else { status = "disconnected: helper not enabled" }
             if status.hasPrefix("connected:") {
                 let result = await HelperMessage.request { api, reply in
-                    api.updateRules(candidate.routes.map(\.description).joined(separator: "\n"), reply: reply)
+                    api.updateRules(RoutingRuleBundle(ipv4: candidate.routes.map(\.description).joined(separator: "\n"), ipv6: candidate6.routes.map(\.description).joined(separator: "\n")).json, reply: reply)
                 }
                 guard result == "Rules applied" || result == "NO_ACTIVE_SPLIT" else {
                     fputs("Active route update failed; previous cache preserved.\n", stderr)
@@ -37,7 +41,8 @@ enum RuleAgent {
                 }
             }
             try await manager.commit(candidate)
-            print("China IPv4 rules updated: \(candidate.routes.count) prefixes.")
+            try await manager6.commit(candidate6)
+            print("China IPv4/IPv6 rules updated: \(candidate.routes.count) prefixes.")
         } catch {
             fputs("Rule update failed, prior rules preserved: \(error.localizedDescription)\n", stderr)
         }

@@ -26,6 +26,7 @@ jobs:
         run: |
           swift run VPNNavigatorPFPreview > "$RUNNER_TEMP/pf-vpn-navigator-preview.conf"
           swift run VPNNavigatorPFPreview --strict > "$RUNNER_TEMP/pf-vpn-navigator-strict.conf"
+          swift run VPNNavigatorPFPreview --dual-stack > "$RUNNER_TEMP/pf-vpn-navigator-dual.conf"
           test -s "$RUNNER_TEMP/pf-vpn-navigator-preview.conf"
           grep -q 'if-bound' "$RUNNER_TEMP/pf-vpn-navigator-strict.conf"
           grep -q 'block drop out quick on en0 inet6' "$RUNNER_TEMP/pf-vpn-navigator-preview.conf"
@@ -33,5 +34,6 @@ jobs:
         run: |
           sudo /sbin/pfctl -vnf "$RUNNER_TEMP/pf-vpn-navigator-preview.conf"
           sudo /sbin/pfctl -vnf "$RUNNER_TEMP/pf-vpn-navigator-strict.conf"
+          sudo /sbin/pfctl -vnf "$RUNNER_TEMP/pf-vpn-navigator-dual.conf"
           echo 'Candidate anchor syntax parsed; no PF changes made.'
 

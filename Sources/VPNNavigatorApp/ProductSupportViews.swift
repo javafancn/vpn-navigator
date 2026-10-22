@@ -190,6 +190,8 @@ struct ClientPreferencesView: View {
             Text("连接偏好").font(.system(size: 24, weight: .bold))
             ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                Button("智能连接与状态通知…") { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { model.showingSmartConnection = true } }
+                    .buttonStyle(ReferenceSecondaryButton())
                 Picker("连接与认证超时", selection: Binding(
                     get: { model.sessionPreferences.connectionTimeout },
                     set: { model.connectionTimeout = $0 })) {
@@ -200,14 +202,17 @@ struct ClientPreferencesView: View {
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 Divider().opacity(0.25)
                 Toggle("断线保护（实验性，全局 VPN / 国内直连）", isOn: $model.killSwitch)
-                Text("保护启用、重建、收紧规则或解除时会重置现有网络连接（含其它 VPN），并阻断物理 IPv6。异常时保护保留，手动断开或恢复网络可解除。完整真机验收尚待完成。")
+                Text("保护启用、重建、收紧规则或解除时会重置现有网络连接（含其它 VPN），按策略限制 IPv4／IPv6 物理出口。异常时保护保留，手动断开或恢复网络可解除。完整真机验收尚待完成。")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                Toggle("受管模式必须建立 IPv4＋IPv6 双栈", isOn: $model.requireDualStack)
+                Text("默认按服务器分配的地址自动配置。要求双栈时缺少任一地址族会拒绝连接；未承载的地址族仍须满足保护条件。修改在下次连接生效。")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 Toggle("受管模式安全重连（最多 3 次 / 10 分钟）", isOn: $model.reconnectManaged)
                     .disabled(!model.killSwitch)
-                Text("重连期间持续保留防火墙，旧进程、DNS 和路由未安全恢复时不会启动新会话。服务器地址固定为本次已解析的 IPv4。")
+                Text("重连期间持续保留防火墙，旧进程、DNS 和路由未安全恢复时不会启动新会话。服务器地址固定为本次已解析的 IPv4 或 IPv6。")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 Divider().opacity(0.25)
-                Toggle("每天自动更新国内 IPv4 规则", isOn: Binding(
+                Toggle("每天自动更新国内 IPv4／IPv6 规则", isOn: Binding(
                     get: { model.automaticRulesEnabled },
                     set: { enabled in Task { await model.setAutomaticRules(enabled) } }))
                 Text("规则服务：\(model.rulesServiceStatus)").font(.system(size: 12)).foregroundStyle(.secondary)
@@ -238,7 +243,7 @@ struct ClientPreferencesView: View {
             }.padding(20).glassCard(cornerRadius: 16)
                 .disabled(model.maintenanceInProgress || model.backgroundServicesBusy)
             }.frame(maxHeight: 460)
-            Text("连接偏好在下一次连接时生效。登录启动不会自动建立 VPN 连接。")
+            Text("连接偏好在下一次连接时生效。自动连接需在“智能连接与状态通知”中单独开启。")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             HStack { Spacer(); Button("完成") { dismiss() }.buttonStyle(ReferencePrimaryButton()) }
         }.padding(24).frame(width: 560).background(GlassAtmosphere())

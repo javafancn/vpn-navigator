@@ -40,6 +40,9 @@ final class AppModel: ObservableObject {
     @Published var showingProfileIndexRecovery = false
     @Published var quickAccessShortcutStatus = "全局快捷键已关闭"
     lazy var quickAccess = QuickAccessCoordinator(model: self)
+    private let smartDefaults: UserDefaults
+    lazy var smartConnection = SmartConnectionController(model: self, defaults: smartDefaults)
+    @Published var showingSmartConnection = false
     @Published var selectedID: UUID? {
         didSet {
             if oldValue != selectedID {
@@ -72,6 +75,10 @@ final class AppModel: ObservableObject {
     @Published var customRuleEditorProfile: VPNProfile?
     @Published private(set) var activeCustomRuleDigest: String?
     @Published private(set) var activeCustomRuleCount: Int?
+    @Published private(set) var activeIPStack: TunnelIPStack?
+    @Published var requireDualStack = UserDefaults.standard.bool(forKey: "requireDualStack") {
+        didSet { UserDefaults.standard.set(requireDualStack, forKey: "requireDualStack") }
+    }
     var activeRoutingIdentity: String {
         [connectionStatus.components(separatedBy: ":").first ?? "", activeProfileID?.uuidString ?? "",
          helperAttemptID?.uuidString ?? "", routingRevision?.uuidString ?? "", activeRoutingMode?.rawValue ?? ""].joined(separator: "|")
@@ -129,7 +136,8 @@ final class AppModel: ObservableObject {
     private let ipv6Updater: APNICIPv6PreviewStore
     private let helper = HelperClient.shared
 
-    init(backgroundServiceDefaults: UserDefaults = .standard, profileStoreRoot: URL? = nil, routingModeService: RoutingModeService? = nil, libraryDefaults: UserDefaults = .standard) {
+    init(backgroundServiceDefaults: UserDefaults = .standard, profileStoreRoot: URL? = nil, routingModeService: RoutingModeService? = nil, libraryDefaults: UserDefaults = .standard, smartDefaults: UserDefaults = .standard) {
+        self.smartDefaults = smartDefaults
         self.libraryDefaults = libraryDefaults
         profileLibrary = ProfileLibraryQuery(sort: ProfileLibrarySort(savedValue: libraryDefaults.string(forKey: "profileLibrarySort")))
         self.routingModeService = routingModeService ?? .live
@@ -144,7 +152,7 @@ final class AppModel: ObservableObject {
         launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -172,6 +180,7 @@ final class AppModel: ObservableObject {
             await load()
             if helper.installationStatus == .enabled { await restoreBackgroundServices() }
             eventHistory = localEvents.events()
+            smartConnection.start()
             if installationIssue != nil || !UserDefaults.standard.bool(forKey: "setupAssistantDismissed") {
                 showingSetup = true
             }
@@ -202,7 +211,7 @@ final class AppModel: ObservableObject {
     }
     var sessionPreferences: SessionPreferences {
         .init(connectionTimeout: connectionTimeout == 0 ? 60 : connectionTimeout,
-              reconnectOriginal: reconnectOriginal, killSwitch: killSwitch, reconnectManaged: reconnectManaged)
+              reconnectOriginal: reconnectOriginal, killSwitch: killSwitch, reconnectManaged: reconnectManaged, requireDualStack: requireDualStack)
     }
 
     func load() async {
@@ -426,7 +435,7 @@ final class AppModel: ObservableObject {
             guard connected, let current = activeRoutingMode else { return false }
             if mode == current { return true }
             return current != .original && mode != .original && routingRevision != nil && helperAttemptID != nil &&
-                (mode != .chinaDirect || (rules?.routes.count ?? 0) >= 100)
+                (mode != .chinaDirect || ((rules?.routes.count ?? 0) >= 100 && (activeIPStack != .dual && activeIPStack != .ipv6 || (ipv6Preview?.routes.count ?? 0) >= 100)))
         }
         return true
     }
@@ -450,7 +459,7 @@ final class AppModel: ObservableObject {
                 guard report.activeProfileID == id, report.attemptID == expectedAttempt,
                       report.routingRevision == revision, report.routingMode == previous else { throw RoutingModeSwitchError.stale }
                 let request = try RoutingModeSwitchRequest(report: report, target: mode)
-                let ruleText = mode == .chinaDirect ? (rules?.routes ?? []).map(\.description).joined(separator: "\n") : ""
+                let ruleText = mode == .chinaDirect ? routingRuleText() : ""
                 let response = await routingModeService.apply(request, ruleText)
                 let confirmed = await routingModeService.snapshot()
                 guard statusEpoch == operationEpoch else { throw RoutingModeSwitchError.stale }
@@ -477,7 +486,7 @@ final class AppModel: ObservableObject {
         item.mode = mode; try await store.update(item); try await loadProfiles()
     }
     private func markRoutingUnverified() {
-        activeRoutingMode = nil; routingRevision = nil; activeCustomRuleDigest = nil; activeCustomRuleCount = nil; helperStateVerified = false
+        activeRoutingMode = nil; routingRevision = nil; activeCustomRuleDigest = nil; activeCustomRuleCount = nil; activeIPStack = nil; helperStateVerified = false
         networkRecoveryRequired = true
         connectionStatus = "failed: 无法核验路由切换结果，请检查助手与网络恢复状态"
     }
@@ -601,35 +610,41 @@ final class AppModel: ObservableObject {
         } catch { message = "无法删除配置：" + error.localizedDescription }
     }
 
+    private func routingRuleText(_ ipv4: RuleSet? = nil, ipv6: IPv6RuleSet? = nil) -> String {
+        let text4 = (ipv4 ?? rules)?.routes.map(\.description).joined(separator: "\n") ?? ""
+        let v6 = ipv6 ?? ipv6Preview
+        return v6.map { RoutingRuleBundle(ipv4: text4, ipv6: $0.routes.map(\.description).joined(separator: "\n")).json } ?? text4
+    }
     func updateIPv6Preview() async {
-        guard !busy, !routingModeSwitching else { return }
-        busy = true
-        defer { busy = false }
+        guard !busy, !routingModeSwitching, !connecting, !stopping else { return }
+        busy = true; defer { busy = false }
         do {
-            ipv6Preview = try await ipv6Updater.refresh()
-            message = "Downloaded \(ipv6Preview?.routes.count ?? 0) APNIC IPv6 allocation prefixes. This is a data preview only; it does not change VPN or system routes."
-        } catch {
-            message = "IPv6 preview update was refused; cached data preserved: \(error.localizedDescription)"
-        }
+            let candidate = try await ipv6Updater.fetchCandidate()
+            if connected {
+                let response = await helper.updateRules(routingRuleText(ipv6: candidate))
+                guard response == "Rules applied" || response == "NO_ACTIVE_SPLIT" else { message = "IPv6 更新未确认，旧缓存保留：" + response; return }
+                await refreshConnectionStatus()
+            }
+            try await ipv6Updater.commit(candidate); ipv6Preview = candidate
+            message = "已校验并保存 \(candidate.routes.count) 条中国 IPv6 注册前缀；活动规则会话已同步核验。"
+        } catch { message = "IPv6 更新失败，原缓存保留：" + error.localizedDescription }
     }
     func refreshRules() async {
         guard !busy, !routingModeSwitching, !connecting, !stopping else { return }
         busy = true; defer { busy = false }
         do {
-            let candidate = try await updater.fetchCandidate()
+            async let candidate4 = updater.fetchCandidate()
+            async let candidate6 = ipv6Updater.fetchCandidate()
+            let (v4, v6) = try await (candidate4, candidate6)
             if connected {
-                let response = await helper.updateRules(candidate.routes.map(\.description).joined(separator: "\n"))
-                guard response == "Rules applied" || response == "NO_ACTIVE_SPLIT" else {
-                    message = "Existing routes unchanged. \(response)"
-                    return
-                }
+                let response = await helper.updateRules(routingRuleText(v4, ipv6: v6))
+                guard response == "Rules applied" || response == "NO_ACTIVE_SPLIT" else { message = "双栈更新未确认，原缓存保留：" + response; return }
+                await refreshConnectionStatus()
             }
-            try await updater.commit(candidate)
-            rules = candidate
-            ruleSnapshots = try await updater.snapshots()
-            rulesUpdatedAt = try await updater.lastUpdated()
-            message = "Validated and cached \(candidate.routes.count) IPv4 networks."
-        } catch { message = "Update failed; old rules preserved. \(error.localizedDescription)" }
+            try await updater.commit(v4); try await ipv6Updater.commit(v6)
+            rules = v4; ipv6Preview = v6; ruleSnapshots = try await updater.snapshots(); rulesUpdatedAt = try await updater.lastUpdated()
+            message = "已校验并保存 IPv4 \(v4.routes.count) 条、IPv6 \(v6.routes.count) 条规则。"
+        } catch { message = "双栈规则更新失败；请查看当前实际会话状态：" + error.localizedDescription }
     }
 
     func checkForUpdates() async {
@@ -787,7 +802,7 @@ final class AppModel: ObservableObject {
             }
             if connected {
                 let result = await helper.updateRules(
-                    restored.routes.map(\.description).joined(separator: "\n"))
+                    routingRuleText(restored))
                 guard result == "Rules applied" || result == "NO_ACTIVE_SPLIT" else {
                     message = "Previous rules preserved: \(result)"
                     return
@@ -830,7 +845,7 @@ final class AppModel: ObservableObject {
         } catch { message = "Helper registration failed: \(error.localizedDescription)" }
     }
     func applyVerifiedSessionReport(_ report: SessionReport) {
-        activeCustomRuleDigest = report.customRuleDigest; activeCustomRuleCount = report.customRuleCount
+        activeIPStack = report.ipStack; activeCustomRuleDigest = report.customRuleDigest; activeCustomRuleCount = report.customRuleCount
         helperStateVerified = true
         if !(busy && connectionAttempt != nil && sessionState == .connecting && report.state == .disconnected) {
             connectionStatus = report.statusText
@@ -851,6 +866,7 @@ final class AppModel: ObservableObject {
         }
         activeRoutingMode = report.routingMode
         routingRevision = report.routingRevision
+        smartConnection.observe(report)
     }
     func refreshConnectionStatus() async {
         let capturedEpoch = statusEpoch
@@ -863,8 +879,9 @@ final class AppModel: ObservableObject {
                 applyVerifiedSessionReport(report)
             } else {
                 guard capturedEpoch == statusEpoch, !routingModeSwitching else { return }
-                activeRoutingMode = nil; routingRevision = nil; activeCustomRuleDigest = nil; activeCustomRuleCount = nil
+                activeRoutingMode = nil; routingRevision = nil; activeCustomRuleDigest = nil; activeCustomRuleCount = nil; activeIPStack = nil
                 helperStateVerified = false
+                smartConnection.observe(nil)
                 authenticationChallenge = nil
                 connectionStatus = "failed: 无法核验后台会话，请检查助手与网络恢复状态"
                 activeProfileID = nil
@@ -875,8 +892,9 @@ final class AppModel: ObservableObject {
         } else {
             let unresolved = BuildChannel.isLocal && (helper.installationStatus == .requiresApproval || LocalInstallation.hasRecoveryEvidence)
             helperStateVerified = !unresolved
+            smartConnection.observe(nil)
             connectionStatus = unresolved ? "failed: 本地安装未通过校验，请先恢复网络并修复安装" : "disconnected: Privileged helper not enabled"
-            activeRoutingMode = nil; routingRevision = nil; activeCustomRuleDigest = nil; activeCustomRuleCount = nil
+            activeRoutingMode = nil; routingRevision = nil; activeCustomRuleDigest = nil; activeCustomRuleCount = nil; activeIPStack = nil
             activeProfileID = nil
             authenticationChallenge = nil
             traffic = nil
@@ -884,12 +902,44 @@ final class AppModel: ObservableObject {
             sendTrend.reset()
         }
     }
-    func connectSelected() async {
+    func smartConnectionContext(sleeping: Bool = false, preparingAutomatic: Bool = false) -> SmartConnectionContext {
+        .init(state: sessionState, activeProfileID: activeProfileID,
+              helperReady: helperStateVerified && helper.installationStatus == .enabled,
+              recoveryRequired: networkRecoveryRequired || firewallRecoveryRequired,
+              occupied: !profileOpenReady || profileIndexIssue != nil || (busy && !preparingAutomatic) || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || profileMutations != 0 ||
+                routingModeSwitching || showingImportReport || showingSetup || showingMaintenance || showingPreferences ||
+                showingSmartConnection || showingDiagnostics || showingRouteExplanation || showingTroubleshooting ||
+                customRuleEditorProfile != nil || showingProfileIndexRecovery || profilePickerPresented ||
+                profileDropLoading || !incomingProfiles.isEmpty || authenticationChallenge != nil || showingAccountCredentials ||
+                !username.isEmpty || !password.isEmpty || quickAccess.panel?.isVisible == true,
+              sleeping: sleeping)
+    }
+    var menuStatusTitle: String {
+        switch sessionState {
+        case .connected: return "已连接"
+        case .connecting: return "正在连接"
+        case .authenticating: return "等待身份验证"
+        case .reconnecting: return "正在重连"
+        case .stopping: return "正在断开与恢复"
+        case .failed: return "连接异常，请检查"
+        case .disconnected: return "未连接"
+        }
+    }
+    var menuStatusSymbol: String {
+        connected ? "checkmark.shield.fill" : sessionState == .failed ? "exclamationmark.shield" : connecting ? "arrow.triangle.2.circlepath" : "network"
+    }
+    func connectSelected(automatically: Bool = false, automationPermit: (() -> Bool)? = nil) async {
+        if automatically {
+            guard automationPermit?() == true,
+                  !smartConnectionContext().occupied, helperStateVerified, helper.installationStatus == .enabled,
+                  sessionState == .disconnected, activeProfileID == nil, !networkRecoveryRequired, !firewallRecoveryRequired else { return }
+        } else { smartConnection.cancelPending() }
         guard !maintenanceInProgress, !profileTransferInProgress, !showingImportReport else { return }
         if BuildChannel.isLocal, LocalInstallation.isInstallationPending {
-            message = helper.localInstallationIssue; showingSetup = true; return
+            message = helper.localInstallationIssue; if !automatically { showingSetup = true }; return
         }
         guard !busy, !connecting, !connected, !stopping, let selected else { return }
+        smartConnection.willStartConnection()
         statusEpoch &+= 1
         let attempt = UUID(); connectionAttempt = attempt
         connectionStatus = "connecting: 正在准备连接"
@@ -909,36 +959,58 @@ final class AppModel: ObservableObject {
                 if connectionAttempt == attempt { connectionStatus = "disconnected: 所选配置已改变" }
                 return
             }
-            if rememberCredentials, let secret = KeychainVault.load(id: selected.id) {
-                if username.isEmpty { username = secret.username }
-                if password.isEmpty && username == secret.username { password = secret.password }
+            var connectionUsername = username, connectionPassword = password
+            if automatically {
+                guard automationPermit?() == true else { throw SmartConnectionError.cancelled }
+                connectionUsername = ""; connectionPassword = ""
+                if validated.requestsCredentials {
+                    guard rememberCredentials, let secret = KeychainVault.load(id: selected.id, allowInteraction: false),
+                          !secret.username.isEmpty, !secret.password.isEmpty else { throw SmartConnectionError.needsCredentials }
+                    connectionUsername = secret.username; connectionPassword = secret.password
+                }
+            } else {
+                if rememberCredentials, let secret = KeychainVault.load(id: selected.id) {
+                    if username.isEmpty { username = secret.username }
+                    if password.isEmpty && username == secret.username { password = secret.password }
+                }
+                if validated.requestsCredentials && (username.isEmpty || password.isEmpty) {
+                    connectionStatus = "disconnected: 等待输入身份验证信息"
+                    showingAccountCredentials = true
+                    return
+                }
+                if rememberCredentials && !password.isEmpty {
+                    try KeychainVault.store(.init(username: username, password: password), id: selected.id)
+                }
+                connectionUsername = username; connectionPassword = password
             }
-            if validated.requestsCredentials && (username.isEmpty || password.isEmpty) {
-                connectionStatus = "disconnected: 等待输入身份验证信息"
-                showingAccountCredentials = true
-                return
-            }
-            if rememberCredentials && !password.isEmpty {
-                try KeychainVault.store(.init(username: username, password: password), id: selected.id)
-            }
-            let rulesText = (rules?.routes ?? []).map(\.description).joined(separator: "\n")
+            let rulesText = routingRuleText()
             guard connectionAttempt == attempt else { return }
+            if automatically {
+                guard automationPermit?() == true, selectedID == selected.id, profiles.contains(selected),
+                      !smartConnectionContext(preparingAutomatic: true).occupied,
+                      helperStateVerified, helper.installationStatus == .enabled,
+                      activeProfileID == nil, !networkRecoveryRequired, !firewallRecoveryRequired else { throw SmartConnectionError.cancelled }
+            }
             var connectionPreferences = sessionPreferences
             connectionPreferences.customRules = selected.mode == .original ? nil : try CustomRuleSet(selected.customRules).rules
             let result = await helper.connect(profile: text, profileID: selected.id,
                                               mode: selected.mode, rules: rulesText,
-                                              username: username, password: password, preferences: connectionPreferences, attemptID: attempt)
+                                              username: connectionUsername, password: connectionPassword, preferences: connectionPreferences, attemptID: attempt)
             guard connectionAttempt == attempt else { return }
-            password = "" // never retain passwords in UI state after a connection attempt
+            if !automatically { password = "" } // Automatic attempts never mutate credential drafts.
             if result.hasPrefix("ERROR:") {
                 message = result
                 connectionStatus = "failed: \(result)"
             } else { await refreshConnectionStatus() }
         } catch {
             guard connectionAttempt == attempt else { return }
-            password = ""
-            message = "配置未通过检查：\(error.localizedDescription)"
-            connectionStatus = "failed: 配置未通过检查"
+            if !automatically { password = "" }
+            if automatically, let smartError = error as? SmartConnectionError, case .cancelled = smartError {
+                connectionStatus = "disconnected: 自动连接条件已改变"
+            } else {
+                message = automatically ? error.localizedDescription : "配置未通过检查：\(error.localizedDescription)"
+                connectionStatus = "failed: 连接准备未完成"
+            }
         }
     }
     func switchToSelected(expectedSession: QuickAccessSession? = nil) async {
@@ -954,6 +1026,7 @@ final class AppModel: ObservableObject {
                 return
             }
         }
+        smartConnection.expectDisconnect()
         let response: String
         if let expectedSession { response = await helper.disconnectSession(expectedSession) }
         else { response = await helper.disconnect() }
@@ -998,6 +1071,7 @@ final class AppModel: ObservableObject {
         else { await connectSelected() }
     }
     func disconnect() async {
+        smartConnection.pauseForManualDisconnect()
         statusEpoch &+= 1
         guard !stopping else { return }
         let cancelledAttempt = connectionAttempt ?? helperAttemptID
@@ -1046,7 +1120,7 @@ final class AppModel: ObservableObject {
         do {
             let candidate = try await updater.localCandidate(url)
             if connected {
-                let response = await helper.updateRules(candidate.routes.map(\.description).joined(separator: "\n"))
+                let response = await helper.updateRules(routingRuleText(candidate))
                 guard response == "Rules applied" || response == "NO_ACTIVE_SPLIT" else {
                     message = response; return
                 }
@@ -1158,6 +1232,12 @@ struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
     @StateObject private var model = AppModel()
     init() {
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") {
+            Task { @MainActor in
+                do { try await SmartConnectionSelfTest.run(); Darwin.exit(0) }
+                catch { print("Smart connection self-test failed: \(error.localizedDescription)"); Darwin.exit(1) }
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") {
             Task {
                 do { try await RoutingToolsSelfTest.run(); print("Routing tools checks passed."); Darwin.exit(0) }
@@ -1249,7 +1329,7 @@ struct VPNNavigatorApp: App {
                     .keyboardShortcut("p", modifiers: [.command, .shift])
             }
         }
-        MenuBarExtra("VPN Navigator", systemImage: "network") {
+        MenuBarExtra("VPN Navigator — " + model.menuStatusTitle, systemImage: model.menuStatusSymbol) {
             GlassMenuBarView().environmentObject(model)
         }
         .menuBarExtraStyle(.window)

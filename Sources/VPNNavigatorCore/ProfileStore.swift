@@ -9,7 +9,7 @@ public struct ProfileRevision: Identifiable, Sendable {
 /// The initially imported source is saved to history on the first edit.
 public actor ProfileStore {
     private let root: URL
-    private var indexURL: URL { root.appendingPathComponent("profiles.json") }
+    private var index: ProfileIndexRepository { ProfileIndexRepository(root: root) }
     public init(root: URL) { self.root = root }
     private func prepare() throws {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -17,8 +17,19 @@ public actor ProfileStore {
     }
     public func list() throws -> [VPNProfile] {
         try prepare()
-        guard FileManager.default.fileExists(atPath: indexURL.path) else { return [] }
-        return try JSONDecoder().decode([VPNProfile].self, from: Data(contentsOf: indexURL))
+        return try index.list()
+    }
+    public func indexBackupInfo() throws -> ProfileIndexBackupInfo {
+        try prepare(); return try index.backupInfo()
+    }
+    public func refreshIndexBackup() throws {
+        try prepare(); try index.refreshBackup()
+    }
+    public func indexRecoveryPreview() throws -> ProfileIndexRecoveryPreview {
+        try prepare(); return try index.recoveryPreview()
+    }
+    public func recoverIndex(_ preview: ProfileIndexRecoveryPreview) throws {
+        try prepare(); try index.recover(preview)
     }
     public func importProfile(from file: URL) throws -> VPNProfile {
         try prepare()
@@ -149,9 +160,7 @@ public actor ProfileStore {
         try? FileManager.default.removeItem(at: historyDirectory(for: item.id))
     }
     private func save(_ profiles: [VPNProfile]) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try ProfileFileIO.write(encoder.encode(profiles), to: indexURL)
+        try index.save(profiles)
     }
 }
 public enum StoreError: Error { case invalidFile, notFound }

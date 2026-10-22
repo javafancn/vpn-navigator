@@ -13,6 +13,10 @@ enum ProfileRecoverySelfTest {
         let source = root.appendingPathComponent("工作网络.ovpn"), folder = root.appendingPathComponent("profiles")
         try "client\ndev tun\nremote fixture.example 1194\n<ca>\nFAKE\n</ca>\n".write(to: source, atomically: true, encoding: .utf8)
         let model = AppModel(profileStoreRoot: folder)
+        await model.inspectProfileIndex()
+        await model.refreshProfileIndexBackup()
+        guard model.profileIndexIssue == nil, model.profileIndexBackupStatus.contains("已备份 0 个配置") else { throw Failure.check }
+        model.showingProfileIndexRecovery = false
         await model.importFile(source); model.clearImportReport(); model.message = nil
         guard let original = model.selected else { throw Failure.check }
         let index = folder.appendingPathComponent("profiles.json")

@@ -106,8 +106,15 @@ struct ProfileIndexRepository {
         try ProfileFileIO.write(encode(Checkpoint(schemaVersion: 1, savedAt: Date(), profiles: profiles)), to: backupURL)
     }
     func refreshBackup() throws {
-        guard let bytes = try existingData(indexURL) else { throw ProfileIndexFailure.missingIndex }
-        try writeCheckpoint(decode(bytes))
+        if let bytes = try existingData(indexURL) {
+            try writeCheckpoint(decode(bytes))
+        } else {
+            // A genuinely new, empty repository has no primary file yet.
+            // list() still refuses a missing primary when any backup exists.
+            let profiles = try list()
+            try ProfileFileIO.write(encode(profiles), to: indexURL)
+            try writeCheckpoint(profiles)
+        }
     }
     func backupInfo() throws -> ProfileIndexBackupInfo {
         let (value, _) = try checkpoint()

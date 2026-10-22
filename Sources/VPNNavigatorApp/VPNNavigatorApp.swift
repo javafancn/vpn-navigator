@@ -217,7 +217,7 @@ final class AppModel: ObservableObject {
         do {
             let info = try await store.indexBackupInfo()
             profileIndexBackupStatus = info.matchesCurrentIndex ?
-                "已备份 \(info.profileCount) 个配置 · " + info.savedAt.formatted(date: .abbreviated, time: .shortened) :
+                "已备份 \(info.profileCount) 个配置 · " + info.savedAt.formatted(.dateTime.locale(Locale(identifier: "zh_CN")).year().month().day().hour().minute()) :
                 "备份与当前列表不一致，请保留原始配置文件。"
         } catch { profileIndexBackupStatus = "暂无可用备份：" + error.localizedDescription }
     }

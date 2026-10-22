@@ -198,4 +198,16 @@ final class ProfileIndexRecoveryTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: backup), old)
     }
 
+    func testExplicitBackupOfNewEmptyRepositoryAndMissingPrimaryFence() async throws {
+        let (folder, _, store) = try fixture()
+        try await store.refreshIndexBackup()
+        let info = try await store.indexBackupInfo()
+        XCTAssertEqual(info.profileCount, 0); XCTAssertTrue(info.matchesCurrentIndex)
+        let saved = try Data(contentsOf: folder.appendingPathComponent("profiles.backup.json"))
+        try FileManager.default.removeItem(at: folder.appendingPathComponent("profiles.json"))
+        await reject { try await store.refreshIndexBackup() }
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("profiles.backup.json")), saved)
+        let preview = try await store.indexRecoveryPreview(); XCTAssertTrue(preview.profiles.isEmpty)
+    }
+
 }

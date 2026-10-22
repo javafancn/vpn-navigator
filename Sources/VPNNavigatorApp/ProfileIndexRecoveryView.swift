@@ -13,7 +13,7 @@ struct ProfileIndexRecoveryView: View {
             Text(model.profileIndexBackupStatus).font(.system(size: 12)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if let preview = model.profileIndexRecovery {
-                Text("备份时间：" + preview.savedAt.formatted(date: .abbreviated, time: .shortened))
+                Text("备份时间：" + preview.savedAt.formatted(.dateTime.locale(Locale(identifier: "zh_CN")).year().month().day().hour().minute()))
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 Text("将恢复 \(preview.profiles.count) 个配置的名称、分组、收藏和默认路由策略。")
                     .font(.system(size: 14, weight: .medium))
@@ -32,7 +32,7 @@ struct ProfileIndexRecoveryView: View {
                             }
                         }
                     }.padding(12)
-                }.frame(height: min(220, CGFloat(max(1, preview.profiles.count)) * 48))
+                }.frame(height: min(220, CGFloat(max(1, preview.profiles.count)) * 52 + 24))
                     .glassCard(cornerRadius: 12)
                 Text("恢复会保留故障索引；配置正文、历史版本和 Keychain 凭据继续使用本机原件。请先断开 VPN 并等待其它操作结束。")
                     .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

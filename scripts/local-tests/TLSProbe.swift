@@ -229,6 +229,15 @@ Task {
         if !passed { _ = await disconnect(); print("FAIL: authentication fixture (secrets omitted)") }
         exit(passed ? 0 : 1)
     }
+    if arguments == ["--traffic"] {
+        let raw = await ask { $0.sessionSnapshot(reply: $1) }
+        guard let data = raw.data(using: .utf8),
+              let report = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              report["state"] as? String == "connected" else { exit(1) }
+        let counters: [String: Any] = ["sent": report["sentBytes"] ?? 0, "received": report["receivedBytes"] ?? 0]
+        guard let encoded = try? JSONSerialization.data(withJSONObject: counters, options: [.sortedKeys]) else { exit(1) }
+        print(String(decoding: encoded, as: UTF8.self)); exit(0)
+    }
     if arguments == ["--expect-failed"] { exit(await expectFailure() ? 0 : 1) }
     if arguments == ["--disconnect"] { exit(await disconnect() ? 0 : 1) }
     if arguments == ["--recover"] {

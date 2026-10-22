@@ -153,8 +153,9 @@ verb 3
         assert result.returncode == 0, 'Installed helper TLS fixture failed: ' + result.stderr
         # Exercise actual IPv6 data and the journal executor without changing defaults.
         run([probe, '--connect-only', valid])
-        ping6 = run(['/sbin/ping6', '-n', '-c', '2', 'fd42:766e:6176:1::1'], ok=False, timeout=15)
-        assert ping6.returncode == 0, 'IPv6 tunnel data did not reach fixture server: ' + ping6.stdout + ping6.stderr
+        # Both ends run on one host, with the same connected IPv6 prefix.
+        # Explicitly bind the sending socket to the client utun and address;
+        # otherwise macOS can select the server utun (or a local shortcut).
         current_tunnel = None
         for line in run(['/sbin/ifconfig', '-a']).stdout.splitlines():
             if line and not line[0].isspace():
@@ -163,6 +164,21 @@ verb 3
                 break
         else:
             raise AssertionError('Client fixture utun not found')
+        assert current_tunnel.startswith('utun') and current_tunnel[4:].isdigit()
+        client6 = next(line.split()[1].split('%')[0] for line in run(['/sbin/ifconfig', current_tunnel]).stdout.splitlines()
+                       if line.split()[:1] == ['inet6'] and line.split()[1].startswith('fd42:766e:6176:1:'))
+        time.sleep(1.2)  # Let the first management byte-count receipt settle.
+        before_data = json.loads(run([probe, '--traffic']).stdout)
+        ping6 = run(['/sbin/ping6', '-n', '-B', current_tunnel, '-S', client6, '-s', '1200', '-c', '3',
+                     'fd42:766e:6176:1::1'], ok=False, timeout=15)
+        assert ping6.returncode == 0, 'Bound IPv6 echo failed: ' + ping6.stdout + ping6.stderr
+        for _ in range(30):
+            after_data = json.loads(run([probe, '--traffic']).stdout)
+            if all(after_data[key] - before_data[key] >= 3000 for key in ['sent', 'received']):
+                break
+            time.sleep(0.2)
+        else:
+            raise AssertionError('IPv6 echo did not traverse both encrypted data directions: ' + str(before_data) + ' -> ' + str(after_data))
         kernel = run(['sudo', '-n', 'env', 'GITHUB_ACTIONS=true', PAYLOAD / 'VPNNavigatorHelper', '--self-test-ipv6-kernel', current_tunnel])
         print(kernel.stdout, end='')
         run([probe, '--disconnect'])

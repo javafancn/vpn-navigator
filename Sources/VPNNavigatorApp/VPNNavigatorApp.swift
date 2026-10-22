@@ -13,6 +13,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var profileExportInProgress = false
     @Published private(set) var importCancellationRequested = false
     private var importCancellation: ProfileImportCancellation?
+    @Published private(set) var incomingProfiles = ProfileOpenQueue()
+    @Published private(set) var reviewingIncomingProfiles = false
+    @Published private(set) var profileDropLoading = false
+    @Published var profilePickerPresented = false
+    @Published private(set) var profileOpenReady = false
     var profileTransferInProgress: Bool { profileImportInProgress || profileExportInProgress }
     @Published var quickAccessShortcut = QuickAccessShortcut(rawValue: UserDefaults.standard.string(forKey: "quickAccessShortcut") ?? "") ?? .disabled {
         didSet { UserDefaults.standard.set(quickAccessShortcut.rawValue, forKey: "quickAccessShortcut") }
@@ -105,7 +110,7 @@ final class AppModel: ObservableObject {
         launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") { return }
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") { profileOpenReady = true; return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -125,9 +130,11 @@ final class AppModel: ObservableObject {
             }
             selectedID = profiles.first?.id
             connectionStatus = "disconnected: UI composition fixture, no tunnel"
+            profileOpenReady = true
             return
         }
         Task {
+            defer { profileOpenReady = true }
             await load()
             if helper.installationStatus == .enabled { await restoreBackgroundServices() }
             eventHistory = localEvents.events()
@@ -187,6 +194,46 @@ final class AppModel: ObservableObject {
     func importFile(_ url: URL) async {
         await importFiles([url], presentReport: false)
     }
+    var incomingPresentationReady: Bool {
+        profileOpenReady && !incomingProfiles.isEmpty && !profileDropLoading && !profilePickerPresented &&
+        !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress && !busy &&
+        !connecting && !stopping && !showingImportReport && !showingSetup && !showingMaintenance &&
+        !showingPreferences && !showingDiagnostics && !showingAccountCredentials &&
+        authenticationChallenge == nil && message == nil
+    }
+    func receiveProfileOpenRequest(_ request: ProfileOpenQueue) {
+        incomingProfiles.merge(request)
+        quickAccess.hide()
+        quickAccess.openMainWindow()
+    }
+    func presentIncomingProfiles() {
+        guard incomingPresentationReady else { return }
+        quickAccess.hide()
+        reviewingIncomingProfiles = true; showingImportReport = true
+    }
+    func receiveProfileDrop(_ providers: [NSItemProvider]) -> Bool {
+        guard !providers.isEmpty, !profileDropLoading else { return false }
+        profileDropLoading = true
+        ProfileDropLoader.start(providers) { [weak self] urls, unresolved, overflow in
+            guard let self else { return }
+            var request = ProfileOpenQueue(); request.append(urls)
+            request.recordUnresolved(unresolved, overflow: overflow)
+            self.profileDropLoading = false
+            self.receiveProfileOpenRequest(request)
+        }
+        return true
+    }
+    func confirmIncomingProfiles() async {
+        guard canConfirmIncomingProfiles else { return }
+        let urls = incomingProfiles.urls
+        incomingProfiles.clear(); reviewingIncomingProfiles = false
+        await importFiles(urls)
+    }
+    var canConfirmIncomingProfiles: Bool {
+        reviewingIncomingProfiles && !incomingProfiles.urls.isEmpty &&
+        !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress &&
+        !busy && !connecting && !stopping
+    }
     func importFiles(_ urls: [URL], presentReport: Bool = true) async {
         guard !maintenanceInProgress, !profileTransferInProgress, !busy, !connecting, !stopping else {
             message = "请等待当前操作完成后再导入配置。"; return
@@ -220,6 +267,8 @@ final class AppModel: ObservableObject {
     private func receiveImportProgress(_ results: [ProfileImportResult]) { importResults = results }
     func clearImportReport() {
         guard !profileImportInProgress else { return }
+        if reviewingIncomingProfiles { incomingProfiles.clear() }
+        reviewingIncomingProfiles = false
         showingImportReport = false; importResults = []; importCancellationRequested = false
     }
     func showImportReportSnapshot() {

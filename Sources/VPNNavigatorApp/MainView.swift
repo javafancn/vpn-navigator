@@ -31,7 +31,7 @@ enum WorkspaceTab: String, CaseIterable, Identifiable {
 struct MainView: View {
     @EnvironmentObject private var model: AppModel
     @State private var tab: WorkspaceTab = .overview
-    @State private var importing = false
+    @State private var dropTargeted = false
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var sidebarSelection
@@ -57,7 +57,7 @@ struct MainView: View {
                     Group {
                         switch tab {
                         case .overview: ConnectionOverview()
-                        case .profiles: ProfileLibrary(onImport: { importing = true })
+                        case .profiles: ProfileLibrary(onImport: { model.profilePickerPresented = true })
                         case .routing: RoutingWorkspace()
                         case .diagnostics: NetworkDiagnosticsView()
                         case .settings: SystemSettingsPane()
@@ -77,6 +77,17 @@ struct MainView: View {
             }
         }
         .frame(minWidth: 1100, minHeight: 700)
+        .onDrop(of: [UTType.fileURL], isTargeted: $dropTargeted) { model.receiveProfileDrop($0) }
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: 18).strokeBorder(GlassPalette.blue, lineWidth: 2)
+                    .padding(10).overlay {
+                        Label("松开以导入 .ovpn 配置", systemImage: "square.and.arrow.down")
+                            .font(.system(size: 18, weight: .semibold)).padding(24)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    }.allowsHitTesting(false)
+            }
+        }
         .preferredColorScheme(.light)
         .environment(\.locale, Locale(identifier: "zh_CN"))
         .onAppear {
@@ -90,8 +101,24 @@ struct MainView: View {
             if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-import-report-snapshot") {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.showImportReportSnapshot() }
             }
+            if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-import-review-snapshot"),
+               ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot") {
+                var request = ProfileOpenQueue()
+                request.append([URL(fileURLWithPath: "/ui-fixture/工作网络.ovpn"),
+                                URL(fileURLWithPath: "/ui-fixture/家庭网络.ovpn"),
+                                URL(fileURLWithPath: "/ui-fixture/工作网络.ovpn"),
+                                URL(fileURLWithPath: "/ui-fixture/说明.txt")])
+                model.receiveProfileOpenRequest(request)
+            }
         }
-        .fileImporter(isPresented: $importing,
+        .task(id: model.incomingPresentationReady) {
+            guard model.incomingPresentationReady else { return }
+            // Let the previous native sheet finish dismissing first.
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            model.presentIncomingProfiles()
+        }
+        .fileImporter(isPresented: $model.profilePickerPresented,
                       allowedContentTypes: [.init(filenameExtension: "ovpn")!],
                       allowsMultipleSelection: true) { result in
             switch result {
@@ -112,7 +139,11 @@ struct MainView: View {
         .sheet(isPresented: $model.showingSetup) { SetupAssistantView().environmentObject(model) }
         .sheet(isPresented: $model.showingPreferences) { ClientPreferencesView().environmentObject(model) }
         .sheet(isPresented: $model.showingDiagnostics) { DiagnosticHistoryView().environmentObject(model) }
-        .sheet(isPresented: $model.showingImportReport) { ProfileImportReportView().environmentObject(model) }
+        .sheet(isPresented: $model.showingImportReport) {
+            if model.reviewingIncomingProfiles { ProfileOpenReviewView().environmentObject(model) }
+            else { ProfileImportReportView().environmentObject(model) }
+        }
+        .onChange(of: model.showingImportReport) { shown in if shown { tab = .profiles } }
         .alert("VPN Navigator", isPresented: Binding(
             get: { model.message != nil },
             set: { if !$0 { model.message = nil } }
@@ -176,12 +207,18 @@ struct MainView: View {
             }
             Spacer(minLength: 20)
             VStack(alignment: .leading, spacing: 15) {
-                Button { importing = true } label: {
+                Button { model.profilePickerPresented = true } label: {
                     Label("导入配置", systemImage: "plus")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(ReferenceSecondaryButton())
                 .keyboardShortcut("o", modifiers: .command)
+                Text(model.profileDropLoading ? "正在接收文件…" : "可将 .ovpn 文件拖入窗口")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                if !model.incomingProfiles.isEmpty && !model.reviewingIncomingProfiles {
+                    Text("待处理：\(model.incomingProfiles.urls.count) 个配置")
+                        .font(.system(size: 11)).foregroundStyle(GlassPalette.blue)
+                }
                 Rectangle().fill(GlassPalette.ink.opacity(0.07)).frame(height: 0.75)
                 HStack(spacing: 8) {
                     Circle().fill(model.connected ? Color.green : Color.secondary.opacity(0.45))

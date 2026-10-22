@@ -56,7 +56,7 @@ jobs:
           import subprocess
           subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-quick-access-self-test'], check=True, timeout=40)
           PYTEST
-      - name: Verify profile import model and cancellation
+      - name: Verify profile import, native file requests and drop providers
         run: |
           python3 - <<'PYTEST'
           import subprocess
@@ -157,6 +157,27 @@ jobs:
           screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-import-report.png"
           test -s "$RUNNER_TEMP/VPNNavigator-import-report.png"
           killall VPNNavigatorApp 2>/dev/null || true
+          # Actual Launch Services delivery on a cold UI launch. Empty files
+          # must only be listed; confirmation never runs in this capture.
+          touch "$RUNNER_TEMP/工作网络.ovpn" "$RUNNER_TEMP/家庭网络.ovpn" "$RUNNER_TEMP/说明.txt"
+          cat > "$RUNNER_TEMP/check-document-app.swift" <<'SWIFT'
+          import AppKit
+          import CoreServices
+          let app = URL(fileURLWithPath: CommandLine.arguments[1]).standardizedFileURL
+          let file = URL(fileURLWithPath: CommandLine.arguments[2])
+          guard LSRegisterURL(app as CFURL, true) == noErr,
+                NSWorkspace.shared.urlsForApplications(toOpen: file).contains(where: { $0.standardizedFileURL == app }) else {
+              fatalError("Application is not registered as an OpenVPN document reader")
+          }
+          print("PASS: Launch Services lists the installed bundle for .ovpn documents.")
+          SWIFT
+          swift "$RUNNER_TEMP/check-document-app.swift" "$APP" "$RUNNER_TEMP/工作网络.ovpn"
+          open -n -a "$APP" "$RUNNER_TEMP/工作网络.ovpn" "$RUNNER_TEMP/家庭网络.ovpn" "$RUNNER_TEMP/说明.txt" --args --vpnnav-ui-tab=profiles --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot
+          sleep 7
+          WINDOW_ID="$(swift "$RUNNER_TEMP/quick-window-id.swift" 620)"
+          screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-import-review.png"
+          test -s "$RUNNER_TEMP/VPNNavigator-import-review.png"
+          killall VPNNavigatorApp 2>/dev/null || true
           for SCENE in cool warm; do
             swift scripts/capture-glass-calibration.swift "$SCENE" "$RUNNER_TEMP"
             sleep 3
@@ -179,6 +200,7 @@ jobs:
             ${{ runner.temp }}/VPNNavigator-settings.png
             ${{ runner.temp }}/VPNNavigator-quick-access.png
             ${{ runner.temp }}/VPNNavigator-import-report.png
+            ${{ runner.temp }}/VPNNavigator-import-review.png
             ${{ runner.temp }}/VPNNavigator-Desktop-Before.png
             ${{ runner.temp }}/*-bounds.txt
             ${{ runner.temp }}/VPNNavigator-glass-*.png

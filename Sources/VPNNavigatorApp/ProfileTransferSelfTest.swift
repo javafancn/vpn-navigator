@@ -1,5 +1,7 @@
 import Foundation
 import Combine
+import AppKit
+import UniformTypeIdentifiers
 import VPNNavigatorCore
 
 @MainActor
@@ -40,7 +42,64 @@ enum ProfileTransferSelfTest {
               model.importResults.last?.status == .cancelled,
               !model.profileImportInProgress else { throw Failure.check }
         model.clearImportReport()
+        try await checkNativeFileRequests(root: root, first: first, bad: bad, second: second)
         print("PASS: production import model preserves mixed results, blocks Quit during writes, cancels between files and leaves active session identity unchanged; no VPN requests.")
+    }
+    private static func checkNativeFileRequests(root: URL, first: URL, bad: URL, second: URL) async throws {
+        let privateStore = root.appendingPathComponent("incoming-profiles")
+        let incoming = AppModel(profileStoreRoot: privateStore)
+        var mainRequests = 0
+        incoming.quickAccess.openMainWindow = { mainRequests += 1 }
+        incoming.showingSetup = true
+        let lifecycle = ApplicationLifecycle()
+        lifecycle.application(NSApplication.shared, open: [first, bad, second])
+        lifecycle.model = incoming
+        guard incoming.incomingProfiles.urls == [first, bad, second], !incoming.incomingPresentationReady,
+              mainRequests == 1, !FileManager.default.fileExists(atPath: privateStore.path) else { throw Failure.check }
+        incoming.showingSetup = false; incoming.showingAccountCredentials = true
+        incoming.presentIncomingProfiles()
+        guard !incoming.showingImportReport else { throw Failure.check }
+        incoming.showingAccountCredentials = false; incoming.presentIncomingProfiles()
+        guard incoming.reviewingIncomingProfiles, incoming.profiles.isEmpty,
+              !FileManager.default.fileExists(atPath: privateStore.path) else { throw Failure.check }
+        incoming.clearImportReport()
+        guard incoming.incomingProfiles.isEmpty, !FileManager.default.fileExists(atPath: privateStore.path) else { throw Failure.check }
+        lifecycle.application(NSApplication.shared, open: [first, bad, second, first, root.appendingPathComponent("notes.txt")])
+        incoming.presentIncomingProfiles()
+        guard incoming.incomingProfiles.duplicateCount == 1, incoming.incomingProfiles.unsupportedCount == 1 else { throw Failure.check }
+        await incoming.confirmIncomingProfiles()
+        guard incoming.profiles.count == 2, incoming.showingImportReport, !incoming.reviewingIncomingProfiles,
+              incoming.importResults.count == 3, incoming.importResults[1].status == .failed(.invalidFile) else { throw Failure.check }
+        lifecycle.application(NSApplication.shared, open: [second])
+        guard !incoming.incomingPresentationReady, incoming.incomingProfiles.urls == [second] else { throw Failure.check }
+        incoming.clearImportReport()
+        incoming.busy = true; incoming.presentIncomingProfiles()
+        guard !incoming.showingImportReport else { throw Failure.check }
+        incoming.busy = false; incoming.presentIncomingProfiles()
+        guard incoming.reviewingIncomingProfiles else { throw Failure.check }
+        incoming.clearImportReport()
+
+        let slow = NSItemProvider()
+        slow.registerDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier, visibility: .all) { completion in
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.03) { completion(Data(first.absoluteString.utf8), nil) }
+            return nil
+        }
+        let fast = NSItemProvider(item: second as NSURL, typeIdentifier: UTType.fileURL.identifier)
+        let never = NSItemProvider()
+        never.registerDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier, visibility: .all) { _ in nil }
+        let loaded: ([URL], Int, Int) = await withCheckedContinuation { continuation in
+            ProfileDropLoader.start([slow, fast, never], timeoutNanoseconds: 300_000_000) {
+                continuation.resume(returning: ($0, $1, $2))
+            }
+        }
+        guard loaded.0 == [first, second], loaded.1 == 1, loaded.2 == 0 else { throw Failure.check }
+        guard incoming.receiveProfileDrop([fast]) else { throw Failure.check }
+        for _ in 0..<100 where incoming.profileDropLoading { try await Task.sleep(nanoseconds: 10_000_000) }
+        guard !incoming.profileDropLoading, incoming.incomingProfiles.urls == [second],
+              incoming.profiles.count == 2 else { throw Failure.check }
+        incoming.presentIncomingProfiles(); incoming.clearImportReport()
+        incoming.quickAccess.shutdown()
+        print("PASS: native cold-start delegate, confirmation before file reads, cancellation, deferred requests and ordered/timed-out file-URL providers; no VPN requests.")
     }
     enum Failure: Error { case check }
 }

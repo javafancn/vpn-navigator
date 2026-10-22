@@ -295,7 +295,7 @@ final class AppModel: ObservableObject {
         await importFiles([url], presentReport: false)
     }
     var incomingPresentationReady: Bool {
-        profileOpenReady && !incomingProfiles.isEmpty && !profileDropLoading && !profilePickerPresented &&
+        profileOpenReady && profileIndexIssue == nil && !incomingProfiles.isEmpty && !profileDropLoading && !profilePickerPresented &&
         !routingModeSwitching && !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress && !busy &&
         !connecting && !stopping && !showingImportReport && !showingSetup && !showingMaintenance &&
         !showingPreferences && !showingDiagnostics && !showingProfileIndexRecovery && !showingAccountCredentials &&
@@ -460,7 +460,7 @@ final class AppModel: ObservableObject {
         connectionStatus = "failed: 无法核验路由切换结果，请检查助手与网络恢复状态"
     }
     func updateMetadata(name: String, group: String, notes: String, favorite: Bool) async {
-        guard !maintenanceInProgress, !routingModeSwitching else { return }
+        guard !maintenanceInProgress, !routingModeSwitching, !profileTransferInProgress else { return }
         profileMutations += 1; defer { profileMutations -= 1 }
         guard var item = selected else { return }
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -484,7 +484,7 @@ final class AppModel: ObservableObject {
     }
 
     func saveSource(for profile: VPNProfile, text: String) async -> Bool {
-        guard !maintenanceInProgress else { return false }
+        guard !maintenanceInProgress, !profileTransferInProgress else { return false }
         profileMutations += 1; defer { profileMutations -= 1 }
         guard !connected && !connecting else {
             message = "Disconnect before editing a VPN profile."
@@ -509,7 +509,7 @@ final class AppModel: ObservableObject {
     }
 
     func restoreSource(for profile: VPNProfile, revision: String) async -> Bool {
-        guard !maintenanceInProgress else { return false }
+        guard !maintenanceInProgress, !profileTransferInProgress else { return false }
         profileMutations += 1; defer { profileMutations -= 1 }
         guard !connected && !connecting else {
             message = "Disconnect before restoring a VPN profile."
@@ -526,7 +526,7 @@ final class AppModel: ObservableObject {
     }
 
     func deleteSelected() async {
-        guard !maintenanceInProgress, !routingModeSwitching else { return }
+        guard !maintenanceInProgress, !routingModeSwitching, !profileTransferInProgress else { return }
         profileMutations += 1; defer { profileMutations -= 1 }
         guard let item = selected else { return }
         do { try await store.delete(id: item.id); KeychainVault.remove(id: item.id); selectedID = nil; await load() }

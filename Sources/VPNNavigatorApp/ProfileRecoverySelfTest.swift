@@ -21,6 +21,9 @@ enum ProfileRecoverySelfTest {
         guard model.showingProfileIndexRecovery, model.profileIndexIssue != nil, model.profiles.isEmpty,
               model.selectedID == nil, !model.canChooseProfileFiles,
               model.profileIndexRecovery?.profiles == [original], model.canRecoverProfileIndex else { throw Failure.check }
+        var queued = ProfileOpenQueue(); queued.append([source])
+        model.receiveProfileOpenRequest(queued)
+        guard !model.incomingPresentationReady, model.incomingProfiles.urls == [source] else { throw Failure.check }
         model.activeProfileID = original.id; model.connectionStatus = "connected: isolated fixture"
         await model.recoverProfileIndex()
         guard !model.canRecoverProfileIndex, try Data(contentsOf: index) == Data("damage A".utf8) else { throw Failure.check }

@@ -113,6 +113,8 @@ struct ProfileHealthView: View {
             Button("选择新的 .ovpn 文件…") { controller.chooseFile() }.buttonStyle(ReferenceSecondaryButton()).disabled(controller.busy || !model.canUseProfileBackup)
             if let preview = controller.preview {
                 Text(preview.filename).font(.headline).lineLimit(2)
+                Text("原服务器：" + serverSummary(preview.previousServers)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text("新服务器：" + serverSummary(preview.servers)).font(.caption).lineLimit(2)
                 reportView(preview.health)
                 if !preview.contentChanged { Text("文件内容与当前配置相同，无需更新。").foregroundStyle(.secondary) }
                 if preview.identityChanged {
@@ -136,5 +138,9 @@ struct ProfileHealthView: View {
             }
             Text("检查时间：" + report.checkedAt.formatted(date: .numeric, time: .shortened)).font(.caption).foregroundStyle(.secondary)
         }
+    }
+    private func serverSummary(_ values: [String]) -> String {
+        guard !values.isEmpty else { return "无法从旧配置确认" }
+        return values.prefix(3).joined(separator: "、") + (values.count > 3 ? " 等 \(values.count) 项" : "")
     }
 }

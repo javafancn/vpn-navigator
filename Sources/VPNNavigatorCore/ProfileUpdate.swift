@@ -8,6 +8,8 @@ public struct ProfileUpdatePreview: Sendable {
     public let contentChanged: Bool
     public let health: ProfileHealthReport
     public var sourceByteCount: Int { source.count }
+    public let previousServers: [String]
+    public let servers: [String]
     // Kept in memory, never rendered as a raw diff containing private keys.
     let source: Data
     let runtime: Data
@@ -45,7 +47,9 @@ extension ProfileStore {
         let previous = String(decoding: runtime ?? source, as: UTF8.self)
         let preview = ProfileUpdatePreview(profile: current, filename: current.sourceFilename,
             identityChanged: ProfileHealth.credentialContext(previous) != ProfileHealth.credentialContext(text), contentChanged: true,
-            health: ProfileHealth.inspect(runtime: text, mode: current.mode), source: Data(text.utf8), runtime: Data(text.utf8), oldSource: source, oldRuntime: runtime)
+            health: ProfileHealth.inspect(runtime: text, mode: current.mode),
+            previousServers: (try? ProfileSafety.validate(previous).remoteHosts) ?? [], servers: (try? ProfileSafety.validate(text).remoteHosts) ?? [],
+            source: Data(text.utf8), runtime: Data(text.utf8), oldSource: source, oldRuntime: runtime)
         _ = try applyUpdate(preview)
     }
     public func healthReports(now: Date = Date()) throws -> [UUID: ProfileHealthReport] {
@@ -81,6 +85,7 @@ extension ProfileStore {
             identityChanged: ProfileHealth.credentialContext(previousRuntime) != ProfileHealth.credentialContext(runtime),
             contentChanged: oldSource != data || oldRuntime != Data(runtime.utf8),
             health: ProfileHealth.inspect(runtime: runtime, mode: profile.mode, now: now),
+            previousServers: (try? ProfileSafety.validate(previousRuntime).remoteHosts) ?? [], servers: validated.remoteHosts,
             source: data, runtime: Data(runtime.utf8), oldSource: oldSource, oldRuntime: oldRuntime)
     }
     /// The receipt is the commit point. Until it is marked committed, failure or

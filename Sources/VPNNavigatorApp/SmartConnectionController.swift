@@ -201,6 +201,7 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
     func requestCertificatePermission() async throws -> Bool {
         try await notificationCenter().requestAuthorization(options: [.alert, .sound])
     }
+    func prepareCertificateNotifications() { _ = notificationCenter() }
     func deliverCertificateReminder(id: UUID) async -> Bool {
         let center = notificationCenter(), settings = await center.notificationSettings()
         guard settings.authorizationStatus == .authorized, model?.profileHealth.remindersEnabled == true else { return false }

@@ -30,6 +30,7 @@ final class ProfileHealthController: ObservableObject {
     }
     func start() {
         guard !started else { return }; started = true
+        if ledger.enabled { model?.smartConnection.prepareCertificateNotifications() }
         timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in Task { @MainActor [weak self] in self?.requestRefresh() } }
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor [weak self] in self?.requestRefresh() } })
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor [weak self] in self?.requestRefresh() } })
@@ -53,6 +54,12 @@ final class ProfileHealthController: ObservableObject {
             do {
                 let next = try await self.store.healthReports()
                 guard !Task.isCancelled, token == self.generation, self.model?.profileTransferInProgress == false else { return }
+                let removed = Set(self.reports.keys).union(self.ledger.delivered.keys).subtracting(next.keys)
+                let identifiers = removed.map { "vpnnav-certificate-" + $0.uuidString }
+                if !identifiers.isEmpty {
+                    UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
+                    UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: identifiers)
+                }
                 self.reports = next; self.ledger.reconcile(ids: Set(next.keys)); self.save()
                 await self.deliverReminders(token: token)
             } catch is CancellationError { }

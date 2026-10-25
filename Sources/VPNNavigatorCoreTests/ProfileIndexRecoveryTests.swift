@@ -25,7 +25,13 @@ final class ProfileIndexRecoveryTests: XCTestCase {
         try await store.update(profile)
         let old = try await store.original(for: profile)
         let updated = old.replacingOccurrences(of: "fixture.example", with: "new.example")
+        var expected = profile
         try await store.revise(profile, text: updated)
+        let revised = try await store.list()
+        profile = try XCTUnwrap(revised.first)
+        XCTAssertNotEqual(profile.credentialID, expected.credentialID)
+        expected.credentialID = profile.credentialID
+        XCTAssertEqual(profile, expected)
         let info = try await store.indexBackupInfo()
         XCTAssertTrue(info.matchesCurrentIndex); XCTAssertEqual(info.profileCount, 1)
         try corrupt(folder)

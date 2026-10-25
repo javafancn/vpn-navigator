@@ -22,6 +22,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var profileImportInProgress = false
     @Published private(set) var profileExportInProgress = false
     @Published private(set) var profileBackupInProgress = false
+    @Published private(set) var profileUpdateInProgress = false
+    @Published var profileHealthTarget: VPNProfile?
+    @Published var profileUpdateRequested = false
+    lazy var profileHealth = ProfileHealthController(model: self, store: store, defaults: smartDefaults)
     @Published var showingProfileBackup = false
     @Published private(set) var importCancellationRequested = false
     private var importCancellation: ProfileImportCancellation?
@@ -30,7 +34,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var profileDropLoading = false
     @Published var profilePickerPresented = false
     @Published private(set) var profileOpenReady = false
-    var profileTransferInProgress: Bool { profileImportInProgress || profileExportInProgress || profileBackupInProgress || profileIndexRecoveryInProgress || profileMetadataInProgress }
+    var profileTransferInProgress: Bool { profileImportInProgress || profileExportInProgress || profileBackupInProgress || profileUpdateInProgress || profileIndexRecoveryInProgress || profileMetadataInProgress }
     @Published var quickAccessShortcut = QuickAccessShortcut(rawValue: UserDefaults.standard.string(forKey: "quickAccessShortcut") ?? "") ?? .disabled {
         didSet { UserDefaults.standard.set(quickAccessShortcut.rawValue, forKey: "quickAccessShortcut") }
     }
@@ -129,7 +133,7 @@ final class AppModel: ObservableObject {
     @Published var rememberCredentials = UserDefaults.standard.bool(forKey: "rememberCredentials") {
         didSet {
             UserDefaults.standard.set(rememberCredentials, forKey: "rememberCredentials")
-            if !rememberCredentials, let selectedID { KeychainVault.remove(id: selectedID) }
+            if !rememberCredentials, let selected { KeychainVault.remove(id: selected.credentialID) }
         }
     }
 
@@ -154,7 +158,7 @@ final class AppModel: ObservableObject {
         launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-health-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -183,6 +187,7 @@ final class AppModel: ObservableObject {
             if helper.installationStatus == .enabled { await restoreBackgroundServices() }
             eventHistory = localEvents.events()
             smartConnection.start()
+            profileHealth.start()
             if installationIssue != nil || !UserDefaults.standard.bool(forKey: "setupAssistantDismissed") {
                 showingSetup = true
             }
@@ -245,6 +250,7 @@ final class AppModel: ObservableObject {
         profileSizes = sizes
         if !profiles.contains(where: { $0.id == selectedID }) { selectedID = profiles.first?.id }
         await refreshProfileIndexBackupStatus()
+        profileHealth.requestRefresh()
     }
     private func refreshProfileIndexBackupStatus() async {
         do {
@@ -330,7 +336,7 @@ final class AppModel: ObservableObject {
     var incomingPresentationReady: Bool {
         profileOpenReady && profileIndexIssue == nil && !incomingProfiles.isEmpty && !profileDropLoading && !profilePickerPresented &&
         !routingModeSwitching && !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress && !busy &&
-        !connecting && !stopping && !showingImportReport && !showingSetup && !showingMaintenance &&
+        !connecting && !stopping && profileHealthTarget == nil && !showingImportReport && !showingSetup && !showingMaintenance &&
         !showingPreferences && !showingDiagnostics && !showingRouteExplanation && !showingTroubleshooting && customRuleEditorProfile == nil && !showingProfileIndexRecovery && !showingAccountCredentials &&
         authenticationChallenge == nil && message == nil
     }
@@ -383,7 +389,7 @@ final class AppModel: ObservableObject {
         importCancellation = cancellation; importCancellationRequested = false
         importResults = []; profileImportInProgress = true; profileMutations += 1
         if presentReport { showingImportReport = true }
-        defer { profileImportInProgress = false; profileMutations -= 1; importCancellation = nil }
+        defer { profileImportInProgress = false; profileMutations -= 1; importCancellation = nil; profileHealth.requestRefresh() }
         do {
             importResults = try await ProfileBatchImporter(store: store).run(urls, cancellation: cancellation) { [weak self] results in
                 await self?.receiveImportProgress(results)
@@ -559,13 +565,18 @@ final class AppModel: ObservableObject {
 
     func saveSource(for profile: VPNProfile, text: String) async -> Bool {
         guard !maintenanceInProgress, !profileTransferInProgress else { return false }
-        profileMutations += 1; defer { profileMutations -= 1 }
+        profileUpdateInProgress = true; profileMutations += 1
+        defer { profileUpdateInProgress = false; profileMutations -= 1; profileHealth.requestRefresh() }
         guard !connected && !connecting else {
             message = "Disconnect before editing a VPN profile."
             return false
         }
         do {
             try await store.revise(profile, text: text)
+            try await loadProfiles()
+            if profiles.first(where: { $0.id == profile.id })?.credentialID != profile.credentialID {
+                username = ""; password = ""; KeychainVault.remove(id: profile.credentialID)
+            }
             message = "Configuration saved and previous version archived."
             return true
         } catch {
@@ -584,13 +595,18 @@ final class AppModel: ObservableObject {
 
     func restoreSource(for profile: VPNProfile, revision: String) async -> Bool {
         guard !maintenanceInProgress, !profileTransferInProgress else { return false }
-        profileMutations += 1; defer { profileMutations -= 1 }
+        profileUpdateInProgress = true; profileMutations += 1
+        defer { profileUpdateInProgress = false; profileMutations -= 1; profileHealth.requestRefresh() }
         guard !connected && !connecting else {
             message = "Disconnect before restoring a VPN profile."
             return false
         }
         do {
             try await store.restore(profile, revision: revision)
+            try await loadProfiles()
+            if profiles.first(where: { $0.id == profile.id })?.credentialID != profile.credentialID {
+                username = ""; password = ""; KeychainVault.remove(id: profile.credentialID)
+            }
             message = "Previous configuration restored. The newer version was archived."
             return true
         } catch {
@@ -607,7 +623,8 @@ final class AppModel: ObservableObject {
         profileMetadataInProgress = true; profileMutations += 1
         defer { profileMetadataInProgress = false; profileMutations -= 1 }
         do {
-            try await store.delete(id: id); KeychainVault.remove(id: id)
+            let credentialID = profiles.first(where: { $0.id == id })?.credentialID ?? id
+            try await store.delete(id: id); KeychainVault.remove(id: credentialID)
             try await loadProfiles()
         } catch { message = "无法删除配置：" + error.localizedDescription }
     }
@@ -910,7 +927,7 @@ final class AppModel: ObservableObject {
               recoveryRequired: networkRecoveryRequired || firewallRecoveryRequired,
               occupied: !profileOpenReady || profileIndexIssue != nil || (busy && !preparingAutomatic) || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || profileMutations != 0 ||
                 routingModeSwitching || showingImportReport || showingSetup || showingMaintenance || showingPreferences ||
-                showingProfileBackup || showingSmartConnection || showingDiagnostics || showingRouteExplanation || showingTroubleshooting ||
+                profileHealthTarget != nil || showingProfileBackup || showingSmartConnection || showingDiagnostics || showingRouteExplanation || showingTroubleshooting ||
                 customRuleEditorProfile != nil || showingProfileIndexRecovery || profilePickerPresented ||
                 profileDropLoading || !incomingProfiles.isEmpty || authenticationChallenge != nil || showingAccountCredentials ||
                 !username.isEmpty || !password.isEmpty || quickAccess.panel?.isVisible == true,
@@ -936,7 +953,7 @@ final class AppModel: ObservableObject {
                   !smartConnectionContext().occupied, helperStateVerified, helper.installationStatus == .enabled,
                   sessionState == .disconnected, activeProfileID == nil, !networkRecoveryRequired, !firewallRecoveryRequired else { return }
         } else { smartConnection.cancelPending() }
-        guard !maintenanceInProgress, !profileTransferInProgress, !showingImportReport else { return }
+        guard profileHealthTarget == nil, !maintenanceInProgress, !profileTransferInProgress, !showingImportReport else { return }
         if BuildChannel.isLocal, LocalInstallation.isInstallationPending {
             message = helper.localInstallationIssue; if !automatically { showingSetup = true }; return
         }
@@ -966,12 +983,12 @@ final class AppModel: ObservableObject {
                 guard automationPermit?() == true else { throw SmartConnectionError.cancelled }
                 connectionUsername = ""; connectionPassword = ""
                 if validated.requestsCredentials {
-                    guard rememberCredentials, let secret = KeychainVault.load(id: selected.id, allowInteraction: false),
+                    guard rememberCredentials, let secret = KeychainVault.load(id: selected.credentialID, allowInteraction: false),
                           !secret.username.isEmpty, !secret.password.isEmpty else { throw SmartConnectionError.needsCredentials }
                     connectionUsername = secret.username; connectionPassword = secret.password
                 }
             } else {
-                if rememberCredentials, let secret = KeychainVault.load(id: selected.id) {
+                if rememberCredentials, let secret = KeychainVault.load(id: selected.credentialID) {
                     if username.isEmpty { username = secret.username }
                     if password.isEmpty && username == secret.username { password = secret.password }
                 }
@@ -981,7 +998,7 @@ final class AppModel: ObservableObject {
                     return
                 }
                 if rememberCredentials && !password.isEmpty {
-                    try KeychainVault.store(.init(username: username, password: password), id: selected.id)
+                    try KeychainVault.store(.init(username: username, password: password), id: selected.credentialID)
                 }
                 connectionUsername = username; connectionPassword = password
             }
@@ -1057,7 +1074,7 @@ final class AppModel: ObservableObject {
         guard profiles.contains(where: { $0.id == id }) else { return .blocked }
         if connected && id != activeProfileID && quickAccessSession == nil { return .blocked }
         return QuickAccessAction.resolve(state: sessionState, profileID: id, activeProfileID: activeProfileID,
-            operationInProgress: showingProfileBackup || customRuleEditorProfile != nil || showingRouteExplanation || showingTroubleshooting || showingProfileIndexRecovery || routingModeSwitching || busy || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || showingImportReport ||
+            operationInProgress: profileHealthTarget != nil || showingProfileBackup || customRuleEditorProfile != nil || showingRouteExplanation || showingTroubleshooting || showingProfileIndexRecovery || routingModeSwitching || busy || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || showingImportReport ||
                 authenticationChallenge != nil || showingAccountCredentials,
             mayStart: canQuit)
     }
@@ -1218,6 +1235,34 @@ final class AppModel: ObservableObject {
         !networkRecoveryRequired && !firewallRecoveryRequired && !maintenanceInProgress && !backgroundServicesBusy && !busy
     }
     var canRestoreProfileBackup: Bool { canUseProfileBackup && backupSessionSafe }
+    func canUpdateProfile(_ id: UUID) -> Bool { canRestoreProfileBackup && profiles.contains(where: { $0.id == id }) }
+    func showProfileHealth(_ id: UUID, updating: Bool = false) {
+        guard !profileTransferInProgress, let profile = profiles.first(where: { $0.id == id }) else { return }
+        quickAccess.hide(); smartConnection.cancelPending()
+        profileUpdateRequested = updating; profileHealthTarget = profile
+    }
+    func previewProfileUpdate(id: UUID, from url: URL) async throws -> ProfileUpdatePreview {
+        guard canUseProfileBackup else { throw ProfileUpdateFailure.pending }
+        profileUpdateInProgress = true; profileMutations += 1
+        defer { profileUpdateInProgress = false; profileMutations -= 1 }
+        let result = try await store.previewUpdate(id: id, from: url)
+        try Task.checkCancellation()
+        return result
+    }
+    func applyProfileUpdate(_ preview: ProfileUpdatePreview) async throws {
+        guard canUpdateProfile(preview.profile.id) else { throw ProfileUpdateFailure.pending }
+        profileHealth.invalidate()
+        profileUpdateInProgress = true; profileMutations += 1; smartConnection.cancelPending()
+        defer { profileUpdateInProgress = false; profileMutations -= 1; profileHealth.requestRefresh() }
+        await refreshConnectionStatus(); try Task.checkCancellation()
+        guard backupSessionSafe else { throw ProfileUpdateFailure.pending }
+        let updated = try await store.applyUpdate(preview)
+        if let position = profiles.firstIndex(where: { $0.id == updated.id }) { profiles[position] = updated }
+        profileSizes[updated.id] = preview.sourceByteCount
+        if preview.identityChanged {
+            username = ""; password = ""; KeychainVault.remove(id: preview.profile.credentialID)
+        }
+    }
     private func backupWork<Value: Sendable>(_ operation: @escaping @Sendable () throws -> Value) async throws -> Value {
         let work = Task.detached(priority: .userInitiated) { try operation() }
         return try await withTaskCancellationHandler(operation: { try await work.value }, onCancel: { work.cancel() })
@@ -1288,6 +1333,12 @@ struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
     @StateObject private var model = AppModel()
     init() {
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-health-self-test") {
+            Task {
+                do { try await ProfileHealthSelfTest.run(); print("Profile health and update wizard checks passed."); Darwin.exit(0) }
+                catch { print("Profile health self-test failed: \(error.localizedDescription)"); Darwin.exit(1) }
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") {
             Task { @MainActor in
                 do { try await ProfileBackupSelfTest.run(); Darwin.exit(0) }

@@ -25,6 +25,9 @@ public struct VPNProfile: Codable, Identifiable, Equatable, Sendable {
     public var notes: String
     public var customRules: [CustomRouteRule]
     public var isFavorite: Bool
+    /// Separate from the stable profile ID so identity changes cannot reuse
+    /// credentials, even when the app exits immediately after an update.
+    public var credentialID: UUID
 
     public init(id: UUID = UUID(), name: String, sourceFilename: String,
                 relativePath: String, mode: RoutingMode = .original, importedAt: Date = Date(),
@@ -32,10 +35,11 @@ public struct VPNProfile: Codable, Identifiable, Equatable, Sendable {
         self.id = id; self.name = name; self.sourceFilename = sourceFilename
         self.relativePath = relativePath; self.mode = mode; self.importedAt = importedAt
         self.group = group; self.notes = notes; self.isFavorite = isFavorite; self.customRules = customRules
+        self.credentialID = id
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, sourceFilename, relativePath, mode, importedAt, group, notes, isFavorite, customRules
+        case id, name, sourceFilename, relativePath, mode, importedAt, group, notes, isFavorite, customRules, credentialID
     }
 
     public init(from decoder: Decoder) throws {
@@ -50,6 +54,7 @@ public struct VPNProfile: Codable, Identifiable, Equatable, Sendable {
         notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
         isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
         customRules = try container.decodeIfPresent([CustomRouteRule].self, forKey: .customRules) ?? []
+        credentialID = try container.decodeIfPresent(UUID.self, forKey: .credentialID) ?? id
     }
 }
 

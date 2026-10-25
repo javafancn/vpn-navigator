@@ -20,7 +20,7 @@ final class ApplicationLifecycle: NSObject, NSApplicationDelegate {
         else { pendingProfiles.merge(request) }
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
-    func applicationWillTerminate(_ notification: Notification) { model?.smartConnection.stop(); model?.quickAccess.shutdown() }
+    func applicationWillTerminate(_ notification: Notification) { model?.profileHealth.stop(); model?.smartConnection.stop(); model?.quickAccess.shutdown() }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model else { return .terminateNow }
         guard !model.maintenanceInProgress, !model.backgroundServicesBusy, !model.profileTransferInProgress,

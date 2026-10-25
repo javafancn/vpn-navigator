@@ -108,6 +108,19 @@ final class EncryptedProfileBackupTests: XCTestCase {
         try await other.restore(restored[0], revision: history[0].filename)
         let runtime = try await other.runtimeConfig(for: restored[0]); XCTAssertTrue(runtime.contains("FAKE_CA")); XCTAssertFalse(runtime.contains("account.txt"))
     }
+    func testOriginalUTF8BOMAndCRLFRemainByteExact() async throws {
+        let root = try folder(); defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("fixture.ovpn"); try configuration.write(to: file, atomically: true, encoding: .utf8)
+        let source = root.appendingPathComponent("source"), store = ProfileStore(root: source)
+        let profile = try await store.importProfile(from: file)
+        let bytes = Data([0xef, 0xbb, 0xbf]) + Data(configuration.replacingOccurrences(of: "\n", with: "\r\n").utf8)
+        try ProfileFileIO.write(bytes, to: source.appendingPathComponent(profile.relativePath))
+        let snapshot = try await store.backupSnapshot()
+        let authenticated = try EncryptedProfileBackup.open(EncryptedProfileBackup.seal(snapshot, password: password), password: password)
+        let target = root.appendingPathComponent("target"), other = ProfileStore(root: target)
+        let restored = try await other.restoreBackup(authenticated, expecting: [])
+        XCTAssertEqual(try ProfileFileIO.read(target.appendingPathComponent(restored[0].relativePath)), bytes)
+    }
     func testStaleConfirmationRejectsWithoutCreatingFiles() async throws {
         let root = try folder(); defer { try? FileManager.default.removeItem(at: root) }
         let store = ProfileStore(root: root.appendingPathComponent("store")), file = root.appendingPathComponent("new.ovpn")

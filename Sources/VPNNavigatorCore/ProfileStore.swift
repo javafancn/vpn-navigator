@@ -190,6 +190,13 @@ extension ProfileStore {
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         }
     }
+    private func backupText(_ url: URL) throws -> String {
+        let data = try ProfileFileIO.read(url)
+        guard String(data: data, encoding: .utf8) != nil else { throw ProfileBackupFailure.invalidContents }
+        // The UTF-8 collection decoder retains a leading BOM as a scalar;
+        // Foundation's encoding detector may consume it as a byte-order mark.
+        return String(decoding: data, as: UTF8.self)
+    }
     private func backupHistory(_ profile: VPNProfile) throws -> [ProfileBackupRevision] {
         let parent = root.appendingPathComponent("History", isDirectory: true)
         guard FileManager.default.fileExists(atPath: parent.path) else { return [] }
@@ -206,7 +213,7 @@ extension ProfileStore {
             let sourceURL = directory.appendingPathComponent(String(revision.filename.dropLast(5)) + ".source.ovpn")
             let source: String?
             if (try? FileManager.default.attributesOfItem(atPath: sourceURL.path)) != nil {
-                guard let text = String(data: try ProfileFileIO.read(sourceURL), encoding: .utf8) else { throw ProfileBackupFailure.invalidContents }; source = text
+                source = try backupText(sourceURL)
             } else { source = nil }
             guard let text = String(data: runtime, encoding: .utf8) else { throw ProfileBackupFailure.invalidContents }
             return ProfileBackupRevision(id: id, createdAt: revision.createdAt, runtime: text, source: source)
@@ -223,7 +230,7 @@ extension ProfileStore {
             if let attributes = try? FileManager.default.attributesOfItem(atPath: runtimePath.path) {
                 guard attributes[.type] as? FileAttributeType == .typeRegular else { throw ProfileBackupFailure.invalidContents }
             }
-            let entry = try ProfileBackupEntry(profile: profile, source: original(for: profile), runtime: runtimeConfig(for: profile), revisions: backupHistory(profile))
+            let entry = try ProfileBackupEntry(profile: profile, source: backupText(root.appendingPathComponent(profile.relativePath)), runtime: runtimeConfig(for: profile), revisions: backupHistory(profile))
             bytes += entry.source.utf8.count + entry.runtime.utf8.count + entry.revisions.reduce(0) { $0 + $1.runtime.utf8.count + ($1.source?.utf8.count ?? 0) }
             guard bytes <= EncryptedProfileBackup.maximumPlaintextBytes else { throw ProfileBackupFailure.limits }
             entries.append(entry)

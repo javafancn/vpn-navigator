@@ -96,9 +96,9 @@ struct ProfileIndexRepository {
         if lstat(backupURL.path, &info) != 0, errno == ENOENT { try? writeCheckpoint(profiles) }
         return profiles
     }
-    func save(_ profiles: [VPNProfile]) throws {
+    func save(_ profiles: [VPNProfile], beforeCommit: (() throws -> Void)? = nil) throws {
         try validate(profiles)
-        try ProfileFileIO.write(encode(profiles), to: indexURL)
+        try ProfileFileIO.write(encode(profiles), to: indexURL, beforeCommit: beforeCommit)
         // Primary publication is the commit point. Report checkpoint health
         // separately: throwing here would let the importer delete committed files.
         try? writeCheckpoint(profiles)

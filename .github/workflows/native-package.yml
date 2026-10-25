@@ -94,6 +94,12 @@ jobs:
           import subprocess
           subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-smart-connection-self-test'], check=True, timeout=40)
           PYTEST
+      - name: Verify encrypted backup restore, cancellation and active-session exclusion
+        run: |
+          python3 - <<'PYTEST'
+          import subprocess
+          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-profile-backup-self-test'], check=True, timeout=60)
+          PYTEST
       - name: Ad-hoc sign development UI for local integrity checks
         run: |
           APP='dist/VPN Navigator.app'
@@ -224,7 +230,7 @@ jobs:
             test -s "$RUNNER_TEMP/VPNNavigator-library-$STATE.png"
             killall VPNNavigatorApp 2>/dev/null || true
           done
-          for TOOL in custom-routes route-explanation troubleshooting smart-connection; do
+          for TOOL in custom-routes route-explanation troubleshooting smart-connection profile-backup; do
             open -n "$APP" --args --vpnnav-ui-tab=routing --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot "--vpnnav-ui-$TOOL-snapshot"
             sleep 7
             WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift")"

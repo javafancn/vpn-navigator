@@ -285,7 +285,7 @@ extension ProfileStore {
                 }
             }
             try Task.checkCancellation()
-            try save(current + restored) // Single publication; no throwing work after commit.
+            try index.save(current + restored, beforeCommit: { try Task.checkCancellation() }) // Single publication.
         } catch {
             try? recoverBackupRestore()
             throw error

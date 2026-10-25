@@ -1218,27 +1218,31 @@ final class AppModel: ObservableObject {
         !networkRecoveryRequired && !firewallRecoveryRequired && !maintenanceInProgress && !backgroundServicesBusy && !busy
     }
     var canRestoreProfileBackup: Bool { canUseProfileBackup && backupSessionSafe }
+    private func backupWork<Value: Sendable>(_ operation: @escaping @Sendable () throws -> Value) async throws -> Value {
+        let work = Task.detached(priority: .userInitiated) { try operation() }
+        return try await withTaskCancellationHandler(operation: { try await work.value }, onCancel: { work.cancel() })
+    }
     func createEncryptedBackup(password: String, to url: URL) async throws -> Int {
         guard canUseProfileBackup, url.pathExtension.lowercased() == "vpnnavbackup" else { throw ProfileBackupFailure.pendingRecovery }
         profileBackupInProgress = true; profileMutations += 1
         defer { profileBackupInProgress = false; profileMutations -= 1 }
         let snapshot = try await store.backupSnapshot()
         try Task.checkCancellation()
-        let archive = try await Task.detached(priority: .userInitiated) { try EncryptedProfileBackup.seal(snapshot, password: password) }.value
+        let archive = try await backupWork { try EncryptedProfileBackup.seal(snapshot, password: password) }
         try Task.checkCancellation()
         // Cancellation is honoured before publication. Once the atomic write
         // commits, report success even if a cancellation races with its return.
-        try await Task.detached(priority: .userInitiated) { try ProfileFileIO.write(archive, to: url) }.value
+        try await backupWork { try ProfileFileIO.write(archive, to: url, beforeCommit: { try Task.checkCancellation() }) }
         return snapshot.entries.count
     }
     func previewEncryptedBackup(at url: URL, password: String) async throws -> DecryptedProfileBackup {
         guard canUseProfileBackup else { throw ProfileBackupFailure.pendingRecovery }
         profileBackupInProgress = true; profileMutations += 1
         defer { profileBackupInProgress = false; profileMutations -= 1 }
-        let snapshot = try await Task.detached(priority: .userInitiated) {
+        let snapshot = try await backupWork {
             let archive = try ProfileFileIO.read(url, maximumBytes: EncryptedProfileBackup.maximumBytes)
             return try EncryptedProfileBackup.open(archive, password: password)
-        }.value
+        }
         try Task.checkCancellation()
         let current = try await store.list()
         try Task.checkCancellation()

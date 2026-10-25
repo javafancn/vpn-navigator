@@ -40,6 +40,9 @@ final class EncryptedProfileBackupTests: XCTestCase {
     func testUnicodePasswordAndLengthPolicy() throws {
         let value = payload(), secret = "备份迁移🔐-independent-password"
         XCTAssertEqual(try EncryptedProfileBackup.open(EncryptedProfileBackup.seal(value, password: secret), password: secret), value)
+        let decomposed = "independent-Cafe\u{301}-备份-key", composed = decomposed.precomposedStringWithCanonicalMapping
+        let normalized = try EncryptedProfileBackup.seal(value, password: decomposed)
+        XCTAssertEqual(try EncryptedProfileBackup.open(normalized, password: composed), value)
         for invalid in ["", "short", String(repeating: "a", count: 1025)] { XCTAssertThrowsError(try EncryptedProfileBackup.seal(value, password: invalid)) }
     }
     func testUnknownVersionKDFTruncationAndOversizeFailBeforeWork() throws {
@@ -120,6 +123,19 @@ final class EncryptedProfileBackupTests: XCTestCase {
         let result = await operation.result
         if case .success = result { XCTFail() }
         let profiles = try await store.list(); XCTAssertTrue(profiles.isEmpty)
+    }
+    func testCancelledAtomicPublicationPreservesExistingDestination() throws {
+        let root = try folder(); defer { try? FileManager.default.removeItem(at: root) }
+        let destination = root.appendingPathComponent("existing.vpnnavbackup"), original = Data("original fixture".utf8)
+        try ProfileFileIO.write(original, to: destination)
+        var checks = 0
+        XCTAssertThrowsError(try ProfileFileIO.write(Data(repeating: 1, count: 200_000), to: destination, beforeCommit: {
+            checks += 1
+            if checks == 3 { throw CancellationError() }
+        }))
+        XCTAssertEqual(try Data(contentsOf: destination), original)
+        let leftovers = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+        XCTAssertEqual(leftovers.map(\.lastPathComponent), [destination.lastPathComponent])
     }
     func testInterruptedRestoreRemovesOnlyUncommittedIDsAndPrivateStage() async throws {
         let root = try folder(); defer { try? FileManager.default.removeItem(at: root) }

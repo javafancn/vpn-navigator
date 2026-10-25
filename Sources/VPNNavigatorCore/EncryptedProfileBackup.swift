@@ -119,8 +119,8 @@ public enum EncryptedProfileBackup {
         return snapshot
     }
     private static func derive(_ password: String, salt: Data) throws -> SymmetricKey {
-        var secret = Array(password.utf8), bytes = [UInt8](repeating: 0, count: 32)
-        defer { secret.withUnsafeMutableBytes { $0.initializeMemory(as: UInt8.self, repeating: 0) }; bytes.withUnsafeMutableBytes { $0.initializeMemory(as: UInt8.self, repeating: 0) } }
+        var secret = Array(password.precomposedStringWithCanonicalMapping.utf8), bytes = [UInt8](repeating: 0, count: 32)
+        defer { _ = secret.withUnsafeMutableBytes { $0.initializeMemory(as: UInt8.self, repeating: 0) }; _ = bytes.withUnsafeMutableBytes { $0.initializeMemory(as: UInt8.self, repeating: 0) } }
         let status = secret.withUnsafeBytes { input in salt.withUnsafeBytes { salt in bytes.withUnsafeMutableBytes { output in
             CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2), input.baseAddress!.assumingMemoryBound(to: Int8.self), input.count,
                 salt.baseAddress!.assumingMemoryBound(to: UInt8.self), salt.count, CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),

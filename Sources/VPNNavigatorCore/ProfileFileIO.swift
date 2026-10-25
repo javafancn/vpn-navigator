@@ -22,7 +22,8 @@ public enum ProfileFileIO {
         }
         throw Failure.tooLarge
     }
-    public static func write(_ data: Data, to url: URL) throws {
+    public static func write(_ data: Data, to url: URL, beforeCommit: (() throws -> Void)? = nil) throws {
+        try beforeCommit?()
         guard data.count <= 16_000_000 else { throw Failure.tooLarge }
         let parent = url.deletingLastPathComponent().resolvingSymlinksInPath()
         let name = url.lastPathComponent
@@ -45,6 +46,7 @@ public enum ProfileFileIO {
         try data.withUnsafeBytes { bytes in
             var offset = 0
             while offset < bytes.count {
+                try beforeCommit?()
                 let count = Darwin.write(descriptor, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
                 if count < 0 { if errno == EINTR { continue }; throw Failure.cannotWrite }
                 guard count > 0 else { throw Failure.cannotWrite }
@@ -55,6 +57,7 @@ public enum ProfileFileIO {
         guard fsync(descriptor) == 0, fstat(descriptor, &info) == 0,
               info.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG), info.st_mode & 0o077 == 0,
               info.st_uid == getuid() else { throw Failure.cannotWrite }
+        try beforeCommit?()
         try checkDestination()
         guard renameat(directory, temporary, directory, name) == 0 else { throw Failure.cannotWrite }
         _ = fsync(directory)

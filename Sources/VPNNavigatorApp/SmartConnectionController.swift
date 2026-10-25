@@ -77,7 +77,7 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
     }
     func connectNow() {
         guard let model, let target = target(automatic: false) else { status = "没有可用配置，请先导入配置。"; return }
-        guard NSApp.modalWindow == nil, !model.showingSetup, !model.showingMaintenance,
+        guard NSApp.modalWindow == nil, model.profileHealthTarget == nil, !model.showingSetup, !model.showingMaintenance,
               !model.showingPreferences, !model.showingSmartConnection, !model.showingProfileBackup else { model.quickAccess.openMainWindow(); return }
         cancelPending()
         // Reuse the existing confirmation panel when a different VPN is active.
@@ -198,15 +198,38 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
         do { try await center.add(UNNotificationRequest(identifier: "vpnnav-status-" + UUID().uuidString, content: content, trigger: nil)) }
         catch { notificationStatus = "通知提交失败，请检查系统通知设置。" }
     }
+    func requestCertificatePermission() async throws -> Bool {
+        try await notificationCenter().requestAuthorization(options: [.alert, .sound])
+    }
+    func deliverCertificateReminder(id: UUID) async -> Bool {
+        let center = notificationCenter(), settings = await center.notificationSettings()
+        guard settings.authorizationStatus == .authorized, model?.profileHealth.remindersEnabled == true else { return false }
+        let content = UNMutableNotificationContent()
+        content.title = "VPN 证书需要关注"
+        content.body = "有配置的证书即将到期或已过期，请打开应用检查并按需更新。"
+        content.userInfo = ["profileID": id.uuidString]
+        do { try await center.add(.init(identifier: "vpnnav-certificate-" + id.uuidString, content: content, trigger: nil)); return true }
+        catch { return false }
+    }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         Task { @MainActor [weak self] in
+            if notification.request.identifier.hasPrefix("vpnnav-certificate-") {
+                completionHandler(self?.model?.profileHealth.remindersEnabled == true ? [.banner, .list] : []); return
+            }
             guard let self, self.preferences.notifications else { completionHandler([]); return }
             completionHandler(self.preferences.sound ? [.banner, .list, .sound] : [.banner, .list])
         }
     }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void) {
-        Task { @MainActor [weak self] in self?.model?.quickAccess.openMainWindow(); completionHandler() }
+        Task { @MainActor [weak self] in
+            self?.model?.quickAccess.openMainWindow()
+            if response.notification.request.identifier.hasPrefix("vpnnav-certificate-"),
+               let value = response.notification.request.content.userInfo["profileID"] as? String, let id = UUID(uuidString: value) {
+                self?.model?.showProfileHealth(id)
+            }
+            completionHandler()
+        }
     }
 }

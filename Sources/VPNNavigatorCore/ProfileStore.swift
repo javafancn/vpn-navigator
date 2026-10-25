@@ -9,8 +9,8 @@ public struct ProfileRevision: Identifiable, Sendable {
 }
 /// The initially imported source is saved to history on the first edit.
 public actor ProfileStore {
-    private let root: URL
-    private var index: ProfileIndexRepository { ProfileIndexRepository(root: root) }
+    let root: URL
+    var index: ProfileIndexRepository { ProfileIndexRepository(root: root) }
     public init(root: URL) { self.root = root }
     private func prepare() throws {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -18,6 +18,7 @@ public actor ProfileStore {
     }
     public func list() throws -> [VPNProfile] {
         try prepare()
+        try recoverProfileUpdate()
         try recoverBackupRestore()
         return try index.list()
     }
@@ -111,34 +112,7 @@ public actor ProfileStore {
     /// Save a safe, self-contained profile while preserving its prior source.
     public func revise(_ profile: VPNProfile, text: String) throws {
         try prepare()
-        guard (try list()).contains(where: { $0.id == profile.id }),
-              profile.relativePath == "\(profile.id.uuidString).ovpn" else {
-            throw StoreError.notFound
-        }
-        _ = try ProfileSafety.validate(text)
-        let oldSource = try original(for: profile)
-        let oldRuntime = try runtimeConfig(for: profile)
-        guard oldSource != text else { return }
-        let history = historyDirectory(for: profile.id)
-        try FileManager.default.createDirectory(at: history, withIntermediateDirectories: true)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: history.path)
-        let archived = history.appendingPathComponent(UUID().uuidString + ".ovpn")
-        // Revisions restore from self-contained runtime copies, even when the
-        // imported source referenced certificates outside the profile store.
-        try ProfileFileIO.write(Data(oldRuntime.utf8), to: archived)
-        let originalArchive = history.appendingPathComponent(
-            archived.deletingPathExtension().lastPathComponent + ".source.ovpn")
-        try ProfileFileIO.write(Data(oldSource.utf8), to: originalArchive)
-        let sourceURL = root.appendingPathComponent(profile.relativePath)
-        let runtimeURL = root.appendingPathComponent("\(profile.id.uuidString).runtime.ovpn")
-        do {
-            try ProfileFileIO.write(Data(text.utf8), to: sourceURL)
-            try ProfileFileIO.write(Data(text.utf8), to: runtimeURL)
-        } catch {
-            try? ProfileFileIO.write(Data(oldSource.utf8), to: sourceURL)
-            try? ProfileFileIO.write(Data(oldRuntime.utf8), to: runtimeURL)
-            throw error
-        }
+        try reviseTransaction(profile, text: text)
     }
 
     public func restore(_ profile: VPNProfile, revision filename: String) throws {

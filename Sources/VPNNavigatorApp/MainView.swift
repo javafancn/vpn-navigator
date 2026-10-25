@@ -127,6 +127,10 @@ struct MainView: View {
                     model.selectedID = model.profiles[0].id
                     if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-custom-routes-snapshot") { model.customRuleEditorProfile = model.profiles[0] }
                     else { model.showingRouteExplanation = true }
+                } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-profile-health-snapshot") {
+                    model.showProfileHealth(model.profiles[0].id)
+                } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-profile-update-snapshot") {
+                    model.showProfileHealth(model.profiles[0].id, updating: true)
                 } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-profile-backup-snapshot") { model.showingProfileBackup = true }
                 else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-smart-connection-snapshot") { model.showingSmartConnection = true }
                 else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-troubleshooting-snapshot") { model.showingTroubleshooting = true }
@@ -174,6 +178,7 @@ struct MainView: View {
         .sheet(isPresented: $model.showingMaintenance) { MaintenanceAssistantView().environmentObject(model) }
         .sheet(isPresented: $model.showingSetup) { SetupAssistantView().environmentObject(model) }
         .sheet(isPresented: $model.showingProfileBackup) { ProfileBackupView(model: model) }
+        .sheet(item: $model.profileHealthTarget) { profile in ProfileHealthView(model: model, profile: profile, updating: model.profileUpdateRequested) }
         .sheet(isPresented: $model.showingSmartConnection) { SmartConnectionSettingsView().environmentObject(model) }
         .sheet(isPresented: $model.showingPreferences) { ClientPreferencesView().environmentObject(model) }
         .sheet(isPresented: $model.showingProfileIndexRecovery) { ProfileIndexRecoveryView().environmentObject(model) }
@@ -1267,6 +1272,11 @@ struct ProfileDetail: View {
                     .help(profile.isFavorite ? "取消收藏" : "收藏此配置")
                     .disabled(!model.canEditProfileMetadata(profile.id))
                     Menu {
+                        Button("配置健康检查…") { model.showProfileHealth(profile.id) }
+                            .disabled(model.profileTransferInProgress || model.maintenanceInProgress)
+                        Button("更新配置文件…") { model.showProfileHealth(profile.id, updating: true) }
+                            .disabled(model.profileTransferInProgress || model.maintenanceInProgress)
+                        Divider()
                         Button("自定义分流规则…") { model.customRuleEditorProfile = profile }
                             .disabled(model.profileTransferInProgress || model.maintenanceInProgress)
                         Button("导出可迁移配置…") { Task { await model.exportProfile(for: profile.id) } }
@@ -1320,8 +1330,9 @@ struct ProfileDetail: View {
                 }
                 Spacer(minLength: 0)
                 HStack {
-                    Text("OpenVPN")
-                        .foregroundStyle(.secondary)
+                    Button { model.showProfileHealth(profile.id) } label: {
+                        Label(model.profileHealth.reports[profile.id]?.title ?? "检查配置", systemImage: "checkmark.shield")
+                    }.buttonStyle(.plain).foregroundStyle(.secondary)
                     Spacer()
                     Button("保存更改") {
                         Task {

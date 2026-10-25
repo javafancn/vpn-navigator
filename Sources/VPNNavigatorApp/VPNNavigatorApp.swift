@@ -21,6 +21,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var importResults: [ProfileImportResult] = []
     @Published private(set) var profileImportInProgress = false
     @Published private(set) var profileExportInProgress = false
+    @Published private(set) var profileBackupInProgress = false
+    @Published var showingProfileBackup = false
     @Published private(set) var importCancellationRequested = false
     private var importCancellation: ProfileImportCancellation?
     @Published private(set) var incomingProfiles = ProfileOpenQueue()
@@ -28,7 +30,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var profileDropLoading = false
     @Published var profilePickerPresented = false
     @Published private(set) var profileOpenReady = false
-    var profileTransferInProgress: Bool { profileImportInProgress || profileExportInProgress || profileIndexRecoveryInProgress || profileMetadataInProgress }
+    var profileTransferInProgress: Bool { profileImportInProgress || profileExportInProgress || profileBackupInProgress || profileIndexRecoveryInProgress || profileMetadataInProgress }
     @Published var quickAccessShortcut = QuickAccessShortcut(rawValue: UserDefaults.standard.string(forKey: "quickAccessShortcut") ?? "") ?? .disabled {
         didSet { UserDefaults.standard.set(quickAccessShortcut.rawValue, forKey: "quickAccessShortcut") }
     }
@@ -152,7 +154,7 @@ final class AppModel: ObservableObject {
         launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -908,7 +910,7 @@ final class AppModel: ObservableObject {
               recoveryRequired: networkRecoveryRequired || firewallRecoveryRequired,
               occupied: !profileOpenReady || profileIndexIssue != nil || (busy && !preparingAutomatic) || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || profileMutations != 0 ||
                 routingModeSwitching || showingImportReport || showingSetup || showingMaintenance || showingPreferences ||
-                showingSmartConnection || showingDiagnostics || showingRouteExplanation || showingTroubleshooting ||
+                showingProfileBackup || showingSmartConnection || showingDiagnostics || showingRouteExplanation || showingTroubleshooting ||
                 customRuleEditorProfile != nil || showingProfileIndexRecovery || profilePickerPresented ||
                 profileDropLoading || !incomingProfiles.isEmpty || authenticationChallenge != nil || showingAccountCredentials ||
                 !username.isEmpty || !password.isEmpty || quickAccess.panel?.isVisible == true,
@@ -1055,7 +1057,7 @@ final class AppModel: ObservableObject {
         guard profiles.contains(where: { $0.id == id }) else { return .blocked }
         if connected && id != activeProfileID && quickAccessSession == nil { return .blocked }
         return QuickAccessAction.resolve(state: sessionState, profileID: id, activeProfileID: activeProfileID,
-            operationInProgress: customRuleEditorProfile != nil || showingRouteExplanation || showingTroubleshooting || showingProfileIndexRecovery || routingModeSwitching || busy || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || showingImportReport ||
+            operationInProgress: showingProfileBackup || customRuleEditorProfile != nil || showingRouteExplanation || showingTroubleshooting || showingProfileIndexRecovery || routingModeSwitching || busy || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || showingImportReport ||
                 authenticationChallenge != nil || showingAccountCredentials,
             mayStart: canQuit)
     }
@@ -1206,6 +1208,56 @@ final class AppModel: ObservableObject {
             else { throw LocalInstallError.command }
         } catch { message = "无法打开卸载包：\(error.localizedDescription)" }
     }
+    var canUseProfileBackup: Bool {
+        !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot") &&
+        profileOpenReady && profileIndexIssue == nil && !profileTransferInProgress && !maintenanceInProgress &&
+        !backgroundServicesBusy && !busy && !routingModeSwitching && !showingImportReport && !profilePickerPresented
+    }
+    private var backupSessionSafe: Bool {
+        helperStateVerified && sessionState == .disconnected && activeProfileID == nil &&
+        !networkRecoveryRequired && !firewallRecoveryRequired && !maintenanceInProgress && !backgroundServicesBusy && !busy
+    }
+    var canRestoreProfileBackup: Bool { canUseProfileBackup && backupSessionSafe }
+    func createEncryptedBackup(password: String, to url: URL) async throws -> Int {
+        guard canUseProfileBackup, url.pathExtension.lowercased() == "vpnnavbackup" else { throw ProfileBackupFailure.pendingRecovery }
+        profileBackupInProgress = true; profileMutations += 1
+        defer { profileBackupInProgress = false; profileMutations -= 1 }
+        let snapshot = try await store.backupSnapshot()
+        try Task.checkCancellation()
+        let archive = try await Task.detached(priority: .userInitiated) { try EncryptedProfileBackup.seal(snapshot, password: password) }.value
+        try Task.checkCancellation()
+        // Cancellation is honoured before publication. Once the atomic write
+        // commits, report success even if a cancellation races with its return.
+        try await Task.detached(priority: .userInitiated) { try ProfileFileIO.write(archive, to: url) }.value
+        return snapshot.entries.count
+    }
+    func previewEncryptedBackup(at url: URL, password: String) async throws -> DecryptedProfileBackup {
+        guard canUseProfileBackup else { throw ProfileBackupFailure.pendingRecovery }
+        profileBackupInProgress = true; profileMutations += 1
+        defer { profileBackupInProgress = false; profileMutations -= 1 }
+        let snapshot = try await Task.detached(priority: .userInitiated) {
+            let archive = try ProfileFileIO.read(url, maximumBytes: EncryptedProfileBackup.maximumBytes)
+            return try EncryptedProfileBackup.open(archive, password: password)
+        }.value
+        try Task.checkCancellation()
+        let current = try await store.list()
+        try Task.checkCancellation()
+        return DecryptedProfileBackup(snapshot: snapshot, existing: current)
+    }
+    func restoreEncryptedBackup(_ preview: DecryptedProfileBackup) async throws -> Int {
+        guard canRestoreProfileBackup else { throw ProfileBackupFailure.pendingRecovery }
+        profileBackupInProgress = true; profileMutations += 1
+        defer { profileBackupInProgress = false; profileMutations -= 1 }
+        await refreshConnectionStatus()
+        try Task.checkCancellation()
+        guard backupSessionSafe else { throw ProfileBackupFailure.pendingRecovery }
+        let restored = try await store.restoreBackup(preview.snapshot, expecting: preview.existing)
+        // No throwing work after the store's index publication.
+        profiles = preview.existing + restored
+        for (profile, entry) in zip(restored, preview.snapshot.entries) { profileSizes[profile.id] = entry.source.utf8.count }
+        if sessionState == .disconnected, activeProfileID == nil { selectedID = restored.first?.id ?? selectedID }
+        return restored.count
+    }
     func exportProfile(kind: ProfileExportKind = .portable, for id: UUID? = nil) async {
         guard !maintenanceInProgress, !profileTransferInProgress,
               let target = id ?? selectedID, let profile = profiles.first(where: { $0.id == target }) else { return }
@@ -1232,6 +1284,12 @@ struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
     @StateObject private var model = AppModel()
     init() {
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") {
+            Task { @MainActor in
+                do { try await ProfileBackupSelfTest.run(); Darwin.exit(0) }
+                catch { print("Encrypted backup self-test failed: \(error.localizedDescription)"); Darwin.exit(1) }
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") {
             Task { @MainActor in
                 do { try await SmartConnectionSelfTest.run(); Darwin.exit(0) }

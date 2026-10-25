@@ -127,7 +127,8 @@ struct MainView: View {
                     model.selectedID = model.profiles[0].id
                     if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-custom-routes-snapshot") { model.customRuleEditorProfile = model.profiles[0] }
                     else { model.showingRouteExplanation = true }
-                } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-smart-connection-snapshot") { model.showingSmartConnection = true }
+                } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-profile-backup-snapshot") { model.showingProfileBackup = true }
+                else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-smart-connection-snapshot") { model.showingSmartConnection = true }
                 else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-troubleshooting-snapshot") { model.showingTroubleshooting = true }
             }
             if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-profile-recovery-snapshot") {
@@ -172,6 +173,7 @@ struct MainView: View {
         }
         .sheet(isPresented: $model.showingMaintenance) { MaintenanceAssistantView().environmentObject(model) }
         .sheet(isPresented: $model.showingSetup) { SetupAssistantView().environmentObject(model) }
+        .sheet(isPresented: $model.showingProfileBackup) { ProfileBackupView(model: model) }
         .sheet(isPresented: $model.showingSmartConnection) { SmartConnectionSettingsView().environmentObject(model) }
         .sheet(isPresented: $model.showingPreferences) { ClientPreferencesView().environmentObject(model) }
         .sheet(isPresented: $model.showingProfileIndexRecovery) { ProfileIndexRecoveryView().environmentObject(model) }
@@ -988,6 +990,12 @@ struct SystemSettingsPane: View {
                     .fixedSize()
                 }
 
+                settingsRow("加密备份与迁移",
+                    subtitle: "配置、证书材料和历史版本的加密备份与预览恢复",
+                    symbol: "lock.doc") {
+                    Button("备份与恢复…") { model.quickAccess.openMainWindow(); model.showingProfileBackup = true }
+                        .buttonStyle(ReferenceSecondaryButton()).disabled(!model.canUseProfileBackup)
+                }
                 settingsRow("配置列表备份",
                     subtitle: model.profileIndexBackupStatus,
                     symbol: "externaldrive.badge.timemachine") {

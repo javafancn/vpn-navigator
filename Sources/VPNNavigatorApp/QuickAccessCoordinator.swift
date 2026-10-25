@@ -39,7 +39,7 @@ final class QuickAccessCoordinator: NSObject, NSWindowDelegate {
     func toggle() { if panel?.isVisible == true { hide() } else { show() } }
     func show() {
         guard let model else { return }
-        guard NSApp.modalWindow == nil, !model.showingAccountCredentials,
+        guard NSApp.modalWindow == nil, !model.showingProfileBackup, !model.showingAccountCredentials,
               model.authenticationChallenge == nil, !model.showingSetup,
               !model.showingMaintenance, !model.maintenanceInProgress,
               !model.showingImportReport, !model.profileTransferInProgress,

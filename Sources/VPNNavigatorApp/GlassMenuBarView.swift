@@ -31,7 +31,7 @@ struct GlassMenuBarView: View {
                     .disabled(model.stopping || (model.busy && !model.connecting && !model.connected && !model.firewallRecoveryRequired) || (!model.connected && model.selected == nil) || (!model.connected && !model.connecting && (model.profileTransferInProgress || model.showingImportReport)))
             }
             VStack(alignment: .leading, spacing: 14) {
-                Label(model.connected ? "已连接" : model.connecting ? "正在连接" : "未连接", systemImage: model.connected ? "checkmark.circle.fill" : "circle.dotted")
+                Label(model.menuStatusTitle, systemImage: model.menuStatusSymbol)
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(model.connected ? .green : GlassPalette.ink.opacity(0.6))
                 HStack(spacing: 12) {
@@ -66,6 +66,16 @@ struct GlassMenuBarView: View {
                 }
             }.padding(12).glassCard(cornerRadius: 15)
             VStack(spacing: 0) {
+                Button { model.smartConnection.connectNow() } label: { menuRow("智能连接", symbol: "bolt.shield") }
+                    .buttonStyle(ReferenceQuietButton()).disabled(model.profiles.isEmpty || model.busy || model.stopping)
+                if model.smartConnection.preferences.enabled {
+                    Button { model.smartConnection.togglePause() } label: {
+                        menuRow(model.smartConnection.preferences.paused ? "恢复自动连接" : "暂停自动连接", symbol: model.smartConnection.preferences.paused ? "play.circle" : "pause.circle")
+                    }.buttonStyle(ReferenceQuietButton())
+                }
+                Text(model.smartConnection.status).font(.system(size: 11)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                Button { openWindow(id: "main"); model.showingSmartConnection = true; NSApp.activate(ignoringOtherApps: true) } label: { menuRow("智能连接设置…", symbol: "bell.badge") }
+                    .buttonStyle(ReferenceQuietButton())
                 Button { model.quickAccess.toggle() } label: { menuRow("快速打开…", symbol: "magnifyingglass") }
                     .buttonStyle(ReferenceQuietButton())
                 Divider().opacity(0.2)

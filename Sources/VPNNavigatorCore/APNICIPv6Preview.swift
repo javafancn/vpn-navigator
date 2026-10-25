@@ -31,8 +31,8 @@ public enum APNICIPv6Error: Error, Equatable {
     case oversized, missingCountryData, malformedCountryEntry
 }
 
-/// User-scoped data cache only. The privileged macOS helper cannot consume
-/// this feed until IPv6 route ownership, PF policy and DNS safety are audited.
+/// User-scoped IPv6 feed cache. The helper independently validates all data
+/// before constructing a journaled route plan; cache writes never alter routes.
 public actor APNICIPv6PreviewStore {
     public static let source = URL(
         string: "https://ftp.apnic.net/stats/apnic/delegated-apnic-latest")!
@@ -46,7 +46,7 @@ public actor APNICIPv6PreviewStore {
         return try IPv6RuleSet(text: String(contentsOf: path, encoding: .utf8))
     }
 
-    public func refresh() async throws -> IPv6RuleSet {
+    public func fetchCandidate() async throws -> IPv6RuleSet {
         var request = URLRequest(url: Self.source)
         request.timeoutInterval = 30
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -67,12 +67,26 @@ public actor APNICIPv6PreviewStore {
                 throw APNICIPv6Error.malformedCountryEntry
             }
         }
+        return candidate
+    }
+    public func commit(_ candidate: IPv6RuleSet) throws {
+        guard candidate.routes.count >= 100 else { throw APNICIPv6Error.missingCountryData }
+        if let old = try cached() { try IPv6RuleSet.validateChange(previous: old, next: candidate) }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
         let file = root.appendingPathComponent("china-ipv6-preview.txt")
         try (candidate.routes.map(\.description).joined(separator: "\n") + "\n")
             .write(to: file, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
-        return candidate
+    }
+    public func refresh() async throws -> IPv6RuleSet { let value = try await fetchCandidate(); try commit(value); return value }
+}
+
+extension IPv6RuleSet {
+    public static func validateChange(previous: Self, next: Self) throws {
+        let old = previous.routes.count, count = next.routes.count
+        let a = Set(previous.routes), b = Set(next.routes)
+        guard count >= 100, count >= old * 80 / 100, count <= old * 120 / 100,
+              a.symmetricDifference(b).count <= max(100, old / 3) else { throw RuleError.suspiciousChange }
     }
 }

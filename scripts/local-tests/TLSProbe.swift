@@ -198,6 +198,18 @@ func exercise(_ profile: String, shouldConnect: Bool, disconnectAtEnd: Bool = tr
             guard response.hasPrefix("ERROR:"), (await ask { $0.connectionStatus(reply: $1) }).hasPrefix("connected:") else { return false }
         }
         print("PASS: installed read-only route inspection observes lo0, rejects stale/malformed requests and leaves real TLS connected.")
+        if profile.contains("VPNNAV_EXPECT_DUAL_STACK") || profile.contains("VPNNAV_EXPECT_IPV6_ONLY") {
+            let expected = profile.contains("VPNNAV_EXPECT_IPV6_ONLY") ? "ipv6" : "dual"
+            guard snapshot["ipStack"] as? String == expected else { print("Unexpected tunnel address families"); return false }
+            var request6 = routeRequest; request6["ip"] = "::1"
+            guard let bytes6 = try? JSONSerialization.data(withJSONObject: request6) else { return false }
+            let reply6 = await ask { $0.explainRoute(String(decoding: bytes6, as: UTF8.self), reply: $1) }
+            guard let result6 = reply6.data(using: .utf8),
+                  let route6 = (try? JSONSerialization.jsonObject(with: result6)) as? [String: Any],
+                  route6["observedInterface"] as? String == "lo0" else { return false }
+            print("PASS: actual negotiated address families and IPv6 read-only lookup through installed XPC.")
+        }
+
 
     }
     if !disconnectAtEnd { return matched }
@@ -216,6 +228,15 @@ Task {
         let passed = await scenario(test)
         if !passed { _ = await disconnect(); print("FAIL: authentication fixture (secrets omitted)") }
         exit(passed ? 0 : 1)
+    }
+    if arguments == ["--traffic"] {
+        let raw = await ask { $0.sessionSnapshot(reply: $1) }
+        guard let data = raw.data(using: .utf8),
+              let report = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              report["state"] as? String == "connected" else { exit(1) }
+        let counters: [String: Any] = ["sent": report["sentBytes"] ?? 0, "received": report["receivedBytes"] ?? 0]
+        guard let encoded = try? JSONSerialization.data(withJSONObject: counters, options: [.sortedKeys]) else { exit(1) }
+        print(String(decoding: encoded, as: UTF8.self)); exit(0)
     }
     if arguments == ["--expect-failed"] { exit(await expectFailure() ? 0 : 1) }
     if arguments == ["--disconnect"] { exit(await disconnect() ? 0 : 1) }

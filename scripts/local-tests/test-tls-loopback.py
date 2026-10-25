@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Disposable macOS runner only: real TLS/utun; no default routes or DNS pushes."""
 import hashlib
+import contextlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -8,6 +10,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from auth_suite import exercise_auth
 
@@ -29,6 +32,37 @@ def default_path():
     return tuple(line.strip() for line in route.splitlines() if line.strip().startswith(('gateway:', 'interface:')))
 
 
+@contextlib.contextmanager
+def fixture_link_local_aliases(pairs):
+    """Use interface-scoped IPv6 addresses; never replaces a local host route.
+
+    Same-host global/ULA destinations are always LOCAL/lo0 on Darwin, even
+    with IPV6_BOUND_IF or an explicit scoped route. Link-local scope gives
+    each utun an independent address zone, so the packets traverse OpenVPN.
+    """
+    installed = []
+    def present(address, interface):
+        observed = run(['/sbin/ifconfig', interface]).stdout
+        return any(line.split()[:1] == ['inet6'] and
+                   ipaddress.IPv6Address(line.split()[1].split('%')[0]) == ipaddress.IPv6Address(address)
+                   for line in observed.splitlines())
+    try:
+        for address, interface in pairs:
+            assert sys.platform == 'darwin' and os.environ.get('GITHUB_ACTIONS') == 'true'
+            assert address in ['fe80::1', 'fe80::2'] and interface.startswith('utun') and interface[4:].isdigit()
+            assert not present(address, interface), 'Fixture alias already exists; refusing to replace it'
+            run(['sudo', '-n', '/sbin/ifconfig', interface, 'inet6', address + '%' + interface, 'prefixlen', '64', 'alias'])
+            installed.append((address, interface))
+            assert present(address, interface), 'Fixture link-local alias was not observed'
+        time.sleep(1.2)
+        yield
+    finally:
+        for address, interface in reversed(installed):
+            assert present(address, interface), 'Fixture alias ownership changed; retaining evidence'
+            run(['sudo', '-n', '/sbin/ifconfig', interface, 'inet6', address + '%' + interface, '-alias'])
+            assert not present(address, interface), 'Fixture link-local alias was not removed'
+
+
 def main():
     assert sys.platform == 'darwin' and os.getuid() != 0
     assert os.environ.get('GITHUB_ACTIONS') == 'true', 'Disposable GitHub macOS runners only'
@@ -42,6 +76,9 @@ def main():
     log = None
     approved = False
     before_route = default_path()
+    transport_host = "127.0.0.1"
+    before6 = run(["/usr/sbin/netstat", "-rn", "-f", "inet6"]).stdout
+    defaults6 = lambda text: [line.split() for line in text.splitlines() if line.split()[:1] == ["default"]]
     def stop_server():
         nonlocal server, log
         if server is not None and server.poll() is None:
@@ -63,7 +100,7 @@ def main():
         for _ in range(60):
             assert server.poll() is None, 'TLS fixture server exited'
             try:
-                with socket.create_connection(('127.0.0.1', port), timeout=0.2):
+                with socket.create_connection((transport_host, port), timeout=0.2):
                     return
             except OSError:
                 time.sleep(0.1)
@@ -91,6 +128,10 @@ def main():
         with socket.socket() as port_reservation:
             port_reservation.bind(('127.0.0.1', 0))
             port = port_reservation.getsockname()[1]
+        client_configs = folder / 'clients'; client_configs.mkdir(mode=0o700)
+        # Exact synthetic certificate identity. Authorize only this fixture's
+        # link-local data source in OpenVPN's internal per-client IPv6 table.
+        (client_configs / 'vpnnav-ci-client').write_text('iroute-ipv6 fe80::2/128\n')
         config = folder / 'server.conf'
         config.write_text(f"""dev tun
 dev-node utun
@@ -99,6 +140,8 @@ local 127.0.0.1
 port {port}
 topology subnet
 server 198.18.254.0 255.255.255.0
+server-ipv6 fd42:766e:6176:1::/64
+client-config-dir {client_configs}
 ca {folder}/ca.crt
 cert {folder}/server.crt
 key {folder}/server.key
@@ -109,7 +152,8 @@ data-ciphers AES-256-GCM:AES-128-GCM
 script-security 1
 verb 3
 """)
-        profile = f"""client
+        profile = f"""# VPNNAV_EXPECT_DUAL_STACK
+client
 dev tun
 proto tcp-client
 remote 127.0.0.1 {port}
@@ -146,8 +190,100 @@ verb 3
         result = run([probe, valid, invalid], ok=False, timeout=120)
         print(result.stdout, end='')
         assert result.returncode == 0, 'Installed helper TLS fixture failed: ' + result.stderr
+        # Exercise actual IPv6 data and the journal executor without changing defaults.
+        run([probe, '--connect-only', valid])
+        # Both ends run on one host. Bind BOTH UDP sockets to their respective
+        # utuns: a kernel-generated ICMP reply can otherwise take a local route
+        # to the client's address and never return through the encrypted stream.
+        interface_addresses = {}
+        current_tunnel = None
+        for line in run(['/sbin/ifconfig', '-a']).stdout.splitlines():
+            if line and not line[0].isspace():
+                current_tunnel = line.split(':', 1)[0]
+                interface_addresses[current_tunnel] = []
+            if current_tunnel and line.split()[:1] == ['inet6']:
+                interface_addresses[current_tunnel].append(line.split()[1].split('%')[0])
+            if 'inet 198.18.254.2 ' in line:
+                client_tunnel = current_tunnel
+        assert 'client_tunnel' in locals(), 'Client fixture utun not found'
+        assert client_tunnel.startswith('utun') and client_tunnel[4:].isdigit()
+        assert any(address.startswith('fd42:766e:6176:1:') for address in interface_addresses[client_tunnel])
+        server_tunnel = next(name for name, addresses in interface_addresses.items() if 'fd42:766e:6176:1::1' in addresses)
+        client6, server6 = 'fe80::2', 'fe80::1'
+        assert server_tunnel != client_tunnel and server_tunnel.startswith('utun') and server_tunnel[4:].isdigit()
+        # Darwin bsd/netinet6/in6.h defines IPV6_BOUND_IF as 125; some Python
+        # builds do not export the constant. Never binds a physical interface.
+        bound_if = getattr(socket, 'IPV6_BOUND_IF', 125)
+        # Unlike same-host ULA addresses, link-local peer addresses belong to
+        # different interface zones. Preserve all unscoped LOCAL/lo0 routes.
+        with fixture_link_local_aliases([(server6, server_tunnel), (client6, client_tunnel)]):
+            echo_errors = []
+            with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as echo, socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as sender:
+                echo.setsockopt(socket.IPPROTO_IPV6, bound_if, socket.if_nametoindex(server_tunnel))
+                sender.setsockopt(socket.IPPROTO_IPV6, bound_if, socket.if_nametoindex(client_tunnel))
+                server_scope, client_scope = socket.if_nametoindex(server_tunnel), socket.if_nametoindex(client_tunnel)
+                echo.bind((server6, 0, 0, server_scope)); sender.bind((client6, 0, 0, client_scope))
+                echo.settimeout(5); sender.settimeout(5)
+                def echo_packets():
+                    try:
+                        for _ in range(3):
+                            packet, peer = echo.recvfrom(2048)
+                            echo.sendto(packet, peer)
+                    except OSError as error:
+                        echo_errors.append(type(error).__name__)
+                echo_thread = threading.Thread(target=echo_packets, daemon=True)
+                echo_thread.start()
+                time.sleep(1.2)  # Let the first management byte-count receipt settle.
+                before_data = json.loads(run([probe, '--traffic']).stdout)
+                try:
+                    for number in range(3):
+                        packet = bytes([number]) + os.urandom(1199)
+                        sender.sendto(packet, (server6, echo.getsockname()[1], 0, client_scope))
+                        reply, _ = sender.recvfrom(2048)
+                        assert reply == packet, 'IPv6 UDP echo payload changed'
+                except OSError as error:
+                    after_error = json.loads(run([probe, '--traffic']).stdout)
+                    raise AssertionError('Scoped IPv6 UDP echo failed: ' + type(error).__name__ + '; counters ' + str(before_data) + ' -> ' + str(after_error) + '; responder ' + str(echo_errors)) from error
+                finally:
+                    echo_thread.join(timeout=6)
+                assert not echo_errors and not echo_thread.is_alive(), 'Bound IPv6 UDP responder did not finish: ' + str(echo_errors)
+            for _ in range(30):
+                after_data = json.loads(run([probe, '--traffic']).stdout)
+                if all(after_data[key] - before_data[key] >= 3000 for key in ['sent', 'received']):
+                    break
+                time.sleep(0.2)
+            else:
+                raise AssertionError('IPv6 UDP echo did not traverse both encrypted data directions: ' + str(before_data) + ' -> ' + str(after_data))
+        current_tunnel = client_tunnel
+        kernel = run(['sudo', '-n', 'env', 'GITHUB_ACTIONS=true', PAYLOAD / 'VPNNavigatorHelper', '--self-test-ipv6-kernel', current_tunnel])
+        print(kernel.stdout, end='')
+        run([probe, '--disconnect'])
+        print('PASS: real IPv6 UDP echo traffic passes through both encrypted TLS/utun data directions.')
         log.flush()
         assert 'unknown ca' in (folder / 'server.log').read_text().lower(), 'TLS server did not observe the controlled wrong-CA rejection'
+        # IPv6 transport and IPv6-only payload negotiate through the installed helper too.
+        saved_config, saved_port = config.read_text(), port
+        stop_server()
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as reservation6:
+            reservation6.bind(('::1', 0)); port = reservation6.getsockname()[1]
+        transport_host = '::1'
+        config6 = saved_config.replace('proto tcp4-server', 'proto tcp6-server').replace('local 127.0.0.1', 'local ::1').replace(f'port {saved_port}\n', f'port {port}\n')
+        config.write_text(config6)
+        text6 = profile.replace('proto tcp-client', 'proto tcp6-client').replace(f'remote 127.0.0.1 {saved_port}', f'remote ::1 {port}')
+        valid6, invalid6 = folder / 'ipv6-transport.ovpn', folder / 'ipv6-transport-wrong.ovpn'
+        valid6.write_text(text6); invalid6.write_text(text6.replace((folder / 'ca.crt').read_text(), (folder / 'wrong-ca.crt').read_text()))
+        valid6.chmod(0o600); invalid6.chmod(0o600)
+        start_server()
+        observed6 = run([probe, valid6, invalid6], timeout=120); print(observed6.stdout, end='')
+        print('PASS: IPv6 TCP transport negotiates a dual-stack tunnel through the installed helper.')
+        stop_server()
+        config.write_text(config6.replace('server 198.18.254.0 255.255.255.0', 'mode server\ntls-server'))
+        only6 = text6.replace('VPNNAV_EXPECT_DUAL_STACK', 'VPNNAV_EXPECT_IPV6_ONLY')
+        valid6.write_text(only6); invalid6.write_text(only6.replace((folder / 'ca.crt').read_text(), (folder / 'wrong-ca.crt').read_text()))
+        start_server()
+        observed6 = run([probe, valid6, invalid6], timeout=120); print(observed6.stdout, end='')
+        print('PASS: IPv6-only tunnel addresses are confirmed and DNS ownership is restored without an IPv4 tunnel address.')
+        stop_server(); config.write_text(saved_config); port = saved_port; transport_host = '127.0.0.1'; start_server()
         # Prove parent loss does not leave the privileged VPN engine alive.
         # launchctl addresses the exact daemon job, without a numeric PID kill.
         run([probe, '--connect-only', valid])
@@ -176,6 +312,7 @@ verb 3
         exercise_auth(folder, profile, ssl, probe, run, start_server, stop_server, config)
         for name in ['active.ovpn', 'routes.journal', 'dns.journal', 'pf-guard.json', 'openvpn-child.json']:
             assert run(['sudo', '/bin/test', '-e', '/var/run/vpn-navigator/' + name], ok=False).returncode != 0, 'Unresolved owned session: ' + name
+        assert defaults6(run(['/usr/sbin/netstat', '-rn', '-f', 'inet6']).stdout) == defaults6(before6), 'IPv6 fixture changed a default route'
         assert default_path() == before_route, 'Loopback TLS fixture changed the default network path'
     finally:
         if approved:

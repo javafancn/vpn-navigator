@@ -20,7 +20,7 @@ struct CustomRoutingEditorView: View {
             Text(profile.name + " · 仅作用于此配置的全局／规则模式，下次连接生效。")
                 .font(.system(size: 13)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
-                TextField("IPv4 或网段，如 10.66.0.0/16", text: $cidr).textFieldStyle(.plain).referenceInput()
+                TextField("IPv4／IPv6 地址或网段", text: $cidr).textFieldStyle(.plain).referenceInput()
                 Picker("路径", selection: $action) { ForEach(CustomRouteAction.allCases) { Text($0.title).tag($0) } }.labelsHidden().frame(width: 105)
                 Button("添加") {
                     replace(draft + [CustomRouteRule(cidr: cidr, action: action)])
@@ -43,7 +43,7 @@ struct CustomRoutingEditorView: View {
                     if draft.isEmpty { Text("尚无自定义规则，继续使用地区规则和默认路由。").font(.system(size: 13)).foregroundStyle(.secondary).padding(24) }
                 }.padding(2)
             }.frame(height: 245)
-            Text("最多 128 条；启用规则不能重叠。服务器端点和当前局域网受保护，冲突会拒绝连接。支持 /8–/32；IPv6、域名和按应用分流暂不支持。可迁移 .ovpn 不包含这些应用内策略，路由预览可导出静态结果。")
+            Text("最多 128 条；启用规则不能重叠。服务器端点和当前局域网受保护，冲突会拒绝连接。支持 IPv4 /8–/32，IPv6 全球单播 /16–/128 或 ULA /7–/128；不支持域名和按应用分流。可迁移 .ovpn 不包含这些应用内策略，路由预览可导出静态结果。")
                 .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if !issue.isEmpty { Text(issue).font(.system(size: 12)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
             HStack {
@@ -79,9 +79,9 @@ struct RouteExplanationView: View {
             Toggle("核验当前已连接会话（与左侧选择无关）", isOn: $live).disabled(!model.connected || checking)
                 .onChange(of: live) { _ in clear() }
             HStack {
-                TextField("目标 IPv4", text: $ip).textFieldStyle(.plain).referenceInput().disabled(checking)
+                TextField("目标 IPv4／IPv6", text: $ip).textFieldStyle(.plain).referenceInput().disabled(checking)
                 Button(checking ? "核验中…" : "解释路径") { inspect() }.buttonStyle(ReferencePrimaryButton())
-                    .disabled(checking || IPv4CIDR.parseAddress(ip) == nil)
+                    .disabled(checking || IPAddress.canonical(ip) == nil)
             }
             if let decision {
                 VStack(alignment: .leading, spacing: 12) {
@@ -91,7 +91,7 @@ struct RouteExplanationView: View {
                     if let observed {
                         Text("实际接口：" + (observed.observedInterface.isEmpty ? "未知" : observed.observedInterface))
                         Text("实际网关：" + (observed.observedGateway.isEmpty ? "未取得" : observed.observedGateway))
-                        Text(observed.matchesExpected.map { $0 ? "本次采样与预期路径一致" : "实际路径与预期不一致，请排查其它路由或 VPN" } ?? "系统管理路径，仅展示观察值")
+                        Text(observed.matchesExpected.map { $0 ? "本次采样与预期路径一致" : "实际路径与预期不一致，请排查其它路由或 VPN" } ?? "仅展示路由表，不验证防火墙放行")
                             .foregroundStyle(observed.matchesExpected == false ? Color.orange : Color.secondary)
                     } else {
                         Text("预览配置：" + (model.selected?.name ?? "未选择") + "；未纳入服务器端点、当前局域网及其它系统路由。")
@@ -108,6 +108,7 @@ struct RouteExplanationView: View {
             .onChange(of: model.selectedID) { _ in if !live { clear() } }
             .onChange(of: model.profiles) { _ in if !live { clear() } }
             .onChange(of: model.rules?.routes) { _ in if !live { clear() } }
+            .onChange(of: model.ipv6Preview?.routes) { _ in if !live { clear() } }
             .onChange(of: ip) { _ in if !checking { decision = nil; observed = nil; issue = "" } }
             .onDisappear { clear() }
             .onAppear {
@@ -130,7 +131,7 @@ struct RouteExplanationView: View {
                     guard generation == token, !Task.isCancelled else { return }; decision = result.decision; observed = result
                 } else {
                     guard let profile else { issue = "请先选择配置。"; return }
-                    let preview = try RouteExplanation.decide(ip: target, mode: profile.mode, country: country, custom: CustomRuleSet(profile.customRules))
+                    let preview = try RouteExplanation.decide(ip: target, mode: profile.mode, country: country, custom: CustomRuleSet(profile.customRules), country6: model.ipv6Preview)
                     guard generation == token else { return }; decision = preview
                 }
             } catch { if generation == token { issue = "未取得可核验结果：" + error.localizedDescription } }
@@ -152,7 +153,7 @@ struct OneClickTroubleshootingView: View {
             Text("检查活动配置，未连接时检查当前选择。点击开始后会读取本机与助手状态，并向下面的目标发起 TCP 和系统 DNS 查询；不上传配置、凭据或原始日志，不修改网络设置。")
                 .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
-                TextField("目标 IPv4", text: $target).textFieldStyle(.plain).referenceInput()
+                TextField("目标 IPv4／IPv6", text: $target).textFieldStyle(.plain).referenceInput()
                 TextField("TCP 端口", text: $port).textFieldStyle(.plain).referenceInput().frame(width: 95)
                 TextField("查询域名", text: $hostname).textFieldStyle(.plain).referenceInput()
             }.disabled(report.running)
@@ -164,7 +165,7 @@ struct OneClickTroubleshootingView: View {
                     if report.running { report.cancel() }
                     else if let value = UInt16(port) { report.start(model: model, target: target, port: value, hostname: hostname) }
                 }.buttonStyle(ReferencePrimaryButton())
-                    .disabled(!report.running && (IPv4CIDR.parseAddress(target) == nil || UInt16(port).map { $0 > 0 } != true || !DiagnosticTargetPolicy.validHostname(hostname)))
+                    .disabled(!report.running && (IPAddress.canonical(target) == nil || UInt16(port).map { $0 > 0 } != true || !DiagnosticTargetPolicy.validHostname(hostname)))
             }
             if report.stale { Text("会话或策略在检查期间改变；已显示结果是过程采样，请重新检查。").font(.system(size: 12)).foregroundStyle(.orange) }
             ScrollView {

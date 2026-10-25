@@ -1,6 +1,6 @@
 import Foundation
 
-/// Strict IPv4 policy: only the owned tunnel, numeric VPN endpoint, DHCP and
+/// Strict dual-stack policy: only the owned tunnel, numeric VPN endpoint, DHCP and
 /// explicit direct networks may leave the host. All other IPv4/IPv6 is blocked.
 public struct LeakGuardPolicy: Sendable {
     public static let anchor = "com.apple/000.vpn-navigator"
@@ -9,27 +9,53 @@ public struct LeakGuardPolicy: Sendable {
     public let port: UInt16
     public let transport: FirewallRulePreview.Transport
     public let direct: [IPv4CIDR]
+    public let direct6: [IPv6CIDR]
+    public let physical4: String?
+    public let physical6: String?
+    public let ipv4Tunnel: Bool
+    public let ipv6Tunnel: Bool
     public init(physical: String, endpoint: String, port: UInt16,
-                transport: FirewallRulePreview.Transport, local: [IPv4CIDR], country: [IPv4CIDR], managedDirect: [IPv4CIDR] = []) throws {
-        guard Self.validPhysical(physical), IPv4CIDR.parseAddress(endpoint) != nil, port > 0,
-              !local.isEmpty, local.allSatisfy({ $0.prefix >= 8 }), country.allSatisfy({ $0.prefix >= 8 }) else { throw LeakGuardError.invalid }
+                transport: FirewallRulePreview.Transport, local: [IPv4CIDR], country: [IPv4CIDR], managedDirect: [IPv4CIDR] = [],
+                physical4: String? = nil, physical6: String? = nil, local6: [IPv6CIDR] = [], managedDirect6: [IPv6CIDR] = [],
+                ipv4Tunnel: Bool = true, ipv6Tunnel: Bool = false) throws {
+        guard Self.validPhysical(physical), IPAddress.canonical(endpoint) != nil, port > 0,
+              (IPAddress.isIPv6(endpoint) || !local.isEmpty), local.allSatisfy({ $0.prefix >= 8 }), country.allSatisfy({ $0.prefix >= 8 }),
+              physical4.map(Self.validPhysical) ?? true, physical6.map(Self.validPhysical) ?? true else { throw LeakGuardError.invalid }
         if !country.isEmpty { _ = try RuleSet(text: country.map(\.description).joined(separator: "\n")) }
         guard managedDirect.count <= 30_000 else { throw LeakGuardError.invalid }
         for prefix in managedDirect { _ = try CustomRuleSet.prefix(prefix.description) }
         self.physical = physical; self.endpoint = endpoint; self.port = port; self.transport = transport
+        self.physical4 = physical4 ?? (IPAddress.isIPv6(endpoint) ? nil : physical)
+        self.physical6 = physical6 ?? (IPAddress.isIPv6(endpoint) ? physical : nil)
+        self.ipv4Tunnel = ipv4Tunnel; self.ipv6Tunnel = ipv6Tunnel
+        guard managedDirect6.count <= 30_000 else { throw LeakGuardError.invalid }
+        for prefix in managedDirect6 { _ = try CustomRuleSet.prefix6(prefix.description) }
+        guard local6.allSatisfy({ $0.prefix >= 3 && !$0.address.hasPrefix("ff") && $0.address != "::" }) else { throw LeakGuardError.invalid }
+        direct6 = Array(Set(local6 + managedDirect6)).sorted()
         direct = Array(Set(local + country + managedDirect)).sorted()
     }
     public func rules(tunnel: String?) throws -> String {
         if let tunnel, !DNSRecoveryPolicy.validTunnel(tunnel) { throw LeakGuardError.invalid }
-        let tunnelRule = tunnel.map { "pass out quick on \($0) inet from any to any keep state (if-bound)\n" } ?? ""
+        let tunnelRule = tunnel.map { value in
+            (ipv4Tunnel ? "pass out quick on \(value) inet from any to any keep state (if-bound)\n" : "") +
+            (ipv6Tunnel ? "pass out quick on \(value) inet6 from any to any keep state (if-bound)\n" : "")
+        } ?? ""
+        let endpointFamily = IPAddress.isIPv6(endpoint) ? "inet6" : "inet"
+        let direct4Rule = physical4.map { "pass out quick on \($0) inet from any to <vpnnav_direct4> keep state (if-bound)\n" } ?? ""
+        let direct6Rule = physical6.map { "pass out quick on \($0) inet6 from any to <vpnnav_direct6> keep state (if-bound)\n" } ?? ""
+        let discovery = physical6.map { value in """
+        pass out quick on \(value) inet6 proto icmp6 from any to { fe80::/10, ff02::/16 } icmp6-type { routersol, neighbrsol, neighbradv } no state
+        pass out quick on \(value) inet6 proto udp from fe80::/10 port 546 to ff02::1:2 port 547 keep state (if-bound)
+
+        """ } ?? ""
         return """
         # VPN Navigator owned anchor. Never load this as the host main ruleset.
         table <vpnnav_direct4> const { \(direct.map(\.description).joined(separator: ", ")) }
+        table <vpnnav_direct6> const { \(direct6.map(\.description).joined(separator: ", ")) }
         pass out quick on lo0 all no state
-        \(tunnelRule)pass out quick on \(physical) inet proto \(transport.rawValue) from any to \(endpoint) port \(port) keep state (if-bound)
+        \(tunnelRule)pass out quick on \(physical) \(endpointFamily) proto \(transport.rawValue) from any to \(endpoint) port \(port) keep state (if-bound)
         pass out quick on \(physical) inet proto udp from any port 68 to 255.255.255.255 port 67 keep state (if-bound)
-        pass out quick on \(physical) inet from any to <vpnnav_direct4> keep state (if-bound)
-        block drop out quick inet from any to any
+        \(direct4Rule)\(direct6Rule)\(discovery)block drop out quick inet from any to any
         block drop out quick inet6 from any to any
         """
     }
@@ -66,6 +92,7 @@ public struct GuardEndpoint: Sendable {
     public let host: String
     public let port: UInt16
     public let transport: FirewallRulePreview.Transport
+    public let preferredFamily: Int?
     public static func parse(_ profile: String) throws -> Self {
         var inline: String?, remotes: [[String]] = [], proto = "udp"
         for line in profile.components(separatedBy: .newlines) {
@@ -77,17 +104,17 @@ public struct GuardEndpoint: Sendable {
             if tokens.first == "remote" { remotes.append(tokens) }
         }
         guard let remote = remotes.first, (2...4).contains(remote.count),
-              DiagnosticTargetPolicy.validHostname(remote[1]),
+              (DiagnosticTargetPolicy.validHostname(remote[1]) || IPAddress.canonical(remote[1]) != nil),
               let port = remote.count >= 3 ? UInt16(remote[2]) : 1194, port > 0 else { throw LeakGuardError.invalid }
         if remote.count == 4 { proto = remote[3] }
         let transport: FirewallRulePreview.Transport
-        if ["udp", "udp4"].contains(proto) { transport = .udp }
-        else if ["tcp", "tcp4", "tcp-client", "tcp4-client"].contains(proto) { transport = .tcp }
+        if ["udp", "udp4", "udp6"].contains(proto) { transport = .udp }
+        else if ["tcp", "tcp4", "tcp6", "tcp-client", "tcp4-client", "tcp6-client"].contains(proto) { transport = .tcp }
         else { throw LeakGuardError.invalid }
-        return .init(host: remote[1], port: port, transport: transport)
+        return .init(host: remote[1], port: port, transport: transport, preferredFamily: proto.contains("6") ? 6 : proto.contains("4") ? 4 : nil)
     }
     public func pinnedProfile(_ source: String, address: String) throws -> String {
-        guard IPv4CIDR.parseAddress(address) != nil else { throw LeakGuardError.invalid }
+        guard IPAddress.canonical(address) != nil else { throw LeakGuardError.invalid }
         var result: [String] = [], inline: String?
         for line in source.components(separatedBy: .newlines) {
             let text = line.trimmingCharacters(in: .whitespaces)
@@ -97,7 +124,8 @@ public struct GuardEndpoint: Sendable {
             if ["remote", "proto", "remote-random", "remote-random-hostname"].contains(name) { continue }
             result.append(line)
         }
-        result += ["remote \(address) \(port)", "proto \(transport == .udp ? "udp4" : "tcp4-client")"]
+        let proto = transport == .udp ? (IPAddress.isIPv6(address) ? "udp6" : "udp4") : (IPAddress.isIPv6(address) ? "tcp6-client" : "tcp4-client")
+        result += ["remote \(address) \(port)", "proto \(proto)"]
         return result.joined(separator: "\n")
     }
 }

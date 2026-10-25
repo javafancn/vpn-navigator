@@ -35,12 +35,16 @@ enum RoutingToolsSelfTest {
         guard stale != nil, model.selected?.customRules == profile.customRules else { throw Failure.check }
         await model.setMode(.fullVPN)
         guard model.selected?.customRules == profile.customRules else { throw Failure.check }
+        let previousRequirement = model.requireDualStack
+        model.requireDualStack = true
+        guard model.sessionPreferences.requireDualStack == true else { throw Failure.check }
+        model.requireDualStack = previousRequirement
         let state = State()
         state.report = SessionReport(state: .connected, message: "fixture", activeProfileID: profile.id, receivedBytes: nil, sentBytes: nil,
-            attemptID: UUID(), routingMode: .fullVPN, routingRevision: UUID(), customRuleDigest: try CustomRuleSet(profile.customRules).digest, customRuleCount: 2)
+            attemptID: UUID(), routingMode: .fullVPN, routingRevision: UUID(), customRuleDigest: try CustomRuleSet(profile.customRules).digest, customRuleCount: 2, ipStack: .dual)
         model.applyVerifiedSessionReport(state.report!)
         guard !model.canEditCustomRules(profile.id), await model.saveCustomRules(for: profile.id, original: profile.customRules, draft: []) != nil,
-              model.activeCustomRuleCount == 2 else { throw Failure.check }
+              model.activeCustomRuleCount == 2, model.activeIPStack == .dual else { throw Failure.check }
         let server = try LoopbackProbeServer(); let port = try await server.listen(); defer { server.close() }
         let service = RoutingInspectionService(snapshot: { state.report }, lookup: { try state.lookup($0) },
             local: { _ in .init(gateway: "127.0.0.1", interface: "lo0", health: NetworkHealthSummary(ipv6Table: "", defaultIPv4Route: "interface: lo0", dnsSummary: "resolver #1\nnameserver[0]: 127.0.0.1")) },
@@ -56,6 +60,11 @@ enum RoutingToolsSelfTest {
         try await finished(checker)
         guard checker.checks.contains(where: { $0.id == "dns" && $0.severity == .pass }),
               checker.checks.contains(where: { $0.id == "tcp" && $0.severity == .pass }),
+              checker.checks.contains(where: { $0.id == "route" && $0.severity == .info }) else { throw Failure.check }
+        let server6 = try LoopbackProbeServer(address: "::1"); let port6 = try await server6.listen(); defer { server6.close() }
+        checker.start(model: model, target: "::1", port: port6, hostname: "localhost")
+        try await finished(checker)
+        guard checker.checks.contains(where: { $0.id == "tcp" && $0.severity == .pass }),
               checker.checks.contains(where: { $0.id == "route" && $0.severity == .info }) else { throw Failure.check }
         // Cancellation and the overall deadline cannot publish a late DNS result.
         state.slowDNS = true; state.dnsEntered = false
@@ -74,7 +83,7 @@ enum RoutingToolsSelfTest {
         checker.start(model: model, target: "127.0.0.1", port: port, hostname: "localhost")
         try await finished(checker)
         guard checker.stale, checker.checks.contains(where: { $0.id == "route" && $0.severity == .warning }) else { throw Failure.check }
-        print("PASS: per-profile custom persistence and stale-save refusal, active edit lock, applied receipt, fenced read-only route lookup, one-click real loopback TCP/system DNS, cancellation, restart, deadline and stale session; no VPN or system-network mutations.")
+        print("PASS: per-profile custom persistence and stale-save refusal, active edit lock, applied receipt, fenced read-only route lookup, one-click real IPv4/IPv6 loopback TCP/system DNS, cancellation, restart, deadline and stale session; no VPN or system-network mutations.")
     }
     private static func finished(_ model: TroubleshootingModel) async throws {
         for _ in 0..<600 { if !model.running { return }; try await Task.sleep(nanoseconds: 10_000_000) }

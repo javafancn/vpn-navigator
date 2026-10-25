@@ -74,6 +74,11 @@ public enum ProfileCompiler {
         }
         let direct = try custom.directPrefixes(country: mode == .chinaDirect ? rules : nil, local: [], endpoint: nil)
         lines.append(contentsOf: direct.map { "route \(IPv4CIDR.parseAddressString($0.network)) \($0.netmask) net_gateway" })
+        let rules6 = custom.active.filter { $0.cidr.contains(":") }
+        if !rules6.isEmpty {
+            lines.append("# IPv6 policy is installed by VPN Navigator after tunnel and physical gateway verification.")
+            lines.append(contentsOf: rules6.map { "# IPv6 custom \($0.action.rawValue): \($0.cidr)" })
+        }
         return lines.joined(separator: "\n") + "\n"
     }
 }

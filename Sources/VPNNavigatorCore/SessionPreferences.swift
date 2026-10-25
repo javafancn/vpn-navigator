@@ -4,11 +4,13 @@ import Foundation
 /// authorize a managed reconnect without a validated traffic guard.
 public struct SessionPreferences: Codable, Equatable, Sendable {
     public var customRules: [CustomRouteRule]?
+    public var requireDualStack: Bool?
     public var connectionTimeout: Int
     public var reconnectManaged: Bool
     public var killSwitch: Bool
     public var reconnectOriginal: Bool
-    public init(connectionTimeout: Int = 60, reconnectOriginal: Bool = true, killSwitch: Bool = false, reconnectManaged: Bool = false, customRules: [CustomRouteRule] = []) {
+    public init(connectionTimeout: Int = 60, reconnectOriginal: Bool = true, killSwitch: Bool = false, reconnectManaged: Bool = false, customRules: [CustomRouteRule] = [], requireDualStack: Bool = false) {
+        self.requireDualStack = requireDualStack ? true : nil
         self.customRules = customRules.isEmpty ? nil : customRules
         self.connectionTimeout = min(180, max(20, connectionTimeout))
         self.reconnectOriginal = reconnectOriginal

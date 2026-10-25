@@ -19,7 +19,7 @@ public enum CustomRouteError: Error, LocalizedError {
     case invalidPrefix, overlap, tooMany, protectedNetwork, complexity
     public var errorDescription: String? {
         switch self {
-        case .invalidPrefix: return "请输入 IPv4 地址或 /8–/32 网段，不能使用回环、链路本地、共享地址、组播或保留地址。"
+        case .invalidPrefix: return "请输入有效的 IP 网段：IPv4 /8–/32，IPv6 全球单播 /16–/128 或 ULA /7–/128；不能使用回环、链路本地、组播或保留地址。"
         case .overlap: return "启用的自定义规则不能重叠；请缩小网段、停用或删除冲突项。"
         case .tooMany: return "每个配置最多保存 128 条规则，规则 ID 必须唯一。"
         case .protectedNetwork: return "自定义规则覆盖了当前局域网或 VPN 服务器，请缩小网段后重新连接。"
@@ -42,8 +42,16 @@ public struct CustomRuleSet: Sendable {
     }
     public init(_ input: [CustomRouteRule]) throws {
         guard input.count <= 128, Set(input.map(\.id)).count == input.count else { throw CustomRouteError.tooMany }
-        var values: [CustomRouteRule] = [], prefixes: [IPv4CIDR] = []
+        var values: [CustomRouteRule] = [], prefixes: [IPv4CIDR] = [], prefixes6: [IPv6CIDR] = []
         for var rule in input {
+            if rule.cidr.contains(":") {
+                let prefix = try Self.prefix6(rule.cidr); rule.cidr = prefix.description
+                if rule.enabled {
+                    guard !prefixes6.contains(where: { $0.overlaps(prefix) }) else { throw CustomRouteError.overlap }
+                    prefixes6.append(prefix)
+                }
+                values.append(rule); continue
+            }
             let prefix = try Self.prefix(rule.cidr); rule.cidr = prefix.description
             if rule.enabled {
                 guard !prefixes.contains(where: { $0.overlaps(prefix) }) else { throw CustomRouteError.overlap }
@@ -59,6 +67,7 @@ public struct CustomRuleSet: Sendable {
     }
     public func validateEnvironment(endpoint: String?, local: [IPv4CIDR]) throws {
         for rule in active {
+            if rule.cidr.contains(":") { continue }
             let prefix = try Self.prefix(rule.cidr)
             if local.contains(where: { $0.overlaps(prefix) }) || endpoint.flatMap(IPv4CIDR.parseAddress).map({ prefix.contains($0) }) == true {
                 throw CustomRouteError.protectedNetwork
@@ -76,8 +85,8 @@ public struct CustomRuleSet: Sendable {
         func interval(_ prefix: IPv4CIDR) -> Interval {
             (UInt64(prefix.network), UInt64(prefix.network) + (UInt64(1) << (32 - prefix.prefix)) - 1)
         }
-        let additions = try active.filter { $0.action == .direct }.map { try Self.prefix($0.cidr) }
-        let cuts = try active.filter { $0.action == .vpn }.map { interval(try Self.prefix($0.cidr)) }.sorted { $0.lo < $1.lo }
+        let additions = try active.filter { $0.action == .direct && !$0.cidr.contains(":") }.map { try Self.prefix($0.cidr) }
+        let cuts = try active.filter { $0.action == .vpn && !$0.cidr.contains(":") }.map { interval(try Self.prefix($0.cidr)) }.sorted { $0.lo < $1.lo }
         var source: [Interval] = []
         for prefix in base + additions { source.append(interval(prefix)) }
         source.sort { left, right in
@@ -112,5 +121,41 @@ public struct CustomRuleSet: Sendable {
             if cursor <= range.hi { try append(cursor, range.hi) }
         }
         return output.sorted()
+    }
+}
+
+extension CustomRuleSet {
+    public static func prefix6(_ text: String) throws -> IPv6CIDR {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard clean.utf8.count <= 64, let prefix = try? IPv6CIDR(clean.contains("/") ? clean : clean + "/128") else { throw CustomRouteError.invalidPrefix }
+        let ula = try IPv6CIDR("fc00::/7")
+        if prefix.prefix >= 7 && ula.overlaps(prefix) { return prefix }
+        _ = try IPv6RuleSet(text: prefix.description)
+        guard prefix.prefix >= 16 else { throw CustomRouteError.invalidPrefix }
+        return prefix
+    }
+    public func directPrefixes6(country: IPv6RuleSet?, local: [IPv6CIDR], endpoint: String?) throws -> [IPv6CIDR] {
+        let active6 = active.filter { $0.cidr.contains(":") }
+        for rule in active6 {
+            let value = try Self.prefix6(rule.cidr)
+            if local.contains(where: { $0.overlaps(value) }) || endpoint.map(value.contains) == true { throw CustomRouteError.protectedNetwork }
+        }
+        let host = endpoint.flatMap { try? IPv6CIDR($0 + "/128") }
+        let base = (country?.routes ?? []).filter { value in !local.contains(where: { $0.overlaps(value) }) && value != host }
+        let additions = try active6.filter { $0.action == .direct }.map { try Self.prefix6($0.cidr) }
+        let cuts = try active6.filter { $0.action == .vpn }.map { try Self.prefix6($0.cidr) }
+        var source: [IPv6CIDR] = []
+        for value in Set(base + additions).sorted(by: { $0.prefix == $1.prefix ? $0 < $1 : $0.prefix < $1.prefix }) {
+            if !source.contains(where: { $0.prefix <= value.prefix && $0.overlaps(value) }) { source.append(value) }
+        }
+        var result: [IPv6CIDR] = []
+        func subtract(_ value: IPv6CIDR, _ overlapping: [IPv6CIDR]) throws {
+            if overlapping.contains(where: { $0.prefix <= value.prefix && $0.overlaps(value) }) { return }
+            let remaining = overlapping.filter { $0.overlaps(value) }
+            if remaining.isEmpty { result.append(value); guard result.count <= 30_000 else { throw CustomRouteError.complexity }; return }
+            for child in try value.children() { try subtract(child, remaining) }
+        }
+        for value in source { try subtract(value, cuts) }
+        return result.sorted()
     }
 }

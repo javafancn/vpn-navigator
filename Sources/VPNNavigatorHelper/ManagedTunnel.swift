@@ -55,10 +55,13 @@ final class ManagedTunnel {
     var customRuleDigest: String? { activeProfileID == nil ? nil : custom.digest }
     var customRuleCount: Int? { activeProfileID == nil ? nil : custom.active.count }
     private var rules: RuleSet?
-    private var activePlan: RoutePlan?
+    private var activePlan: DualStackRoutePlan?
+    private var rules6: IPv6RuleSet?
+    private(set) var ipStack: TunnelIPStack?
     private var protectedLocalNetworks: [IPv4CIDR] = []
     private var protectedPhysicalInterface: String?
     private var protectedVPNInterface: String?
+    private(set) var failureCode: DiagnosticCode?
     private var lastError: String?
     private var orphanRecordFile: URL { workdir.appendingPathComponent("openvpn-child.json") }
     private var hasPersistentSessionEvidence: Bool {
@@ -132,12 +135,14 @@ final class ManagedTunnel {
         attemptExpiresAt = expiresAt
         var validated = try ProfileSafety.validate(text)
         try ManagedRoutingPolicy.validate(validated, mode: mode)
-        // IPv4-only routing cannot protect IPv6. Refuse a non-original split or
-        // full-VPN mode while native IPv6 has a non-tunnel path (fail closed).
-        if mode != .original && !preferences.killSwitch { try checkIPv6Bypass() }
-        if mode != .chinaDirect { rules = nil }
+        // Negotiate tunnel families before evaluating unsupported-family fallback.
+        // Address-family fallback is checked after the server has assigned its tunnel addresses.
+        if mode != .chinaDirect { rules = nil; rules6 = nil }
         if mode == .chinaDirect {
-            rules = try RuleSet(text: ruleText)
+            let bundle = try RoutingRuleBundle.decoded(ruleText)
+            rules = try RuleSet(text: bundle.ipv4)
+            rules6 = try bundle.ipv6.map { try IPv6RuleSet(text: $0) }
+            if let rules6, rules6.routes.count < 100 { throw DualStackError.missingRules }
             guard let rules, rules.routes.count >= 100 else { throw TunnelError.missingRules }
         }
         guard ManagementCredentialPolicy.allows(
@@ -163,19 +168,21 @@ final class ManagedTunnel {
         if mode != .original && preferences.killSwitch {
             let endpoint = try GuardEndpoint.parse(validated.text)
             let numeric: String
-            if let raw = IPv4CIDR.parseAddress(endpoint.host) { numeric = IPv4CIDR.parseAddressString(raw) }
+            if let literal = IPAddress.canonical(endpoint.host) { numeric = literal }
             else {
                 let answer = try RouteExecutor.command("/usr/bin/dscacheutil", ["-q", "host", "-a", "name", endpoint.host])
-                guard let resolved = Self.parseValue("ip_address:", in: answer), IPv4CIDR.parseAddress(resolved) != nil else { throw LeakGuardError.invalid }
-                numeric = resolved
+                let v4 = Self.parseValue("ip_address:", in: answer).flatMap(IPAddress.canonical)
+                let v6 = Self.parseValue("ipv6_address:", in: answer).flatMap(IPAddress.canonical)
+                guard let value = endpoint.preferredFamily == 6 ? v6 : endpoint.preferredFamily == 4 ? v4 : (v4 ?? v6) else { throw LeakGuardError.invalid }
+                numeric = value
             }
-            let path = try RouteExecutor.command("/sbin/route", ["-n", "get", numeric])
-            guard let physical = Self.parseValue("interface:", in: path), LeakGuardPolicy.validPhysical(physical) else { throw TunnelError.noPhysicalGateway }
-            let table = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
-            let local = LocalIPv4Networks.parse(netstat: table, physicalInterface: physical)
-            let policy = try LeakGuardPolicy(physical: physical, endpoint: numeric, port: endpoint.port,
-                transport: endpoint.transport, local: local, country: [],
-                managedDirect: try custom.directPrefixes(country: mode == .chinaDirect ? rules : nil, local: local, endpoint: numeric))
+            let paths = try physicalPaths(endpoint: numeric)
+            guard let physical = IPAddress.isIPv6(numeric) ? paths.1 : paths.0 else { throw TunnelError.noPhysicalGateway }
+            let local = try localNetworks(paths: paths)
+            let policy = try LeakGuardPolicy(physical: physical.interface, endpoint: numeric, port: endpoint.port,
+                transport: endpoint.transport, local: local.0, country: [],
+                managedDirect: try custom.directPrefixes(country: mode == .chinaDirect ? rules : nil, local: local.0, endpoint: numeric),
+                physical4: paths.0?.interface, physical6: paths.1?.interface, local6: local.1)
             validated = try ProfileSafety.validate(endpoint.pinnedProfile(validated.text, address: numeric))
             try ensureAttempt()
             if reusingGuard { try packetGuard.replaceRules(policy.rules(tunnel: nil), resetExistingStates: true) }
@@ -240,6 +247,7 @@ final class ManagedTunnel {
         activeProfileID = profileID
         traffic = nil
         lastError = nil
+        failureCode = nil
         process = task
         state = .connecting
         message = "OpenVPN is starting"
@@ -269,6 +277,7 @@ final class ManagedTunnel {
                     guard let self, let socket, self.management === socket else { return }
                     self.stop()
                     self.eventStore.append(.authentication)
+                    self.failureCode = .authentication
                     self.lastError = DiagnosticCode.authentication.summary
                     self.state = .failed
                     self.message = self.lastError ?? "Authentication failed"
@@ -278,6 +287,7 @@ final class ManagedTunnel {
                 self?.queue.async { [weak self] in
                     guard let self, let socket, self.management === socket else { return }
                     self.stop()
+                    self.failureCode = .authentication
                     self.lastError = "OpenVPN requested an unsupported authentication method."
                     self.state = .failed
                     self.message = self.lastError ?? "Authentication failed"
@@ -346,7 +356,7 @@ final class ManagedTunnel {
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.state == .reconnecting, self.reconnectContext != nil else { return }
             self.retryWork = nil
-            let ruleText = (self.rules?.routes ?? []).map(\.description).joined(separator: "\n")
+            let ruleText = RoutingRuleBundle(ipv4: (self.rules?.routes ?? []).map(\.description).joined(separator: "\n"), ipv6: self.rules6.map { $0.routes.map(\.description).joined(separator: "\n") }).json
             do {
                 try self.start(profile: context.profile, profileID: context.profileID,
                     mode: context.mode, ruleText: ruleText, username: context.username,
@@ -387,6 +397,7 @@ final class ManagedTunnel {
         timer.setEventHandler { [weak self] in
             guard let self, self.state != .connected else { return }
             self.eventStore.append(.timeout)
+            self.failureCode = .timeout
             self.stop()
             self.lastError = DiagnosticCode.timeout.summary
             self.state = .failed
@@ -403,7 +414,7 @@ final class ManagedTunnel {
         while let end = outputBuffer.firstIndex(of: 10) {
             let line = String(decoding: outputBuffer[..<end], as: UTF8.self)
             outputBuffer.removeSubrange(...end)
-            if let code = OpenVPNLogClassifier.classify(line) { eventStore.append(code) }
+            if let code = OpenVPNLogClassifier.classify(line) { eventStore.append(code); failureCode = code }
         }
     }
 
@@ -447,11 +458,11 @@ final class ManagedTunnel {
         message = snapshot.message
         if snapshot.state == .connected {
             do {
-                guard let localIP = snapshot.localTunnelIPv4,
+                guard let localIP = snapshot.localTunnelIPv4 ?? snapshot.localTunnelIPv6,
                       let tunnel = Self.findTunnel(containing: localIP,
                         in: try RouteExecutor.command("/sbin/ifconfig", ["-a"])) else { throw DNSJournalError.unavailable }
                 try dnsRecovery.confirm(tunnel: tunnel)
-                if let guardPolicy { try packetGuard.replaceRules(guardPolicy.rules(tunnel: tunnel)) }
+
             } catch {
                 stop(); lastError = error.localizedDescription
                 state = .failed; message = error.localizedDescription
@@ -459,7 +470,7 @@ final class ManagedTunnel {
             }
             attemptTimer?.cancel(); attemptTimer = nil
             if activeMode == .original {
-                do { try ensureAttempt(); completeAttempt(); eventStore.append(.connected) }
+                do { try ensureAttempt(); completeAttempt(); failureCode = nil; ipStack = snapshot.localTunnelIPv4 != nil ? (snapshot.localTunnelIPv6 != nil ? .dual : .ipv4) : .ipv6; eventStore.append(.connected) }
                 catch { stop(); lastError = error.localizedDescription; state = .failed; message = error.localizedDescription }
             }
         } else if snapshot.state == .reconnecting {
@@ -468,54 +479,63 @@ final class ManagedTunnel {
         }
         guard snapshot.state == .connected, activeMode != .original, routing == nil else { return }
         state = .connecting
-        message = "正在应用并核验 IPv4 路由"
-        guard let remote = snapshot.remoteIPv4, let tunnelIP = snapshot.localTunnelIPv4,
-              activeMode != .chinaDirect || rules != nil else {
-            let failure = "OpenVPN did not report a usable IPv4 endpoint or tunnel address."
-            stop(); lastError = failure; state = .failed; message = failure
-            return
-        }
+        message = "正在应用并核验 IPv4／IPv6 路由"
         do {
-            // Physical gateway is determined BEFORE a split default route is installed.
-            let routeInfo = try RouteExecutor.command("/sbin/route", ["-n", "get", remote])
-            guard let gateway = Self.parseValue("gateway:", in: routeInfo),
-                  let physicalInterface = Self.parseValue("interface:", in: routeInfo),
-                  physicalInterface.hasPrefix("en") else { throw TunnelError.noPhysicalGateway }
-            let interfaces = try RouteExecutor.command("/sbin/ifconfig", ["-a"])
-            guard let utun = Self.findTunnel(containing: tunnelIP, in: interfaces) else {
-                throw TunnelError.noTunnelInterface
+            guard let remote = snapshot.remoteIPv4 ?? snapshot.remoteIPv6,
+                  let localIP = snapshot.localTunnelIPv4 ?? snapshot.localTunnelIPv6,
+                  let utun = Self.findTunnel(containing: localIP, in: try RouteExecutor.command("/sbin/ifconfig", ["-a"])) else { throw DualStackError.missingTunnel }
+            let has4 = snapshot.localTunnelIPv4 != nil, has6 = snapshot.localTunnelIPv6 != nil
+            if preferences.requireDualStack == true && (!has4 || !has6) { throw DualStackError.requireDualStack }
+            if !preferences.killSwitch {
+                if !has6 { try checkIPv6Bypass() }
+                if !has4 { throw DualStackError.unsafeFallback }
             }
-            let physicalRoutes = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
-            let localPrefixes = LocalIPv4Networks.parse(netstat: physicalRoutes,
-                                                       physicalInterface: physicalInterface)
-            guard !localPrefixes.isEmpty else { throw TunnelError.noPhysicalGateway }
-            let plan = try RoutePlanner.build(serverIPv4: remote, physicalGateway: gateway,
-                                              vpnInterface: utun, localPrefixes: localPrefixes,
-                                              china: activeMode == .chinaDirect ? rules : nil, custom: custom)
+            let paths = try physicalPaths(endpoint: remote), local = try localNetworks(paths: paths)
+            let plan = try DualStackRoutePlan.build(endpoint: remote, tunnel: utun, has4: has4, has6: has6,
+                path4: paths.0, path6: paths.1, local4: local.0, local6: local.1,
+                mode: activeMode, country4: rules, country6: rules6, custom: custom)
             let executor = RouteExecutor(journal: workdir.appendingPathComponent("routes.journal"), shouldCancel: { [weak self] in self?.cancellationRequested == true || self?.attemptExpired == true })
-            // Own the executor *before* mutating routes. If installation or
-            // verification fails, stop() must still find the rollback journal.
             routing = executor
-            try executor.apply(plan.installOrder)
-            protectedLocalNetworks = localPrefixes
-            try verifyManagedRoutes(plan: plan, mode: activeMode, country: rules, allCustom: true)
-            activePlan = plan
-            protectedLocalNetworks = localPrefixes
-            protectedPhysicalInterface = physicalInterface
+            try executor.apply(plan.ipv4); try executor.applyIPv6(plan.ipv6)
+            try verifyManagedRoutes(plan: plan, allCustom: true)
+            if let policy = try policy(for: plan) {
+                try packetGuard.replaceRules(policy.rules(tunnel: utun)); guardPolicy = policy
+                try packetGuard.verify()
+            }
+            activePlan = plan; protectedLocalNetworks = local.0
+            protectedPhysicalInterface = (IPAddress.isIPv6(remote) ? paths.1 : paths.0)?.interface
             protectedVPNInterface = utun
-            try ensureAttempt(); completeAttempt()
-            routingRevision = UUID()
-            state = .connected
-            message = "已连接 · " + activeMode.title
-            eventStore.append(.connected)
-            startNetworkWatchdog()
+            try ensureAttempt(); completeAttempt(); routingRevision = UUID(); ipStack = plan.stack
+            state = .connected; message = "已连接 · " + activeMode.title + " · " + plan.stack.title
+            failureCode = nil; eventStore.append(.connected); startNetworkWatchdog()
         } catch {
             let failure = "Routing failed; VPN stopped for safety: \(error.localizedDescription)"
-            stop()
-            lastError = failure
-            state = .failed
-            message = failure
+            stop(); lastError = failure; state = .failed; message = failure
         }
+    }
+    private func physicalPaths(endpoint: String) throws -> (PhysicalIPPath?, PhysicalIPPath?) {
+        func path(_ target: String, ipv6: Bool) throws -> PhysicalIPPath {
+            let raw = try RouteExecutor.command("/sbin/route", ["-n", "get"] + (ipv6 ? ["-inet6"] : []) + [target])
+            guard let gateway = Self.parseValue("gateway:", in: raw), let iface = Self.parseValue("interface:", in: raw) else { throw TunnelError.noPhysicalGateway }
+            return try PhysicalIPPath(gateway: gateway, interface: iface)
+        }
+        if IPAddress.isIPv6(endpoint) { return (try? path("default", ipv6: false), try path(endpoint, ipv6: true)) }
+        return (try path(endpoint, ipv6: false), try? path("default", ipv6: true))
+    }
+    private func localNetworks(paths: (PhysicalIPPath?, PhysicalIPPath?)) throws -> ([IPv4CIDR], [IPv6CIDR]) {
+        let v4 = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
+        let v6 = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet6"])
+        let local4 = paths.0.map { LocalIPv4Networks.parse(netstat: v4, physicalInterface: $0.interface) } ?? []
+        let local6 = paths.1.map { LocalIPv6Networks.parse(netstat: v6, physicalInterface: $0.interface) } ?? []
+        if paths.0 != nil && local4.isEmpty { throw TunnelError.noPhysicalGateway }
+        return (local4, local6)
+    }
+    private func policy(for plan: DualStackRoutePlan) throws -> LeakGuardPolicy? {
+        guard let old = guardPolicy else { return nil }
+        return try LeakGuardPolicy(physical: old.physical, endpoint: plan.endpoint, port: old.port, transport: old.transport,
+            local: plan.local4, country: [], managedDirect: plan.direct4.map(\.prefix),
+            physical4: plan.path4?.interface, physical6: plan.path6?.interface, local6: plan.local6,
+            managedDirect6: plan.direct6.map(\.prefix), ipv4Tunnel: !plan.defaults4.isEmpty, ipv6Tunnel: !plan.defaults6.isEmpty)
     }
     private static func parseValue(_ key: String, in text: String) -> String? {
         text.components(separatedBy: .newlines).first(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix(key) })?
@@ -528,72 +548,91 @@ final class ManagedTunnel {
                 let head = line.components(separatedBy: ":").first ?? ""
                 current = head.hasPrefix("utun") ? head : nil
             }
-            if let current, line.contains("inet \(ip) ") { return current }
+            if let current {
+                let tokens = line.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+                if tokens.count >= 2, ["inet", "inet6"].contains(tokens[0]),
+                   IPAddress.canonical(String(tokens[1].split(separator: "%")[0])) == IPAddress.canonical(ip) { return current }
+            }
         }
         return nil
     }
-    private func verifyManagedRoutes(plan: RoutePlan, mode: RoutingMode, country: RuleSet?, allCustom: Bool = false) throws {
-        for route in [plan.endpoint] + plan.vpnDefaults {
+    private func verifyManagedRoutes(plan: DualStackRoutePlan, allCustom: Bool = false) throws {
+        for route in (plan.endpoint4.map { [$0] } ?? []) + plan.defaults4 {
             try ensureAttempt()
             let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", "-net", route.prefix.description])
             guard ObservedIPv4Route(commandOutput: raw).isExactly(route) else { throw TunnelError.routeVerificationFailed }
         }
-        guard let first = plan.vpnDefaults.first, case .interface(let tunnel) = first.destination,
-              case .viaGateway(let gateway) = plan.endpoint.destination else { throw TunnelError.noTunnelInterface }
-        if mode == .chinaDirect && country == nil { throw TunnelError.missingRules }
-        if let direct = plan.direct.first {
-            let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", IPv4CIDR.parseAddressString(direct.prefix.network)])
-            guard Self.parseValue("gateway:", in: raw) == gateway,
-                  Self.parseValue("interface:", in: raw)?.hasPrefix("en") == true else { throw TunnelError.routeVerificationFailed }
+        for route in (plan.endpoint6.map { [$0] } ?? []) + plan.defaults6 {
+            try ensureAttempt()
+            let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", "-inet6", "-net", route.prefix.description])
+            guard ObservedIPv6Route(commandOutput: raw).isExactly(route) else { throw TunnelError.routeVerificationFailed }
         }
-        let samples = ["8.8.8.8", "1.1.1.1", "9.9.9.9", "208.67.222.222"]
-        if let sample = samples.first(where: { ip in
-            ip != IPv4CIDR.parseAddressString(plan.endpoint.prefix.network) &&
-            !plan.direct.contains(where: { $0.prefix.contains(IPv4CIDR.parseAddress(ip)!) }) &&
-            !protectedLocalNetworks.contains(where: { $0.contains(IPv4CIDR.parseAddress(ip)!) })
-        }) {
-            let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", sample])
-            guard Self.parseValue("interface:", in: raw) == tunnel else { throw TunnelError.routeVerificationFailed }
+        func verify(_ ip: String, vpn: Bool) throws {
+            let v6 = IPAddress.isIPv6(ip), path = v6 ? plan.path6 : plan.path4
+            let raw = try RouteExecutor.command("/sbin/route", ["-n", "get"] + (v6 ? ["-inet6"] : []) + [ip])
+            let iface = Self.parseValue("interface:", in: raw) ?? "", gateway = Self.parseValue("gateway:", in: raw) ?? ""
+            if vpn { guard iface == plan.tunnel else { throw TunnelError.routeVerificationFailed } }
+            else {
+                guard let path, iface == path.interface,
+                      (v6 ? IPAddress.gateway6(gateway, interface: iface) == IPAddress.gateway6(path.gateway, interface: iface) : gateway == path.gateway) else { throw TunnelError.routeVerificationFailed }
+            }
         }
-        let checks = allCustom ? custom.active : CustomRouteAction.allCases.compactMap { action in custom.active.first { $0.action == action } }
+        if let route = plan.direct4.first { try verify(IPv4CIDR.parseAddressString(route.prefix.network), vpn: false) }
+        if let route = plan.direct6.first { try verify(route.prefix.address, vpn: false) }
+        if !plan.defaults4.isEmpty, let sample = ["8.8.8.8", "1.1.1.1", "9.9.9.9", "208.67.222.222"].first(where: { ip in
+            ip != plan.endpoint && !plan.direct4.contains { $0.prefix.contains(IPv4CIDR.parseAddress(ip)!) } && !plan.local4.contains { $0.contains(IPv4CIDR.parseAddress(ip)!) }
+        }) { try verify(sample, vpn: true) }
+        if !plan.defaults6.isEmpty, let sample = ["2606:4700:4700::1111", "2001:4860:4860::8888", "2620:fe::fe"].first(where: { ip in
+            ip != plan.endpoint && !plan.direct6.contains { $0.prefix.contains(ip) } && !plan.local6.contains { $0.contains(ip) }
+        }) { try verify(sample, vpn: true) }
+        let checks = allCustom ? custom.active : [false, true].flatMap { v6 in CustomRouteAction.allCases.compactMap { action in custom.active.first { $0.action == action && $0.cidr.contains(":") == v6 } } }
         for rule in checks {
             try ensureAttempt()
-            let prefix = try CustomRuleSet.prefix(rule.cidr)
-            let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", IPv4CIDR.parseAddressString(prefix.network)])
-            let iface = Self.parseValue("interface:", in: raw) ?? ""
-            guard (rule.action == .vpn ? iface == tunnel : iface.hasPrefix("en") && Self.parseValue("gateway:", in: raw) == gateway) else {
-                throw TunnelError.routeVerificationFailed
-            }
+            let ip = rule.cidr.contains(":") ? try CustomRuleSet.prefix6(rule.cidr).address : IPv4CIDR.parseAddressString(try CustomRuleSet.prefix(rule.cidr).network)
+            try verify(ip, vpn: rule.action == .vpn)
         }
     }
     func explainRoute(_ request: RouteLookupRequest) throws -> RouteLookupResult {
         guard state == .connected, process?.isRunning == true, activeProfileID == request.profileID,
               activeAttemptID == request.attemptID, routingRevision == request.revision, activeMode == request.mode else { throw RoutingModeSwitchError.stale }
+        let plan = activePlan, v6 = IPAddress.isIPv6(request.ip)
         let decision = try RouteExplanation.decide(ip: request.ip, mode: activeMode, country: rules, custom: custom,
-            local: protectedLocalNetworks, endpoint: activePlan.map { IPv4CIDR.parseAddressString($0.endpoint.prefix.network) },
-            effectiveDirect: activePlan?.direct.map(\.prefix))
-        let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", request.ip])
-        let observed = Self.parseValue("interface:", in: raw) ?? ""
-        let gateway = Self.parseValue("gateway:", in: raw) ?? ""
-        let expected: String? = decision.path == .vpn ? protectedVPNInterface : decision.path == .direct ? protectedPhysicalInterface : nil
+            local: plan?.local4 ?? [], endpoint: plan?.endpoint, effectiveDirect: plan?.direct4.map(\.prefix),
+            country6: rules6, local6: plan?.local6 ?? [], effectiveDirect6: plan?.direct6.map(\.prefix),
+            available: plan.map { v6 ? !$0.defaults6.isEmpty : !$0.defaults4.isEmpty })
+        let args = ["-n", "get"] + (v6 ? ["-inet6"] : []) + [request.ip]
+        let raw = decision.path == .blocked ? (try? RouteExecutor.command("/sbin/route", args)) ?? "" : try RouteExecutor.command("/sbin/route", args)
+        let observed = Self.parseValue("interface:", in: raw) ?? "", gateway = Self.parseValue("gateway:", in: raw) ?? ""
+        let physical = v6 ? plan?.path6 : plan?.path4
+        let expected: String? = decision.path == .vpn ? plan?.tunnel : decision.path == .direct ? physical?.interface : nil
         var matches = expected.map { !$0.isEmpty && $0 == observed }
-        if decision.path == .direct, !protectedLocalNetworks.contains(where: { $0.contains(IPv4CIDR.parseAddress(request.ip)!) }),
-           let plan = activePlan, case .viaGateway(let physical) = plan.endpoint.destination { matches = matches == true && gateway == physical }
+        let local = v6 ? plan?.local6.contains { $0.contains(request.ip) } == true : plan?.local4.contains { $0.contains(IPv4CIDR.parseAddress(request.ip)!) } == true
+        if decision.path == .direct, !local, let physical {
+            matches = matches == true && (v6 ? IPAddress.gateway6(gateway, interface: observed) == physical.gateway : gateway == physical.gateway)
+        }
         return RouteLookupResult(request: request, decision: decision, expectedInterface: expected,
             observedInterface: observed, observedGateway: gateway, matchesExpected: matches)
     }
-
     private func verifyManagedEnvironment() throws {
-        if packetGuard.active { try packetGuard.verify() } else { try checkIPv6Bypass() }
-        guard let plan = activePlan, let physical = protectedPhysicalInterface,
-              case .viaGateway(let gateway) = plan.endpoint.destination else { throw TunnelError.noActiveRoutePlan }
-        let observed = try RouteExecutor.command("/sbin/route", ["-n", "get", "default"])
-        guard Self.parseValue("gateway:", in: observed) == gateway,
-              Self.parseValue("interface:", in: observed) == physical else { throw TunnelError.noPhysicalGateway }
-        let table = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
-        let local = LocalIPv4Networks.parse(netstat: table, physicalInterface: physical)
-        guard !local.isEmpty, Set(local) == Set(protectedLocalNetworks) else { throw TunnelError.noPhysicalGateway }
-        try verifyManagedRoutes(plan: plan, mode: activeMode, country: rules)
+        guard let plan = activePlan else { throw TunnelError.noActiveRoutePlan }
+        if packetGuard.active { try packetGuard.verify() }
+        else { if plan.defaults6.isEmpty { try checkIPv6Bypass() }; if plan.defaults4.isEmpty { throw DualStackError.unsafeFallback } }
+        for (v6, path) in [(false, plan.path4), (true, plan.path6)] {
+            guard let path else {
+                if let found = try? RouteExecutor.command("/sbin/route", ["-n", "get"] + (v6 ? ["-inet6"] : []) + ["default"]),
+                   let iface = Self.parseValue("interface:", in: found), LeakGuardPolicy.validPhysical(iface) {
+                    throw TunnelError.noPhysicalGateway
+                }
+                continue
+            }
+            let observed = try RouteExecutor.command("/sbin/route", ["-n", "get"] + (v6 ? ["-inet6"] : []) + ["default"])
+            guard Self.parseValue("interface:", in: observed) == path.interface,
+                  let gateway = Self.parseValue("gateway:", in: observed),
+                  (v6 ? IPAddress.gateway6(gateway, interface: path.interface) == path.gateway : gateway == path.gateway) else { throw TunnelError.noPhysicalGateway }
+        }
+        let local = try localNetworks(paths: (plan.path4, plan.path6))
+        guard Set(local.0) == Set(plan.local4), Set(local.1) == Set(plan.local6) else { throw TunnelError.noPhysicalGateway }
+        try verifyManagedRoutes(plan: plan)
     }
 
     private func startNetworkWatchdog() {
@@ -611,6 +650,7 @@ final class ManagedTunnel {
             try verifyManagedEnvironment()
         } catch {
             eventStore.append(.networkChanged)
+            failureCode = .networkChanged
             if scheduleGuardedReconnect() { return }
             let failure = "Network route/IPv6 protection changed; VPN disconnected: \(error.localizedDescription)"
             stop()
@@ -683,55 +723,45 @@ final class ManagedTunnel {
     func changeRules(_ text: String) throws {
         guard state == .connected, process?.isRunning == true, activeMode == .chinaDirect, let oldRules = rules,
               activePlan != nil, routing != nil else { throw TunnelError.noActiveRoutePlan }
-        let next = try RuleSet(text: text)
+        let bundle = try RoutingRuleBundle.decoded(text)
+        let next = try RuleSet(text: bundle.ipv4)
         guard next.routes.count >= 100 else { throw TunnelError.missingRules }
         try RuleUpdater.validateChange(previous: oldRules, next: next)
+        if let text6 = bundle.ipv6, let old6 = rules6 { try IPv6RuleSet.validateChange(previous: old6, next: IPv6RuleSet(text: text6)) }
         try transitionManagedRoutes(to: .chinaDirect, ruleText: text)
     }
     func switchRoutingMode(to mode: RoutingMode, ruleText: String) throws {
         guard state == .connected, process?.isRunning == true, activeMode != .original,
-              mode != .original, activePlan != nil, routing != nil,
-              protectedVPNInterface != nil else { throw RoutingModeSwitchError.unavailable }
+              mode != .original, activePlan != nil, routing != nil else { throw RoutingModeSwitchError.unavailable }
         guard mode != activeMode else { return }
         try transitionManagedRoutes(to: mode, ruleText: ruleText)
     }
     private func transitionManagedRoutes(to mode: RoutingMode, ruleText: String) throws {
-        guard let plan = activePlan, let executor = routing, let tunnel = protectedVPNInterface else { throw TunnelError.noActiveRoutePlan }
-        // Bad input is rejected before touching the current live policy.
-        let change = try ManagedRouteTransition(current: plan, target: mode, ruleText: ruleText,
-                                                 local: protectedLocalNetworks, custom: custom)
-        let nextProtection = try guardPolicy.map { current in
-            try LeakGuardPolicy(physical: current.physical, endpoint: current.endpoint, port: current.port,
-                transport: current.transport, local: protectedLocalNetworks, country: [], managedDirect: change.plan.direct.map(\.prefix))
-        }
+        guard let old = activePlan, let executor = routing else { throw TunnelError.noActiveRoutePlan }
+        let bundle = try RoutingRuleBundle.decoded(ruleText)
+        let next4 = mode == .chinaDirect ? try RuleSet(text: bundle.ipv4) : nil
+        let next6 = mode == .chinaDirect ? try bundle.ipv6.map { try IPv6RuleSet(text: $0) } ?? rules6 : nil
+        if let next4, next4.routes.count < 100 { throw TunnelError.missingRules }
+        if let next6, next6.routes.count < 100 { throw DualStackError.missingRules }
+        let plan = try DualStackRoutePlan.build(endpoint: old.endpoint, tunnel: old.tunnel,
+            has4: !old.defaults4.isEmpty, has6: !old.defaults6.isEmpty, path4: old.path4, path6: old.path6,
+            local4: old.local4, local6: old.local6, mode: mode, country4: next4, country6: next6, custom: custom)
+        let nextProtection = try policy(for: plan)
         do {
-            try ensureAttempt()
-            try verifyManagedEnvironment()
-            try RouteTransitionExecutor.apply(change, executor: executor, updateProtection: {
-                if let nextProtection {
-                    try self.packetGuard.replaceRules(nextProtection.rules(tunnel: tunnel), resetExistingStates: change.tightensDirectAccess)
-                    self.guardPolicy = nextProtection
-                }
-            }, verify: {
-                try self.ensureAttempt()
-                guard self.process?.isRunning == true else { throw RoutingModeSwitchError.stale }
-                try self.verifyManagedRoutes(plan: change.plan, mode: mode, country: change.rules, allCustom: true)
-            })
-            try ensureAttempt()
-            guard process?.isRunning == true else { throw RoutingModeSwitchError.stale }
-            activePlan = change.plan; rules = change.rules; activeMode = mode; routingRevision = UUID()
-            if let context = reconnectContext {
-                reconnectContext = ReconnectContext(profile: context.profile, profileID: context.profileID,
-                    attemptID: context.attemptID, mode: mode, username: context.username, password: context.password)
-            }
-            message = "已连接 · " + mode.title
+            try ensureAttempt(); try verifyManagedEnvironment()
+            try DualStackTransitionExecutor.apply(from: old, to: plan, executor: executor, updateProtection: { tightens in
+                if let nextProtection { try self.packetGuard.replaceRules(nextProtection.rules(tunnel: plan.tunnel), resetExistingStates: tightens); self.guardPolicy = nextProtection }
+            }, verify: { try self.ensureAttempt(); try self.verifyManagedRoutes(plan: plan, allCustom: true) })
+            try ensureAttempt(); guard process?.isRunning == true else { throw RoutingModeSwitchError.stale }
+            activePlan = plan; rules = next4; rules6 = next6; activeMode = mode; routingRevision = UUID()
+            if let context = reconnectContext { reconnectContext = ReconnectContext(profile: context.profile, profileID: context.profileID,
+                attemptID: context.attemptID, mode: mode, username: context.username, password: context.password) }
+            message = "已连接 · " + mode.title + " · " + plan.stack.title
         } catch {
-            let cause = error.localizedDescription
-            stop()
+            let cause = error.localizedDescription; stop()
             let pending = networkRecoveryRequired || process?.isRunning == true
-            let reason = (pending ? "路由切换失败，连接或网络恢复未完成：" : "路由切换失败，VPN 已断开：") + cause
-            lastError = reason; state = .failed; message = reason
-            throw error
+            let reason = (pending ? "双栈路由切换失败，恢复未完成：" : "双栈路由切换失败，VPN 已断开：") + cause
+            lastError = reason; state = .failed; message = reason; throw error
         }
     }
     func stop(releaseProtection: Bool = false, preservingReconnectContext: Bool = false) {
@@ -823,7 +853,7 @@ final class ManagedTunnel {
         catch { lastError = error.localizedDescription; eventStore.append(.dns) }
         routing?.rollback()
         routing = nil
-        activePlan = nil
+        activePlan = nil; ipStack = nil
         protectedLocalNetworks = []
         protectedPhysicalInterface = nil
         protectedVPNInterface = nil
@@ -855,7 +885,7 @@ enum TunnelError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .ipv6Unsafe: return "IPv4-only policies require no active IPv6 default route. Use Original mode or disable IPv6 before splitting. Polling is not a kill switch."
+        case .ipv6Unsafe: return "服务器没有建立 IPv6 隧道，但系统仍有 IPv6 出口。请启用断线保护或使用支持双栈的服务器。"
         case .engineMissing: return "Signed OpenVPN engine is not installed."
         case .needRoot: return "Approve the privileged helper in macOS."
         case .alreadyRunning: return "Another VPN session is active."

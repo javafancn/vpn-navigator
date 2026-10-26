@@ -1,4 +1,5 @@
 import SwiftUI
+import Darwin
 import VPNNavigatorCore
 import UniformTypeIdentifiers
 
@@ -28,23 +29,31 @@ enum WorkspaceTab: String, CaseIterable, Identifiable {
     }
 }
 
+@MainActor
 struct MainView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var tab: WorkspaceTab = .overview
+    @StateObject private var navigation: WorkspaceNavigation
+    private var tab: WorkspaceTab {
+        get { navigation.tab }
+        nonmutating set { navigation.select(newValue) }
+    }
     @State private var dropTargeted = false
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
     @Namespace private var sidebarSelection
 
     /// The UI snapshot argument selects a real application page for macOS
     /// screenshot checks. It never changes connectivity or network state.
-    init() {
+    init(navigation: WorkspaceNavigation? = nil) {
+        let state = navigation ?? WorkspaceNavigation()
         if let value = ProcessInfo.processInfo.arguments
             .first(where: { $0.hasPrefix("--vpnnav-ui-tab=") })?
             .split(separator: "=", maxSplits: 1).last,
            let initialTab = WorkspaceTab(rawValue: String(value)) {
-            _tab = State(initialValue: initialTab)
+            state.select(initialTab)
         }
+        _navigation = StateObject(wrappedValue: state)
     }
 
     var body: some View {
@@ -66,7 +75,7 @@ struct MainView: View {
                     Group {
                         switch tab {
                         case .overview: ConnectionOverview()
-                        case .profiles: ProfileLibrary(onImport: {
+                        case .profiles: ProfileLibrary(searchRequest: navigation.searchRequest, onImport: {
                             if model.canChooseProfileFiles { model.profilePickerPresented = true }
                         })
                         case .routing: RoutingWorkspace()
@@ -99,9 +108,20 @@ struct MainView: View {
                     }.allowsHitTesting(false)
             }
         }
+        .focusedSceneValue(\.workspaceCommands, model.workspaceNavigationBlocked ? nil : WorkspaceCommandActions(
+            select: { if !model.workspaceNavigationBlocked { navigation.select($0) } },
+            search: { if !model.workspaceNavigationBlocked { navigation.searchProfiles() } },
+            help: { if !model.workspaceNavigationBlocked { model.showingKeyboardHelp = true } }))
+        .environment(\.colorSchemeContrast, ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" && ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-high-contrast-snapshot") ? .increased : contrast)
         .preferredColorScheme(.light)
         .environment(\.locale, Locale(identifier: "zh_CN"))
         .onAppear {
+            if ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") {
+                Task {
+                    do { try await WorkspaceAccessibilitySelfTest.run(model: model, navigation: navigation); Darwin.exit(0) }
+                    catch { print("Workspace accessibility self-test failed: \(error)"); Darwin.exit(1) }
+                }
+            }
             model.quickAccess.openMainWindow = {
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
@@ -120,7 +140,9 @@ struct MainView: View {
             }
             if ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
                ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot"), !model.profiles.isEmpty {
-                if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-custom-routes-snapshot") ||
+                if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-keyboard-help-snapshot") {
+                    model.showingKeyboardHelp = true
+                } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-custom-routes-snapshot") ||
                    ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-route-explanation-snapshot") {
                     model.profiles[0].customRules = [CustomRouteRule(cidr: "9.9.9.9/32", action: .direct), CustomRouteRule(cidr: "10.66.0.0/16", action: .vpn)]
                     model.profiles[0].mode = .fullVPN
@@ -176,6 +198,7 @@ struct MainView: View {
                 model.message = error.localizedDescription
             }
         }
+        .sheet(isPresented: $model.showingKeyboardHelp) { KeyboardHelpView() }
         .sheet(isPresented: $model.showingAccountCredentials) { AccountCredentialsView().environmentObject(model) }
         .sheet(item: $model.authenticationChallenge) { challenge in
             AuthenticationChallengeView(challenge: challenge).id(challenge.id).environmentObject(model)
@@ -255,6 +278,9 @@ struct MainView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(ReferenceQuietButton())
+                .accessibilityIdentifier("workspace-" + item.rawValue)
+                .accessibilityLabel(item.title)
+                .accessibilityValue(tab == item ? "已选择" : "未选择")
                 .accessibilityAddTraits(tab == item ? .isSelected : [])
                 .padding(.horizontal, 15)
                 .padding(.bottom, 5)
@@ -389,7 +415,9 @@ private struct ConnectionOverview: View {
                     } label: { ReferencePowerOrb() }
                     .buttonStyle(ReferenceQuietButton(cornerRadius: 110, hoverOpacity: 0.04))
                     .disabled(model.stopping || (model.busy && !model.connecting && !model.connected && !model.firewallRecoveryRequired))
-                    .accessibilityLabel(model.connected ? "断开 VPN" : model.connecting ? "取消连接" : "连接 VPN")
+                    .accessibilityIdentifier("vpn-power")
+                    .accessibilityLabel(model.firewallRecoveryRequired && !model.connected && !model.connecting ? "解除断线保护" : model.connected ? "断开 VPN" : model.connecting ? "取消连接" : "连接 VPN")
+                    .accessibilityValue(statusTitle)
                     Text(statusTitle)
                         .font(.system(size: 28, weight: .semibold))
                         .foregroundStyle(model.connected ? Color.green : hasError ? Color.orange : GlassPalette.blue)
@@ -418,7 +446,7 @@ private struct ConnectionOverview: View {
                                     .foregroundStyle(GlassPalette.ink.opacity(0.45))
                             }
                             .buttonStyle(.plain)
-                            .help("身份验证")
+                            .help("身份验证").accessibilityLabel("身份验证")
                             .popover(isPresented: $showingCredentials) {
                                 VStack(alignment: .leading, spacing: 12) {
                                     Text("身份验证").font(.headline)
@@ -439,6 +467,8 @@ private struct ConnectionOverview: View {
                             }
                                                         .menuIndicator(.hidden)
                             .buttonStyle(.plain)
+                            .accessibilityLabel("选择连接配置")
+                            .accessibilityValue(model.selected?.name ?? "未选择")
                             .disabled(model.profiles.isEmpty || model.busy)
                         }
                         quickRow("路由模式") {
@@ -452,6 +482,8 @@ private struct ConnectionOverview: View {
                             }
                                                         .menuIndicator(.hidden)
                             .buttonStyle(.plain)
+                            .accessibilityLabel("选择路由模式")
+                            .accessibilityValue(model.displayedRoutingMode(for: model.selectedID)?.title ?? "待核验")
                             .disabled(model.selected == nil || model.busy || model.routingModeSwitching || model.connecting || model.stopping)
                         }
                         quickRow("源文件") {
@@ -584,8 +616,10 @@ private struct ReferencePowerOrb: View {
 
 private struct ProfileLibrary: View {
     @EnvironmentObject private var model: AppModel
+    let searchRequest: UUID?
     let onImport: () -> Void
     @FocusState private var searchFocused: Bool
+    @FocusState private var focusedProfileID: UUID?
 
     private var filtered: [VPNProfile] { model.libraryProfiles }
     private var visibleSelection: VPNProfile? { filtered.first { $0.id == model.selectedID } }
@@ -606,6 +640,9 @@ private struct ProfileLibrary: View {
                     .font(.system(size: 16))
                 TextField("搜索名称、分组或文件名…", text: $model.profileLibrary.query)
                     .focused($searchFocused)
+                    .accessibilityIdentifier("profile-library-search")
+                    .accessibilityLabel("搜索配置名称、分组或文件名")
+                    .onSubmit { focusResult() }
                     .font(.system(size: 16))
                     .textFieldStyle(.plain)
                 if !model.profileLibrary.query.isEmpty {
@@ -648,6 +685,7 @@ private struct ProfileLibrary: View {
                                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
                             }.font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
                         }.menuIndicator(.hidden).buttonStyle(.plain).help("按收藏或分组筛选配置")
+                            .accessibilityLabel("配置筛选").accessibilityValue(model.profileLibrary.scope.title)
                         Spacer(minLength: 0)
                         Menu {
                             ForEach(ProfileLibrarySort.allCases) { sort in
@@ -671,6 +709,7 @@ private struct ProfileLibrary: View {
                         }
                     }.padding(.horizontal, 6).padding(.bottom, 3)
 
+                    ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 5) {
                             ForEach(filtered) { profile in
@@ -692,6 +731,9 @@ private struct ProfileLibrary: View {
                                                 .truncationMode(.middle)
                                         }
                                         Spacer(minLength: 3)
+                                        if model.selectedID == profile.id {
+                                            Image(systemName: "checkmark").foregroundStyle(GlassPalette.blue).accessibilityHidden(true)
+                                        }
                                         if profile.isFavorite {
                                             Image(systemName: "star.fill")
                                                 .foregroundStyle(.orange)
@@ -723,10 +765,27 @@ private struct ProfileLibrary: View {
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(ReferenceQuietButton(cornerRadius: 11))
+                                .id(profile.id)
+                                .focused($focusedProfileID, equals: profile.id)
+                                .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(
+                                    focusedProfileID == profile.id ? GlassPalette.blue : .clear, lineWidth: 2).allowsHitTesting(false))
+                                .onMoveCommand { direction in
+                                    if direction == .down { moveFocus(from: profile.id, forward: true) }
+                                    else if direction == .up { moveFocus(from: profile.id, forward: false) }
+                                }
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityIdentifier("library-profile-" + profile.id.uuidString)
+                                .accessibilityLabel(profile.name)
+                                .accessibilityValue([profile.group, profile.isFavorite ? "已收藏" : "未收藏",
+                                    model.connected && model.activeProfileID == profile.id ? "已连接" : "未连接",
+                                    model.selectedID == profile.id ? "已选择" : "未选择"].joined(separator: "，"))
+                                .accessibilityHint("选择并查看配置详情；不会发起连接")
                                 .accessibilityAddTraits(
                                     model.selectedID == profile.id ? .isSelected : [])
                             }
                         }
+                    }
+                    .onChange(of: focusedProfileID) { id in if let id { proxy.scrollTo(id, anchor: .center) } }
                     }
                     if filtered.isEmpty {
                         Label(model.profiles.isEmpty ? "尚无配置" : "没有匹配的配置", systemImage: "magnifyingglass")
@@ -771,6 +830,20 @@ private struct ProfileLibrary: View {
         .padding(.horizontal, GlassLayout.pageInset)
         .padding(.top, GlassLayout.pageTop)
         .padding(.bottom, 18)
+        .onAppear { if searchRequest != nil { searchFocused = true } }
+        .onChange(of: searchRequest) { request in if request != nil { searchFocused = true; focusedProfileID = nil } }
+        .onChange(of: filtered.map(\.id)) { ids in
+            if let id = focusedProfileID, !ids.contains(id) { focusedProfileID = nil; searchFocused = true }
+        }
+    }
+    private func focusResult() {
+        guard let id = visibleSelection?.id ?? filtered.first?.id else { return }
+        searchFocused = false; model.selectedID = id; focusedProfileID = id
+    }
+    private func moveFocus(from id: UUID, forward: Bool) {
+        guard let index = filtered.firstIndex(where: { $0.id == id }) else { return }
+        let next = min(max(index + (forward ? 1 : -1), 0), filtered.count - 1)
+        model.selectedID = filtered[next].id; focusedProfileID = filtered[next].id
     }
     private func scopeButton(_ title: String, scope: ProfileLibraryScope, count: Int) -> some View {
         Button { model.profileLibrary.scope = scope; searchFocused = false } label: {
@@ -1284,6 +1357,8 @@ struct ProfileDetail: View {
                     }
                     .buttonStyle(ReferenceSecondaryButton())
                     .help(profile.isFavorite ? "取消收藏" : "收藏此配置")
+                    .accessibilityLabel(profile.isFavorite ? "取消收藏此配置" : "收藏此配置")
+                    .accessibilityValue(profile.isFavorite ? "已收藏" : "未收藏")
                     .disabled(!model.canEditProfileMetadata(profile.id))
                     Menu {
                         Button("配置健康检查…") { model.showProfileHealth(profile.id) }
@@ -1306,6 +1381,7 @@ struct ProfileDetail: View {
                             .foregroundStyle(.secondary)
                     }
                     .menuIndicator(.hidden)
+                    .accessibilityLabel("配置操作").accessibilityValue(profile.name)
                     .fixedSize()
                 }
                 HStack(spacing: 4) {
@@ -1328,7 +1404,9 @@ struct ProfileDetail: View {
                                     }
                                 }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(ReferenceQuietButton())
+                        .accessibilityAddTraits(tab == section ? .isSelected : [])
+                        .accessibilityValue(tab == section ? "已选择" : "未选择")
                     }
                 }
                 .referenceSegments()

@@ -65,7 +65,9 @@ struct NetworkDiagnosticsView: View {
                                                 .matchedGeometryEffect(id: "diagnostic-selection", in: selection)
                                         }
                                     }
-                            }.buttonStyle(.plain)
+                            }.buttonStyle(ReferenceQuietButton())
+                                .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
+                                .accessibilityValue(selectedTab == tab ? "已选择" : "未选择")
                         }
                     }.referenceSegments().frame(width: 420)
                         .animation(GlassMotion.selection(reduceMotion), value: selectedTab)
@@ -83,7 +85,7 @@ struct NetworkDiagnosticsView: View {
                                 .font(.system(size: 18, weight: .semibold))
                             Spacer()
                             Button { showingTarget = true } label: { Image(systemName: "ellipsis").foregroundStyle(GlassPalette.blue) }
-                                .buttonStyle(.plain).help("设置诊断目标")
+                                .buttonStyle(ReferenceQuietButton()).help("设置诊断目标").accessibilityLabel("设置诊断目标")
                                 .popover(isPresented: $showingTarget) { targetEditor }
                         }
                         probeContent

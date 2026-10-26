@@ -32,12 +32,13 @@ enum GlassSurface {
 
 struct GlassAtmosphere: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         ZStack {
             DesktopVisualEffect()
-            if reduceTransparency &&
-                !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot") {
+            if contrast == .increased || (reduceTransparency &&
+                !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot")) {
                 Color(nsColor: .windowBackgroundColor)
             } else {
                 Color.white.opacity(GlassSurface.windowOpacity)
@@ -94,11 +95,12 @@ struct DesktopVisualEffect: NSViewRepresentable {
 /// translucent content canvas in addition to the individual frosted tiles;
 /// without this layer the header looks detached from the whole page.
 struct ReferenceWorkspaceSurface: ViewModifier {
+    @Environment(\.colorSchemeContrast) private var contrast
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         content
             .background(shape.fill(Color.white.opacity(0.035)))
-            .overlay(shape.strokeBorder(Color.white.opacity(0.30), lineWidth: 0.75)
+            .overlay(shape.strokeBorder(contrast == .increased ? Color.primary.opacity(0.55) : Color.white.opacity(0.30), lineWidth: contrast == .increased ? 1.5 : 0.75)
                 .allowsHitTesting(false))
     }
 }
@@ -113,17 +115,18 @@ extension View {
 /// No wallpaper image, opaque app background, or fake macOS glass API.
 private struct GlassCardModifier: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
     var cornerRadius: CGFloat
     var active: Bool
 
     func body(content: Content) -> some View {
-        let opaqueFallback = reduceTransparency &&
-            !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot")
+        let opaqueFallback = contrast == .increased || (reduceTransparency &&
+            !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot"))
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
             .background(shape.fill(opaqueFallback ? Color(nsColor: .windowBackgroundColor) :
                 Color.white.opacity(GlassSurface.cardOpacity)))
-            .overlay(shape.strokeBorder(Color.white.opacity(active ? 0.65 : 0.50), lineWidth: 0.75)
+            .overlay(shape.strokeBorder(contrast == .increased ? Color.primary.opacity(0.55) : Color.white.opacity(active ? 0.65 : 0.50), lineWidth: contrast == .increased ? 1.5 : 0.75)
                 .allowsHitTesting(false))
             .shadow(color: Color.black.opacity(active ? 0.04 : 0.025), radius: 8, y: 3)
     }
@@ -180,6 +183,7 @@ struct TrafficSparkline: View {
                                                  lineCap: .round, lineJoin: .round))
             }
             .accessibilityLabel("真实 OpenVPN 流量趋势")
+            .accessibilityValue("最近 \(samples.count) 个采样点；当前 \(String(format: "%.0f", samples.last ?? 0)) 字节增量")
         } else {
             Text("连接后显示趋势")
                 .font(.system(size: 12))

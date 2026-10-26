@@ -82,6 +82,18 @@ final class AppModel: ObservableObject {
     @Published var showingRouteExplanation = false
     @Published var showingTroubleshooting = false
     @Published var showingPublicEgress = false
+    @Published var showingKeyboardHelp = false
+    /// Prevent main-window menu shortcuts from navigating behind sheets or a
+    /// native file/authorization panel. The action closures also recheck this.
+    var workspaceNavigationBlocked: Bool {
+        NSApp.modalWindow != nil || showingKeyboardHelp || message != nil ||
+        profilePickerPresented || showingAccountCredentials || authenticationChallenge != nil ||
+        showingMaintenance || showingSetup || showingPreferences || showingProfileBackup ||
+        profileHealthTarget != nil || showingSmartConnection || showingProfileIndexRecovery ||
+        customRuleEditorProfile != nil || showingRouteExplanation || showingTroubleshooting ||
+        showingPublicEgress || showingDiagnostics || showingConnectionHistory || showingImportReport ||
+        profileTransferInProgress || maintenanceInProgress || backgroundServicesBusy
+    }
     var canStartEgressProbe: Bool { !busy && !connecting && !stopping && !maintenanceInProgress && !profileTransferInProgress && !routingModeSwitching }
     var egressContextIdentity: String {
         activeRoutingIdentity + "|\(helperStateVerified)|\(networkRecoveryRequired)|\(firewallRecoveryRequired)|\(firewallActive)|\(activeIPStack?.rawValue ?? "")|\(smartConnection.network.identity)|\(smartConnection.network.online)"
@@ -167,7 +179,7 @@ final class AppModel: ObservableObject {
         launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-public-egress-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-connection-history-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-health-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-public-egress-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-connection-history-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-health-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -347,7 +359,7 @@ final class AppModel: ObservableObject {
         profileOpenReady && profileIndexIssue == nil && !incomingProfiles.isEmpty && !profileDropLoading && !profilePickerPresented &&
         !routingModeSwitching && !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress && !busy &&
         !connecting && !stopping && !showingConnectionHistory && profileHealthTarget == nil && !showingImportReport && !showingSetup && !showingMaintenance &&
-        !showingPreferences && !showingPublicEgress && !showingDiagnostics && !showingRouteExplanation && !showingTroubleshooting && customRuleEditorProfile == nil && !showingProfileIndexRecovery && !showingAccountCredentials &&
+        !showingPreferences && !showingKeyboardHelp && !showingPublicEgress && !showingDiagnostics && !showingRouteExplanation && !showingTroubleshooting && customRuleEditorProfile == nil && !showingProfileIndexRecovery && !showingAccountCredentials &&
         authenticationChallenge == nil && message == nil
     }
     func receiveProfileOpenRequest(_ request: ProfileOpenQueue) {
@@ -942,7 +954,7 @@ final class AppModel: ObservableObject {
               recoveryRequired: networkRecoveryRequired || firewallRecoveryRequired,
               occupied: !profileOpenReady || profileIndexIssue != nil || (busy && !preparingAutomatic) || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || profileMutations != 0 ||
                 routingModeSwitching || showingImportReport || showingSetup || showingMaintenance || showingPreferences ||
-                showingPublicEgress || showingConnectionHistory || profileHealthTarget != nil || showingProfileBackup || showingSmartConnection || showingDiagnostics || showingRouteExplanation || showingTroubleshooting ||
+                showingKeyboardHelp || showingPublicEgress || showingConnectionHistory || profileHealthTarget != nil || showingProfileBackup || showingSmartConnection || showingDiagnostics || showingRouteExplanation || showingTroubleshooting ||
                 customRuleEditorProfile != nil || showingProfileIndexRecovery || profilePickerPresented ||
                 profileDropLoading || !incomingProfiles.isEmpty || authenticationChallenge != nil || showingAccountCredentials ||
                 !username.isEmpty || !password.isEmpty || quickAccess.panel?.isVisible == true,
@@ -968,7 +980,7 @@ final class AppModel: ObservableObject {
                   !smartConnectionContext().occupied, helperStateVerified, helper.installationStatus == .enabled,
                   sessionState == .disconnected, activeProfileID == nil, !networkRecoveryRequired, !firewallRecoveryRequired else { return }
         } else { smartConnection.cancelPending() }
-        guard !showingPublicEgress, !showingConnectionHistory, profileHealthTarget == nil, !maintenanceInProgress, !profileTransferInProgress, !showingImportReport else { return }
+        guard !showingKeyboardHelp && !showingPublicEgress, !showingConnectionHistory, profileHealthTarget == nil, !maintenanceInProgress, !profileTransferInProgress, !showingImportReport else { return }
         if BuildChannel.isLocal, LocalInstallation.isInstallationPending {
             message = helper.localInstallationIssue; if !automatically { showingSetup = true }; return
         }
@@ -1091,7 +1103,7 @@ final class AppModel: ObservableObject {
         guard profiles.contains(where: { $0.id == id }) else { return .blocked }
         if connected && id != activeProfileID && quickAccessSession == nil { return .blocked }
         return QuickAccessAction.resolve(state: sessionState, profileID: id, activeProfileID: activeProfileID,
-            operationInProgress: showingPublicEgress || showingConnectionHistory || profileHealthTarget != nil || showingProfileBackup || customRuleEditorProfile != nil || showingRouteExplanation || showingTroubleshooting || showingProfileIndexRecovery || routingModeSwitching || busy || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || showingImportReport ||
+            operationInProgress: showingKeyboardHelp || showingPublicEgress || showingConnectionHistory || profileHealthTarget != nil || showingProfileBackup || customRuleEditorProfile != nil || showingRouteExplanation || showingTroubleshooting || showingProfileIndexRecovery || routingModeSwitching || busy || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || showingImportReport ||
                 authenticationChallenge != nil || showingAccountCredentials,
             mayStart: canQuit)
     }
@@ -1468,6 +1480,7 @@ struct VPNNavigatorApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 700)
         .commands {
+            WorkspaceCommands()
             CommandGroup(after: .newItem) {
                 Button("快速打开…") { model.quickAccess.toggle() }
                     .keyboardShortcut("p", modifiers: [.command, .shift])

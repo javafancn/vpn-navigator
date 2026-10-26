@@ -19,6 +19,7 @@ enum ReferenceMetrics {
 /// than .roundedBorder defaults. Only presentation is changed here.
 struct ReferenceInputChrome: ViewModifier {
     @Environment(\.colorScheme) private var appearance
+    @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var height: CGFloat = ReferenceMetrics.controlHeight
     var focused = false
@@ -30,15 +31,15 @@ struct ReferenceInputChrome: ViewModifier {
             .frame(height: height)
             .background {
                 RoundedRectangle(cornerRadius: ReferenceMetrics.corner, style: .continuous)
-                    .fill(appearance == .dark ?
+                    .fill(GlassAccessibility.increasedContrast(contrast) ? Color(nsColor: .textBackgroundColor) : appearance == .dark ?
                           Color.white.opacity(0.13) :
                           Color.white.opacity(focused ? 0.40 : 0.28))
             }
             .overlay {
                 RoundedRectangle(cornerRadius: ReferenceMetrics.corner, style: .continuous)
                     .strokeBorder(focused ? GlassPalette.blue.opacity(0.65) :
-                        Color.white.opacity(appearance == .dark ? 0.25 : 0.48),
-                        lineWidth: focused ? 1.5 : 0.75)
+                        GlassAccessibility.increasedContrast(contrast) ? Color.primary.opacity(0.65) : Color.white.opacity(appearance == .dark ? 0.25 : 0.48),
+                        lineWidth: focused || GlassAccessibility.increasedContrast(contrast) ? 1.5 : 0.75)
                     .allowsHitTesting(false)
             }
             .tint(GlassPalette.blue)
@@ -70,20 +71,22 @@ struct ReferenceDetailRow: View {
         }
         .font(.system(size: 13))
         .frame(minHeight: 19)
+        .accessibilityElement(children: .combine)
     }
 }
 
 /// Uniform visual container for the reference's segmented inspector tabs.
 struct ReferenceSegmentChrome: ViewModifier {
+    @Environment(\.colorSchemeContrast) private var contrast
     func body(content: Content) -> some View {
         content
             .padding(3)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.white.opacity(0.16)))
+                    .fill(GlassAccessibility.increasedContrast(contrast) ? Color(nsColor: .controlBackgroundColor) : Color.white.opacity(0.16)))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.42), lineWidth: 0.75)
+                    .strokeBorder(GlassAccessibility.increasedContrast(contrast) ? Color.primary.opacity(0.55) : Color.white.opacity(0.42), lineWidth: GlassAccessibility.increasedContrast(contrast) ? 1.5 : 0.75)
             }
     }
 }
@@ -107,7 +110,7 @@ struct ReferenceFormRow<Content: View>: View {
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .frame(width: 65, alignment: .leading)
-            content
+            content.accessibilityLabel(Text(title))
         }
         .frame(minHeight: 29)
     }
@@ -145,6 +148,8 @@ private struct ReferenceButtonBody<Label: View>: View {
     let pressed: Bool
     let primary: Bool
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.isFocused) private var keyboardFocused
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovered = false
 
@@ -162,14 +167,14 @@ private struct ReferenceButtonBody<Label: View>: View {
                         Color(red: 0.08, green: 0.55, blue: 1), GlassPalette.blue
                     ], startPoint: .top, endPoint: .bottom))
                 } else {
-                    shape.fill(Color.white.opacity(pressed ? 0.22 : hovered && enabled ? 0.46 : 0.30))
+                    shape.fill(GlassAccessibility.increasedContrast(contrast) ? Color(nsColor: .controlBackgroundColor) : Color.white.opacity(pressed ? 0.22 : hovered && enabled ? 0.46 : 0.30))
                 }
             }
-            .overlay(shape.strokeBorder(Color.white.opacity(primary ? 0.40 : 0.55), lineWidth: 0.75)
+            .overlay(shape.strokeBorder(keyboardFocused ? GlassPalette.blue : GlassAccessibility.increasedContrast(contrast) ? Color.primary.opacity(0.65) : Color.white.opacity(primary ? 0.40 : 0.55), lineWidth: keyboardFocused ? 2 : GlassAccessibility.increasedContrast(contrast) ? 1.5 : 0.75)
                 .allowsHitTesting(false))
             .shadow(color: Color.black.opacity(primary && enabled ? 0.07 : 0.015), radius: 4, y: 2)
             .brightness(primary && hovered && enabled ? 0.035 : 0)
-            .opacity(enabled ? pressed ? 0.88 : 1 : 0.45)
+            .opacity(enabled ? pressed ? 0.88 : 1 : GlassAccessibility.increasedContrast(contrast) ? 0.65 : 0.45)
             .scaleEffect(pressed && !reduceMotion ? 0.985 : 1)
             .contentShape(shape)
             .onHover { hovered = $0 }
@@ -195,12 +200,15 @@ private struct ReferenceQuietButtonBody<Label: View>: View {
     let cornerRadius: CGFloat
     let hoverOpacity: Double
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.isFocused) private var keyboardFocused
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovered = false
     var body: some View {
         label
             .background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(Color.white.opacity(hovered && enabled ? hoverOpacity : 0)))
+            .overlay(RoundedRectangle(cornerRadius: cornerRadius).strokeBorder(
+                keyboardFocused ? GlassPalette.blue : .clear, lineWidth: 2).allowsHitTesting(false))
             .opacity(pressed ? 0.82 : 1)
             .scaleEffect(pressed && !reduceMotion ? 0.992 : 1)
             .onHover { hovered = $0 }

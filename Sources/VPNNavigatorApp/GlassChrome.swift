@@ -22,6 +22,15 @@ enum GlassLayout {
 
 /// Neutral optical layers. Wallpaper colour belongs to WindowServer, not to
 /// application gradients. Keep these shared fills achromatic on every page.
+/// A CI-only composition fixture, without mutating the read-only system
+/// contrast environment or changing the user's accessibility preferences.
+enum GlassAccessibility {
+    static func increasedContrast(_ system: ColorSchemeContrast) -> Bool {
+        system == .increased || (ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" &&
+            ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-high-contrast-snapshot"))
+    }
+}
+
 enum GlassSurface {
     static let mist = Color.white
     static let sidebar = Color.white
@@ -31,13 +40,15 @@ enum GlassSurface {
 }
 
 struct GlassAtmosphere: View {
+    var onWindow: ((NSWindow) -> Void)? = nil
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         ZStack {
-            DesktopVisualEffect()
-            if reduceTransparency &&
-                !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot") {
+            DesktopVisualEffect(onWindow: onWindow)
+            if GlassAccessibility.increasedContrast(contrast) || (reduceTransparency &&
+                !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot")) {
                 Color(nsColor: .windowBackgroundColor)
             } else {
                 Color.white.opacity(GlassSurface.windowOpacity)
@@ -50,6 +61,7 @@ struct GlassAtmosphere: View {
 }
 
 final class NativeWindowGlass: NSVisualEffectView {
+    var onWindow: ((NSWindow) -> Void)?
     private weak var configuredWindow: NSWindow?
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -57,6 +69,7 @@ final class NativeWindowGlass: NSVisualEffectView {
     }
     func configureWindow() {
         guard let window else { return }
+        onWindow?(window)
         if configuredWindow !== window {
             window.isOpaque = false
             window.backgroundColor = .clear
@@ -78,14 +91,17 @@ final class NativeWindowGlass: NSVisualEffectView {
 /// One full-strength native blur. Lowering the effect view's alpha also
 /// reveals unblurred wallpaper; tune readability with the neutral veil above.
 struct DesktopVisualEffect: NSViewRepresentable {
+    var onWindow: ((NSWindow) -> Void)? = nil
     func makeNSView(context: Context) -> NativeWindowGlass {
         let view = NativeWindowGlass()
+        view.onWindow = onWindow
         view.material = .sidebar
         view.blendingMode = .behindWindow
         view.state = .followsWindowActiveState
         return view
     }
     func updateNSView(_ view: NativeWindowGlass, context: Context) {
+        view.onWindow = onWindow
         view.configureWindow()
     }
 }
@@ -94,11 +110,12 @@ struct DesktopVisualEffect: NSViewRepresentable {
 /// translucent content canvas in addition to the individual frosted tiles;
 /// without this layer the header looks detached from the whole page.
 struct ReferenceWorkspaceSurface: ViewModifier {
+    @Environment(\.colorSchemeContrast) private var contrast
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         content
             .background(shape.fill(Color.white.opacity(0.035)))
-            .overlay(shape.strokeBorder(Color.white.opacity(0.30), lineWidth: 0.75)
+            .overlay(shape.strokeBorder(GlassAccessibility.increasedContrast(contrast) ? Color.primary.opacity(0.55) : Color.white.opacity(0.30), lineWidth: GlassAccessibility.increasedContrast(contrast) ? 1.5 : 0.75)
                 .allowsHitTesting(false))
     }
 }
@@ -113,17 +130,18 @@ extension View {
 /// No wallpaper image, opaque app background, or fake macOS glass API.
 private struct GlassCardModifier: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
     var cornerRadius: CGFloat
     var active: Bool
 
     func body(content: Content) -> some View {
-        let opaqueFallback = reduceTransparency &&
-            !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot")
+        let opaqueFallback = GlassAccessibility.increasedContrast(contrast) || (reduceTransparency &&
+            !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot"))
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
             .background(shape.fill(opaqueFallback ? Color(nsColor: .windowBackgroundColor) :
                 Color.white.opacity(GlassSurface.cardOpacity)))
-            .overlay(shape.strokeBorder(Color.white.opacity(active ? 0.65 : 0.50), lineWidth: 0.75)
+            .overlay(shape.strokeBorder(GlassAccessibility.increasedContrast(contrast) ? Color.primary.opacity(0.55) : Color.white.opacity(active ? 0.65 : 0.50), lineWidth: GlassAccessibility.increasedContrast(contrast) ? 1.5 : 0.75)
                 .allowsHitTesting(false))
             .shadow(color: Color.black.opacity(active ? 0.04 : 0.025), radius: 8, y: 3)
     }
@@ -180,6 +198,7 @@ struct TrafficSparkline: View {
                                                  lineCap: .round, lineJoin: .round))
             }
             .accessibilityLabel("真实 OpenVPN 流量趋势")
+            .accessibilityValue("最近 \(samples.count) 个采样点；当前 \(String(format: "%.0f", samples.last ?? 0)) 字节增量")
         } else {
             Text("连接后显示趋势")
                 .font(.system(size: 12))

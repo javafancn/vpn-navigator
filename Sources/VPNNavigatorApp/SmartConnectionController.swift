@@ -77,7 +77,7 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
     }
     func connectNow() {
         guard let model, let target = target(automatic: false) else { status = "没有可用配置，请先导入配置。"; return }
-        guard NSApp.modalWindow == nil, !model.showingPublicEgress, !model.showingConnectionHistory, model.profileHealthTarget == nil, !model.showingSetup, !model.showingMaintenance,
+        guard !model.nativeDialogPresented, !model.showingKeyboardHelp, !model.showingPublicEgress, !model.showingConnectionHistory, model.profileHealthTarget == nil, !model.showingSetup, !model.showingMaintenance,
               !model.showingPreferences, !model.showingSmartConnection, !model.showingProfileBackup else { model.quickAccess.openMainWindow(); return }
         cancelPending()
         // Reuse the existing confirmation panel when a different VPN is active.

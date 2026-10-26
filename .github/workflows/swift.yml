@@ -16,6 +16,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build
         run: swift build
+      - name: Verify workspace keyboard and accessibility in the debug build
+        if: matrix.runner != 'macos-15-intel'
+        run: |
+          defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
+          python3 - <<'PYTEST'
+          import subprocess
+          from pathlib import Path
+          folder = subprocess.check_output(['swift', 'build', '--show-bin-path'], text=True).strip()
+          subprocess.run([str(Path(folder) / 'VPNNavigatorApp'), '--vpnnav-workspace-accessibility-self-test'], check=True, timeout=45)
+          PYTEST
       - name: Unit tests
         run: swift test
       - name: Verify route rollback ordering without system mutations

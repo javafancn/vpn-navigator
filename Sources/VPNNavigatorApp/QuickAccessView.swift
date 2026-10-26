@@ -47,6 +47,12 @@ struct QuickAccessView: View {
                         ForEach(results) { profile in
                             Button { onSelect(profile.id) } label: { row(profile) }
                                 .buttonStyle(.plain).id(profile.id)
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel(profile.name)
+                                .accessibilityValue([profile.group, profile.isFavorite ? "已收藏" : "未收藏",
+                                    model.connected && model.activeProfileID == profile.id ? "已连接" : "未连接",
+                                    state.selectedID == profile.id ? "已选择" : "未选择"].joined(separator: "，"))
+                                .accessibilityHint("选择配置；使用底部按钮连接或查看当前连接")
                                 .accessibilityAddTraits(state.selectedID == profile.id ? .isSelected : [])
                         }
                     }.padding(10)

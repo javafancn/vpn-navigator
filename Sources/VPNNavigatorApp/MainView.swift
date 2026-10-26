@@ -1,4 +1,5 @@
 import SwiftUI
+import Darwin
 import VPNNavigatorCore
 import UniformTypeIdentifiers
 
@@ -28,9 +29,15 @@ enum WorkspaceTab: String, CaseIterable, Identifiable {
     }
 }
 
+@MainActor
 struct MainView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var tab: WorkspaceTab = .overview
+    @EnvironmentObject private var workspaceCommands: WorkspaceCommandRouter
+    @StateObject private var navigation: WorkspaceNavigation
+    private var tab: WorkspaceTab {
+        get { navigation.tab }
+        nonmutating set { navigation.select(newValue) }
+    }
     @State private var dropTargeted = false
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -38,18 +45,20 @@ struct MainView: View {
 
     /// The UI snapshot argument selects a real application page for macOS
     /// screenshot checks. It never changes connectivity or network state.
-    init() {
+    init(navigation: WorkspaceNavigation? = nil) {
+        let state = navigation ?? WorkspaceNavigation()
         if let value = ProcessInfo.processInfo.arguments
             .first(where: { $0.hasPrefix("--vpnnav-ui-tab=") })?
             .split(separator: "=", maxSplits: 1).last,
            let initialTab = WorkspaceTab(rawValue: String(value)) {
-            _tab = State(initialValue: initialTab)
+            state.select(initialTab)
         }
+        _navigation = StateObject(wrappedValue: state)
     }
 
     var body: some View {
         ZStack {
-            GlassAtmosphere()
+            GlassAtmosphere(onWindow: { workspaceCommands.attach($0) })
             HStack(spacing: 0) {
                 sidebar.frame(width: 228)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
@@ -66,7 +75,7 @@ struct MainView: View {
                     Group {
                         switch tab {
                         case .overview: ConnectionOverview()
-                        case .profiles: ProfileLibrary(onImport: {
+                        case .profiles: ProfileLibrary(searchRequest: navigation.searchRequest, onImport: {
                             if model.canChooseProfileFiles { model.profilePickerPresented = true }
                         })
                         case .routing: RoutingWorkspace()
@@ -99,9 +108,17 @@ struct MainView: View {
                     }.allowsHitTesting(false)
             }
         }
+        .onChange(of: model.workspaceNavigationBlocked) { _ in workspaceCommands.refresh() }
         .preferredColorScheme(.light)
         .environment(\.locale, Locale(identifier: "zh_CN"))
         .onAppear {
+            workspaceCommands.configure(model: model, navigation: navigation)
+            if ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") {
+                Task {
+                    do { try await WorkspaceAccessibilitySelfTest.run(model: model, navigation: navigation, router: workspaceCommands); Darwin.exit(0) }
+                    catch { print("Workspace accessibility self-test failed: \(error)"); Darwin.exit(1) }
+                }
+            }
             model.quickAccess.openMainWindow = {
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
@@ -120,7 +137,9 @@ struct MainView: View {
             }
             if ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
                ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot"), !model.profiles.isEmpty {
-                if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-custom-routes-snapshot") ||
+                if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-keyboard-help-snapshot") {
+                    model.showingKeyboardHelp = true
+                } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-custom-routes-snapshot") ||
                    ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-route-explanation-snapshot") {
                     model.profiles[0].customRules = [CustomRouteRule(cidr: "9.9.9.9/32", action: .direct), CustomRouteRule(cidr: "10.66.0.0/16", action: .vpn)]
                     model.profiles[0].mode = .fullVPN
@@ -176,6 +195,7 @@ struct MainView: View {
                 model.message = error.localizedDescription
             }
         }
+        .sheet(isPresented: $model.showingKeyboardHelp) { KeyboardHelpView() }
         .sheet(isPresented: $model.showingAccountCredentials) { AccountCredentialsView().environmentObject(model) }
         .sheet(item: $model.authenticationChallenge) { challenge in
             AuthenticationChallengeView(challenge: challenge).id(challenge.id).environmentObject(model)
@@ -255,6 +275,9 @@ struct MainView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(ReferenceQuietButton())
+                .accessibilityIdentifier("workspace-" + item.rawValue)
+                .accessibilityLabel(item.title)
+                .accessibilityValue(tab == item ? "已选择" : "未选择")
                 .accessibilityAddTraits(tab == item ? .isSelected : [])
                 .padding(.horizontal, 15)
                 .padding(.bottom, 5)
@@ -389,7 +412,9 @@ private struct ConnectionOverview: View {
                     } label: { ReferencePowerOrb() }
                     .buttonStyle(ReferenceQuietButton(cornerRadius: 110, hoverOpacity: 0.04))
                     .disabled(model.stopping || (model.busy && !model.connecting && !model.connected && !model.firewallRecoveryRequired))
-                    .accessibilityLabel(model.connected ? "断开 VPN" : model.connecting ? "取消连接" : "连接 VPN")
+                    .accessibilityIdentifier("vpn-power")
+                    .accessibilityLabel(model.firewallRecoveryRequired && !model.connected && !model.connecting ? "解除断线保护" : model.connected ? "断开 VPN" : model.connecting ? "取消连接" : "连接 VPN")
+                    .accessibilityValue(statusTitle)
                     Text(statusTitle)
                         .font(.system(size: 28, weight: .semibold))
                         .foregroundStyle(model.connected ? Color.green : hasError ? Color.orange : GlassPalette.blue)
@@ -418,7 +443,7 @@ private struct ConnectionOverview: View {
                                     .foregroundStyle(GlassPalette.ink.opacity(0.45))
                             }
                             .buttonStyle(.plain)
-                            .help("身份验证")
+                            .help("身份验证").accessibilityLabel("身份验证")
                             .popover(isPresented: $showingCredentials) {
                                 VStack(alignment: .leading, spacing: 12) {
                                     Text("身份验证").font(.headline)
@@ -439,6 +464,8 @@ private struct ConnectionOverview: View {
                             }
                                                         .menuIndicator(.hidden)
                             .buttonStyle(.plain)
+                            .accessibilityLabel("选择连接配置")
+                            .accessibilityValue(model.selected?.name ?? "未选择")
                             .disabled(model.profiles.isEmpty || model.busy)
                         }
                         quickRow("路由模式") {
@@ -452,6 +479,8 @@ private struct ConnectionOverview: View {
                             }
                                                         .menuIndicator(.hidden)
                             .buttonStyle(.plain)
+                            .accessibilityLabel("选择路由模式")
+                            .accessibilityValue(model.displayedRoutingMode(for: model.selectedID)?.title ?? "待核验")
                             .disabled(model.selected == nil || model.busy || model.routingModeSwitching || model.connecting || model.stopping)
                         }
                         quickRow("源文件") {
@@ -580,204 +609,6 @@ private struct ReferencePowerOrb: View {
                 .font(.system(size: 52, weight: .light)).foregroundStyle(.white)
         }.frame(width: 204, height: 204)
     }
-}
-
-private struct ProfileLibrary: View {
-    @EnvironmentObject private var model: AppModel
-    let onImport: () -> Void
-    @FocusState private var searchFocused: Bool
-
-    private var filtered: [VPNProfile] { model.libraryProfiles }
-    private var visibleSelection: VPNProfile? { filtered.first { $0.id == model.selectedID } }
-    private var hasFilters: Bool { model.profileLibrary.scope != .all || !model.profileLibrary.query.isEmpty }
-    private func clearFilters() { model.profileLibrary.clearFilters(); searchFocused = false }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 13) {
-            WorkspaceHeading(title: "配置文件",
-                subtitle: "管理和编辑 VPN 配置文件",
-                symbol: "square.stack.3d.up.fill")
-                .padding(.bottom, 4)
-
-            HStack(spacing: 10) {
-                HStack(spacing: 9) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                    .font(.system(size: 16))
-                TextField("搜索名称、分组或文件名…", text: $model.profileLibrary.query)
-                    .focused($searchFocused)
-                    .font(.system(size: 16))
-                    .textFieldStyle(.plain)
-                if !model.profileLibrary.query.isEmpty {
-                    Button {
-                        model.profileLibrary.query = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("清除搜索")
-                }
-            }
-                .referenceInput(height: 42, focused: searchFocused)
-                Button(action: onImport) {
-                    Label("导入配置", systemImage: "plus")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(height: 26)
-                }
-                .buttonStyle(ReferencePrimaryButton())
-                .tint(GlassPalette.blue)
-                .disabled(!model.canChooseProfileFiles)
-            }
-
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 6) {
-                        Menu {
-                            scopeButton("全部配置", scope: .all, count: model.profiles.count)
-                            scopeButton("收藏配置", scope: .favorites, count: model.profiles.filter(\.isFavorite).count)
-                            if !model.libraryGroups.isEmpty {
-                                Divider()
-                                ForEach(model.libraryGroups) { group in
-                                    scopeButton(group.name, scope: .group(group.name), count: group.count)
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 5) {
-                                Text(model.profileLibrary.scope.title).lineLimit(1).truncationMode(.middle)
-                                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
-                            }.font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
-                        }.menuIndicator(.hidden).buttonStyle(.plain).help("按收藏或分组筛选配置")
-                        Spacer(minLength: 0)
-                        Menu {
-                            ForEach(ProfileLibrarySort.allCases) { sort in
-                                Button { model.profileLibrary.sort = sort } label: {
-                                    Label(sort.title, systemImage: model.profileLibrary.sort == sort ? "checkmark" : "circle")
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "arrow.up.arrow.down").font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                        }.menuIndicator(.hidden).buttonStyle(.plain)
-                            .help("排序：" + model.profileLibrary.sort.title).accessibilityLabel("配置排序")
-                    }.padding(.horizontal, 6)
-                    HStack {
-                        Text("显示 \(filtered.count) / \(model.profiles.count) 个 · " + model.profileLibrary.sort.title)
-                            .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-                        Spacer(minLength: 0)
-                        if hasFilters {
-                            Button("清除") { clearFilters() }.buttonStyle(.plain)
-                                .font(.system(size: 11)).foregroundStyle(GlassPalette.blue).help("清除搜索与分组筛选")
-                        }
-                    }.padding(.horizontal, 6).padding(.bottom, 3)
-
-                    ScrollView {
-                        LazyVStack(spacing: 5) {
-                            ForEach(filtered) { profile in
-                                Button { searchFocused = false; model.selectedID = profile.id } label: {
-                                    HStack(spacing: 9) {
-                                        GlassIcon(symbol: "globe",
-                                                  color: profile.isFavorite ?
-                                                    GlassPalette.blue : GlassPalette.cyan,
-                                                  size: 40)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(profile.name)
-                                                .font(.system(size: 16, weight: .semibold))
-                                                .foregroundStyle(.primary)
-                                                .lineLimit(1)
-                                            Text(profile.sourceFilename)
-                                                .font(.system(size: 13))
-                                                .foregroundStyle(.secondary)
-                                                .lineLimit(1)
-                                                .truncationMode(.middle)
-                                        }
-                                        Spacer(minLength: 3)
-                                        if profile.isFavorite {
-                                            Image(systemName: "star.fill")
-                                                .foregroundStyle(.orange)
-                                                .font(.system(size: 14))
-                                        }
-                                        if model.activeProfileID == profile.id && model.connected {
-                                            Circle().fill(Color.green).frame(width: 7, height: 7)
-                                                .accessibilityLabel("已连接")
-                                        } else if !profile.isFavorite {
-                                            Circle()
-                                                .fill(Color.secondary.opacity(0.30))
-                                                .frame(width: 7, height: 7)
-                                        }
-                                    }
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 10)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(
-                                        model.selectedID == profile.id ?
-                                          GlassPalette.blue.opacity(0.17) :
-                                          Color.white.opacity(0.035),
-                                        in: RoundedRectangle(cornerRadius: 11))
-                                    .overlay {
-                                        RoundedRectangle(cornerRadius: 11)
-                                            .strokeBorder(model.selectedID == profile.id ?
-                                                GlassPalette.blue.opacity(0.18) : .clear,
-                                                lineWidth: 1)
-                                    }
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(ReferenceQuietButton(cornerRadius: 11))
-                                .accessibilityAddTraits(
-                                    model.selectedID == profile.id ? .isSelected : [])
-                            }
-                        }
-                    }
-                    if filtered.isEmpty {
-                        Label(model.profiles.isEmpty ? "尚无配置" : "没有匹配的配置", systemImage: "magnifyingglass")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(10)
-                .frame(width: 230)
-                .frame(maxHeight: .infinity, alignment: .top)
-                .glassCard(cornerRadius: 15)
-
-                ZStack {
-                    if let profile = model.selected {
-                        ProfileDetail(profile: profile, isVisible: visibleSelection != nil).id(profile.id)
-                            .opacity(visibleSelection == nil ? 0 : 1)
-                            .disabled(visibleSelection == nil)
-                            .allowsHitTesting(visibleSelection != nil)
-                            .accessibilityHidden(visibleSelection == nil)
-                    }
-                    if visibleSelection == nil {
-                        VStack(spacing: 10) {
-                            GlassIcon(symbol: "square.stack.3d.up", size: 45)
-                            Text(model.selected == nil ? "选择配置文件" : "当前选择不在筛选结果中").font(.headline)
-                            Text(model.profiles.isEmpty ? "点击右上角「导入配置」以添加 .ovpn 文件" :
-                                 filtered.isEmpty ? "请调整搜索词或清除筛选。" : "从左侧列表选择要查看的配置。")
-                                .font(.system(size: 14)).foregroundStyle(.secondary)
-                            if model.selected != nil && hasFilters {
-                                Button("显示当前选择") { clearFilters() }.buttonStyle(ReferenceSecondaryButton())
-                            } else if hasFilters {
-                                Button("清除筛选") { clearFilters() }.buttonStyle(ReferenceSecondaryButton())
-                            }
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .glassCard(cornerRadius: 16)
-            }
-            .frame(maxHeight: .infinity)
-        }
-        .padding(.horizontal, GlassLayout.pageInset)
-        .padding(.top, GlassLayout.pageTop)
-        .padding(.bottom, 18)
-    }
-    private func scopeButton(_ title: String, scope: ProfileLibraryScope, count: Int) -> some View {
-        Button { model.profileLibrary.scope = scope; searchFocused = false } label: {
-            Label(title + " (\(count))", systemImage: model.profileLibrary.scope == scope ? "checkmark" : "circle")
-        }
-    }
-
 }
 
 private struct RoutingWorkspace: View {
@@ -1284,6 +1115,8 @@ struct ProfileDetail: View {
                     }
                     .buttonStyle(ReferenceSecondaryButton())
                     .help(profile.isFavorite ? "取消收藏" : "收藏此配置")
+                    .accessibilityLabel(profile.isFavorite ? "取消收藏此配置" : "收藏此配置")
+                    .accessibilityValue(profile.isFavorite ? "已收藏" : "未收藏")
                     .disabled(!model.canEditProfileMetadata(profile.id))
                     Menu {
                         Button("配置健康检查…") { model.showProfileHealth(profile.id) }
@@ -1306,6 +1139,7 @@ struct ProfileDetail: View {
                             .foregroundStyle(.secondary)
                     }
                     .menuIndicator(.hidden)
+                    .accessibilityLabel("配置操作").accessibilityValue(profile.name)
                     .fixedSize()
                 }
                 HStack(spacing: 4) {
@@ -1328,7 +1162,9 @@ struct ProfileDetail: View {
                                     }
                                 }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(ReferenceQuietButton())
+                        .accessibilityAddTraits(tab == section ? .isSelected : [])
+                        .accessibilityValue(tab == section ? "已选择" : "未选择")
                     }
                 }
                 .referenceSegments()

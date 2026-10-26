@@ -118,6 +118,13 @@ jobs:
           import subprocess
           subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-public-egress-self-test'], check=True, timeout=60)
           PYTEST
+      - name: Verify actual workspace shortcuts, keyboard focus and accessibility tree
+        run: |
+          defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
+          python3 - <<'PYTEST'
+          import subprocess
+          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-workspace-accessibility-self-test'], check=True, timeout=45)
+          PYTEST
       - name: Ad-hoc sign development UI for local integrity checks
         run: |
           APP='dist/VPN Navigator.app'
@@ -248,7 +255,7 @@ jobs:
             test -s "$RUNNER_TEMP/VPNNavigator-library-$STATE.png"
             killall VPNNavigatorApp 2>/dev/null || true
           done
-          for TOOL in custom-routes route-explanation troubleshooting smart-connection profile-backup profile-health profile-update connection-history public-egress; do
+          for TOOL in custom-routes route-explanation troubleshooting smart-connection profile-backup profile-health profile-update connection-history public-egress keyboard-help; do
             open -n "$APP" --args --vpnnav-ui-tab=routing --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot "--vpnnav-ui-$TOOL-snapshot"
             sleep 7
             WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift")"
@@ -256,6 +263,12 @@ jobs:
             test -s "$RUNNER_TEMP/VPNNavigator-tool-$TOOL.png"
             killall VPNNavigatorApp 2>/dev/null || true
           done
+          open -n "$APP" --args --vpnnav-ui-tab=profiles --vpnnav-ui-demo-snapshot --vpnnav-ui-high-contrast-snapshot
+          sleep 7
+          WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift")"
+          screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-high-contrast.png"
+          test -s "$RUNNER_TEMP/VPNNavigator-high-contrast.png"
+          killall VPNNavigatorApp 2>/dev/null || true
           for SCENE in cool warm; do
             swift scripts/capture-glass-calibration.swift "$SCENE" "$RUNNER_TEMP"
             sleep 3
@@ -271,6 +284,7 @@ jobs:
         with:
           name: VPNNavigator-visual-smoke
           path: |
+            ${{ runner.temp }}/VPNNavigator-high-contrast.png
             ${{ runner.temp }}/VPNNavigator-overview.png
             ${{ runner.temp }}/VPNNavigator-profiles.png
             ${{ runner.temp }}/VPNNavigator-routing.png

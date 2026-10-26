@@ -51,7 +51,9 @@ final class LocalizationTests: XCTestCase {
         AppLanguage.save(.chinese, defaults: defaults)
         XCTAssertEqual(defaults.stringArray(forKey: "AppleLanguages"), ["zh-Hans"])
         AppLanguage.save(.system, defaults: defaults)
-        XCTAssertNil(defaults.object(forKey: "AppleLanguages"))
+        // The getter still inherits the system's global AppleLanguages after removing our override.
+        XCTAssertNil(defaults.persistentDomain(forName: name)?["AppleLanguages"])
+        XCTAssertEqual(defaults.string(forKey: AppLanguage.preferenceKey), "system")
         XCTAssertEqual(defaults.string(forKey: "profile"), "keep")
         XCTAssertEqual(L10n.language, before)
     }

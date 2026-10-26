@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import Combine
 
 /// Window-local presentation only. Navigation never starts or changes a tunnel.
 @MainActor
@@ -10,36 +12,78 @@ final class WorkspaceNavigation: ObservableObject {
     func searchProfiles() { tab = .profiles; searchRequest = UUID() }
 }
 
-struct WorkspaceCommandActions {
-    let select: (WorkspaceTab) -> Void
-    let search: () -> Void
-    let help: () -> Void
+/// Explicit native-window ownership also works before any SwiftUI field has
+/// focus. Menu actions recheck ownership at execution, not just validation.
+@MainActor
+final class WorkspaceCommandRouter: ObservableObject {
+    @Published private(set) var available = false
+    private weak var window: NSWindow?
+    private weak var model: AppModel?
+    private weak var navigation: WorkspaceNavigation?
+    private var subscriptions: [AnyCancellable] = []
+    init() {
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
+                     NSWindow.didBecomeMainNotification, NSWindow.didResignMainNotification,
+                     NSWindow.willBeginSheetNotification, NSWindow.didEndSheetNotification,
+                     NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
+            subscriptions.append(NotificationCenter.default.publisher(for: name).sink { [weak self] _ in
+                self?.refresh()
+                // Sheet/key notifications may precede the final window state.
+                DispatchQueue.main.async { [weak self] in self?.refresh() }
+            })
+        }
+    }
+    func configure(model: AppModel, navigation: WorkspaceNavigation) {
+        self.model = model; self.navigation = navigation; refresh()
+    }
+    func attach(_ window: NSWindow?) {
+        self.window = window
+        // Representable updates run during view reconciliation.
+        DispatchQueue.main.async { [weak self] in self?.refresh() }
+    }
+    private var mayPerform: Bool {
+        guard let window, let model, navigation != nil else { return false }
+        return NSApp.isActive && NSApp.keyWindow === window && !model.workspaceNavigationBlocked
+    }
+    func refresh() { let next = mayPerform; if available != next { available = next } }
+    func select(_ tab: WorkspaceTab) { guard mayPerform else { return }; navigation?.select(tab) }
+    func search() { guard mayPerform else { return }; navigation?.searchProfiles() }
+    func help() { guard mayPerform else { return }; model?.showingKeyboardHelp = true }
 }
-private struct WorkspaceCommandsKey: FocusedValueKey {
-    typealias Value = WorkspaceCommandActions
-}
-extension FocusedValues {
-    var workspaceCommands: WorkspaceCommandActions? {
-        get { self[WorkspaceCommandsKey.self] }
-        set { self[WorkspaceCommandsKey.self] = newValue }
+
+/// Observes only this view's own NSWindow; never monitors or intercepts keys.
+@MainActor
+struct WorkspaceCommandWindowBridge: NSViewRepresentable {
+    let router: WorkspaceCommandRouter
+    func makeNSView(context: Context) -> WindowProbe {
+        let view = WindowProbe()
+        view.onWindow = { [weak router] window in router?.attach(window) }
+        view.setAccessibilityElement(false)
+        return view
+    }
+    func updateNSView(_ view: WindowProbe, context: Context) { router.attach(view.window) }
+    final class WindowProbe: NSView {
+        var onWindow: ((NSWindow?) -> Void)?
+        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); onWindow?(window) }
     }
 }
 
+@MainActor
 struct WorkspaceCommands: Commands {
-    @FocusedValue(\.workspaceCommands) private var actions
+    @ObservedObject var router: WorkspaceCommandRouter
     var body: some Commands {
         CommandMenu("工作区") {
             ForEach(Array(WorkspaceTab.allCases.enumerated()), id: \.element.id) { index, tab in
-                Button(tab.title) { actions?.select(tab) }
+                Button(tab.title) { router.select(tab) }
                     .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
-                    .disabled(actions == nil)
+                    .disabled(!router.available)
             }
             Divider()
-            Button("搜索配置…") { actions?.search() }
-                .keyboardShortcut("f", modifiers: .command).disabled(actions == nil)
+            Button("搜索配置…") { router.search() }
+                .keyboardShortcut("f", modifiers: .command).disabled(!router.available)
         }
         CommandGroup(after: .help) {
-            Button("键盘与辅助功能…") { actions?.help() }.disabled(actions == nil)
+            Button("键盘与辅助功能…") { router.help() }.disabled(!router.available)
         }
     }
 }

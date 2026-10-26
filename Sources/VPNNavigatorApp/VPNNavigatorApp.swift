@@ -46,6 +46,7 @@ final class AppModel: ObservableObject {
     @Published var showingProfileIndexRecovery = false
     @Published var quickAccessShortcutStatus = "全局快捷键已关闭"
     lazy var quickAccess = QuickAccessCoordinator(model: self)
+    lazy var workspaceCommands = WorkspaceCommandRouter()
     private let smartDefaults: UserDefaults
     lazy var smartConnection = SmartConnectionController(model: self, defaults: smartDefaults)
     @Published var showingSmartConnection = false
@@ -84,7 +85,7 @@ final class AppModel: ObservableObject {
     @Published var showingPublicEgress = false
     @Published var showingKeyboardHelp = false
     /// Prevent main-window menu shortcuts from navigating behind sheets or a
-    /// native file/authorization panel. The action closures also recheck this.
+    /// native file/authorization panel. The native command router rechecks it.
     var nativeDialogPresented: Bool {
         NSApp.modalWindow != nil || NSApp.keyWindow?.sheetParent != nil || NSApp.mainWindow?.attachedSheet != nil
     }
@@ -1483,7 +1484,7 @@ struct VPNNavigatorApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 700)
         .commands {
-            WorkspaceCommands()
+            WorkspaceCommands(router: model.workspaceCommands)
             CommandGroup(after: .newItem) {
                 Button("快速打开…") { model.quickAccess.toggle() }
                     .keyboardShortcut("p", modifiers: [.command, .shift])

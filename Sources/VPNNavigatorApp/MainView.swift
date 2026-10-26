@@ -38,7 +38,6 @@ struct MainView: View {
         nonmutating set { navigation.select(newValue) }
     }
     @State private var dropTargeted = false
-    @State private var nativeSheetPresented = false
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var sidebarSelection
@@ -108,15 +107,12 @@ struct MainView: View {
                     }.allowsHitTesting(false)
             }
         }
-        .focusedSceneValue(\.workspaceCommands, nativeSheetPresented || model.workspaceNavigationBlocked ? nil : WorkspaceCommandActions(
-            select: { if !model.workspaceNavigationBlocked { navigation.select($0) } },
-            search: { if !model.workspaceNavigationBlocked { navigation.searchProfiles() } },
-            help: { if !model.workspaceNavigationBlocked { model.showingKeyboardHelp = true } }))
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willBeginSheetNotification)) { _ in nativeSheetPresented = true }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEndSheetNotification)) { _ in nativeSheetPresented = false }
+        .background(WorkspaceCommandWindowBridge(router: model.workspaceCommands).frame(width: 0, height: 0).accessibilityHidden(true).allowsHitTesting(false))
+        .onChange(of: model.workspaceNavigationBlocked) { _ in model.workspaceCommands.refresh() }
         .preferredColorScheme(.light)
         .environment(\.locale, Locale(identifier: "zh_CN"))
         .onAppear {
+            model.workspaceCommands.configure(model: model, navigation: navigation)
             if ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") {
                 Task {
                     do { try await WorkspaceAccessibilitySelfTest.run(model: model, navigation: navigation); Darwin.exit(0) }

@@ -109,6 +109,13 @@ enum WorkspaceAccessibilitySelfTest {
         guard !model.nativeDialogPresented else { throw Failure.check("native sheet dismissal") }
         try command("1", code: 18); try await settle()
         guard navigation.tab == .overview else { throw Failure.check("commands resume after native sheet") }
+        let otherWindow = NSWindow(contentRect: NSRect(x: 40, y: 40, width: 320, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
+        otherWindow.isReleasedWhenClosed = false; otherWindow.makeKeyAndOrderFront(nil); try await settle()
+        guard otherWindow.isKeyWindow, !model.workspaceCommands.available else { throw Failure.check("foreign window disables workspace commands") }
+        model.workspaceCommands.select(.settings)
+        guard navigation.tab == .overview else { throw Failure.check("foreign window routed into main") }
+        otherWindow.orderOut(nil); window.makeMain(); window.makeKeyAndOrderFront(nil); try await settle()
+        guard model.workspaceCommands.available else { throw Failure.check("main window commands resume") }
         model.showingKeyboardHelp = true; try await settle()
         guard model.workspaceNavigationBlocked, model.smartConnectionContext().occupied,
               model.quickAccessAction(for: b.id) == .blocked else { throw Failure.check("help modal exclusion") }

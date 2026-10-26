@@ -616,7 +616,7 @@ private struct ProfileLibrary: View {
     let searchRequest: UUID?
     let onImport: () -> Void
     @FocusState private var searchFocused: Bool
-    @FocusState private var focusedProfileID: UUID?
+    @FocusState private var listFocused: Bool
 
     private var filtered: [VPNProfile] { model.libraryProfiles }
     private var visibleSelection: VPNProfile? { filtered.first { $0.id == model.selectedID } }
@@ -710,7 +710,7 @@ private struct ProfileLibrary: View {
                     ScrollView {
                         LazyVStack(spacing: 5) {
                             ForEach(filtered) { profile in
-                                Button { searchFocused = false; model.selectedID = profile.id } label: {
+                                Button { searchFocused = false; model.selectedID = profile.id; listFocused = true } label: {
                                     HStack(spacing: 9) {
                                         GlassIcon(symbol: "globe",
                                                   color: profile.isFavorite ?
@@ -763,13 +763,9 @@ private struct ProfileLibrary: View {
                                 }
                                 .buttonStyle(ReferenceQuietButton(cornerRadius: 11))
                                 .id(profile.id)
-                                .focused($focusedProfileID, equals: profile.id)
+                                .focusable(false)
                                 .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(
-                                    focusedProfileID == profile.id ? GlassPalette.blue : .clear, lineWidth: 2).allowsHitTesting(false))
-                                .onMoveCommand { direction in
-                                    if direction == .down { moveFocus(from: profile.id, forward: true) }
-                                    else if direction == .up { moveFocus(from: profile.id, forward: false) }
-                                }
+                                    listFocused && model.selectedID == profile.id ? GlassPalette.blue : .clear, lineWidth: 2).allowsHitTesting(false))
                                 .accessibilityElement(children: .ignore)
                                 .accessibilityIdentifier("library-profile-" + profile.id.uuidString)
                                 .accessibilityLabel(profile.name)
@@ -782,8 +778,21 @@ private struct ProfileLibrary: View {
                             }
                         }
                     }
-                    .onChange(of: focusedProfileID) { id in if let id { proxy.scrollTo(id, anchor: .center) } }
+                    .onChange(of: model.selectedID) { id in
+                        if listFocused, let id { proxy.scrollTo(id, anchor: .center) }
                     }
+                    }
+                    .focusable()
+                    .focused($listFocused)
+                    .onMoveCommand { direction in
+                        guard listFocused, let id = visibleSelection?.id else { return }
+                        if direction == .down { moveFocus(from: id, forward: true) }
+                        else if direction == .up { moveFocus(from: id, forward: false) }
+                    }
+                    .onChange(of: listFocused) { focused in
+                        if focused, visibleSelection == nil, let first = filtered.first { model.selectedID = first.id }
+                    }
+                    .accessibilityLabel("配置列表")
                     if filtered.isEmpty {
                         Label(model.profiles.isEmpty ? "尚无配置" : "没有匹配的配置", systemImage: "magnifyingglass")
                             .font(.system(size: 14))
@@ -828,19 +837,19 @@ private struct ProfileLibrary: View {
         .padding(.top, GlassLayout.pageTop)
         .padding(.bottom, 18)
         .onAppear { if searchRequest != nil { searchFocused = true } }
-        .onChange(of: searchRequest) { request in if request != nil { searchFocused = true; focusedProfileID = nil } }
+        .onChange(of: searchRequest) { request in if request != nil { searchFocused = true; listFocused = false } }
         .onChange(of: filtered.map(\.id)) { ids in
-            if let id = focusedProfileID, !ids.contains(id) { focusedProfileID = nil; searchFocused = true }
+            if listFocused, model.selectedID.map({ !ids.contains($0) }) ?? true { listFocused = false; searchFocused = true }
         }
     }
     private func focusResult() {
         guard let id = visibleSelection?.id ?? filtered.first?.id else { return }
-        searchFocused = false; model.selectedID = id; focusedProfileID = id
+        searchFocused = false; model.selectedID = id; listFocused = true
     }
     private func moveFocus(from id: UUID, forward: Bool) {
         guard let index = filtered.firstIndex(where: { $0.id == id }) else { return }
         let next = min(max(index + (forward ? 1 : -1), 0), filtered.count - 1)
-        model.selectedID = filtered[next].id; focusedProfileID = filtered[next].id
+        model.selectedID = filtered[next].id
     }
     private func scopeButton(_ title: String, scope: ProfileLibraryScope, count: Int) -> some View {
         Button { model.profileLibrary.scope = scope; searchFocused = false } label: {

@@ -112,13 +112,13 @@ enum WorkspaceAccessibilitySelfTest {
         if axAvailable { _ = try element("profile-library-search") }
         // Return selects a result and moves keyboard focus; arrows are handled
         // only by rows, leaving text editing and marked-text handling native.
-        window.sendEvent(try event(36, text: "\r")); try await settle()
+        NSApp.sendEvent(try event(36, text: "\r")); try await settle()
         guard model.selectedID == a.id, !(window.firstResponder is NSTextView) else { throw Failure.check("search to list focus") }
-        window.sendEvent(try event(125, text: "\u{f701}")); try await settle()
-        guard model.selectedID == b.id else { throw Failure.check("list down") }
-        window.sendEvent(try event(125, text: "\u{f701}")); try await settle()
+        NSApp.sendEvent(try event(125, text: "\u{f701}")); try await settle()
+        guard model.selectedID == b.id else { throw Failure.check("list down; responder=" + (window.firstResponder.map { String(describing: type(of: $0)) } ?? "nil") + "; full-keyboard=" + String(NSApp.isFullKeyboardAccessEnabled)) }
+        NSApp.sendEvent(try event(125, text: "\u{f701}")); try await settle()
         guard model.selectedID == b.id else { throw Failure.check("list boundary") }
-        window.sendEvent(try event(126, text: "\u{f700}")); try await settle()
+        NSApp.sendEvent(try event(126, text: "\u{f700}")); try await settle()
         guard model.selectedID == a.id else { throw Failure.check("list up") }
         if axAvailable {
             let row = try element("library-profile-" + a.id.uuidString)
@@ -130,8 +130,8 @@ enum WorkspaceAccessibilitySelfTest {
             let other = try element("library-profile-" + b.id.uuidString)
             guard other.accessibilityPerformPress() else { throw Failure.check("accessible selection action") }
         } else {
-            window.sendEvent(try event(125, text: "\u{f701}")); try await settle()
-            window.sendEvent(try event(49, text: " "))
+            NSApp.sendEvent(try event(125, text: "\u{f701}")); try await settle()
+            NSApp.sendEvent(try event(49, text: " "))
         }
         try await settle()
         guard model.selectedID == b.id, model.connected, model.activeProfileID == a.id else { throw Failure.check("selection must not connect") }
@@ -141,7 +141,7 @@ enum WorkspaceAccessibilitySelfTest {
         try command("f", code: 3); try await settle()
         guard navigation.tab == .profiles, window.firstResponder is NSTextView else { throw Failure.check("cross-workspace search focus") }
         model.profileLibrary.query = "no result"; try await settle()
-        window.sendEvent(try event(36, text: "\r")); try await settle()
+        NSApp.sendEvent(try event(36, text: "\r")); try await settle()
         guard model.selectedID == b.id, window.firstResponder is NSTextView else { throw Failure.check("empty search keeps selection and text focus") }
         model.profileLibrary.clearFilters()
         // Also cover locally owned editor/delete sheets that have no flag in

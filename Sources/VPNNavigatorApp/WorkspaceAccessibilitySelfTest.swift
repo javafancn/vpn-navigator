@@ -1,4 +1,5 @@
 import AppKit
+import ObjectiveC
 import VPNNavigatorCore
 
 /// Exercises the real SwiftUI scene, generated native menus, AppKit responder
@@ -43,15 +44,16 @@ enum WorkspaceAccessibilitySelfTest {
         }
         try await settle()
         guard NSApp.isActive, window.isKeyWindow, window.isMainWindow else { throw Failure.check("active main scene") }
-        func element(_ identifier: String) throws -> NSAccessibilityProtocol {
+        func element(_ identifier: String) throws -> AXElement {
             var visited = Set<ObjectIdentifier>()
-            func find(_ item: Any, depth: Int) -> NSAccessibilityProtocol? {
+            func find(_ item: Any, depth: Int) -> AXElement? {
                 guard depth < 40, visited.count < 6000 else { return nil }
                 let object = item as AnyObject
                 guard visited.insert(ObjectIdentifier(object)).inserted else { return nil }
-                if let node = item as? NSAccessibilityProtocol {
+                if let native = item as? NSObject {
+                    let node = AXElement(object: native)
                     if node.accessibilityIdentifier() == identifier { return node }
-                    for child in node.accessibilityChildren() ?? [] { if let match = find(child, depth: depth + 1) { return match } }
+                    for child in node.children { if let match = find(child, depth: depth + 1) { return match } }
                 }
                 if let view = item as? NSView {
                     for child in view.subviews { if let match = find(child, depth: depth + 1) { return match } }
@@ -143,6 +145,31 @@ enum WorkspaceAccessibilitySelfTest {
         guard model.workspaceNavigationBlocked else { throw Failure.check("authentication modal exclusion") }
         model.showingAccountCredentials = false
         print("PASS workspace accessibility: actual native command-1/2/F, repeated/cross-page search focus, Return and list arrows/bounds, empty results, accessible profile press without VPN change, selected/favorite/power labels and native/model modal exclusion; temporary profile fixtures cleaned; no network requests")
+    }
+    /// SwiftUI virtual nodes adopt role-specific accessibility protocols,
+    /// rather than the full NSAccessibilityProtocol. Query documented public
+    /// getter selectors without assuming that full protocol conformance.
+    private struct AXElement {
+        let object: NSObject
+        func value(_ name: String) -> Any? {
+            let selector = NSSelectorFromString(name)
+            guard object.responds(to: selector) else { return nil }
+            return object.perform(selector)?.takeUnretainedValue()
+        }
+        func accessibilityIdentifier() -> String? { value("accessibilityIdentifier") as? String }
+        func accessibilityLabel() -> String? { value("accessibilityLabel") as? String ?? value("accessibilityTitle") as? String }
+        func accessibilityValue() -> Any? { value("accessibilityValue") ?? value("accessibilityValueDescription") }
+        var children: [Any] { value("accessibilityChildren") as? [Any] ?? value("accessibilityChildrenInNavigationOrder") as? [Any] ?? [] }
+        func accessibilityPerformPress() -> Bool {
+            if let button = object as? NSAccessibilityButton { return button.accessibilityPerformPress() }
+            if let element = object as? NSAccessibilityProtocol { return element.accessibilityPerformPress() }
+            let selector = NSSelectorFromString("accessibilityPerformPress")
+            guard object.responds(to: selector), let method = class_getInstanceMethod(type(of: object), selector) else { return false }
+            // The documented method returns Objective-C BOOL, not an object;
+            // use its correct ABI instead of NSObject.perform's object return.
+            typealias Press = @convention(c) (AnyObject, Selector) -> ObjCBool
+            return unsafeBitCast(method_getImplementation(method), to: Press.self)(object, selector).boolValue
+        }
     }
     private static func settle() async throws { try await Task.sleep(nanoseconds: 400_000_000) }
     enum Failure: Error { case check(String) }

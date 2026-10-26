@@ -99,8 +99,8 @@ enum WorkspaceAccessibilitySelfTest {
         // AppModel. Native sheet ownership must block background navigation.
         let localSheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 260, height: 120), styleMask: [.titled], backing: .buffered, defer: false)
         localSheet.isReleasedWhenClosed = false
-        window.beginSheet(localSheet); try await settle()
-        guard model.nativeDialogPresented, model.workspaceNavigationBlocked, model.smartConnectionContext().occupied else { throw Failure.check("native sheet exclusion") }
+        window.beginSheet(localSheet, completionHandler: nil); try await settle()
+        guard model.nativeDialogPresented, !model.canChooseProfileFiles, model.workspaceNavigationBlocked, model.smartConnectionContext().occupied else { throw Failure.check("native sheet exclusion") }
         NSApp.mainMenu?.update()
         _ = NSApp.mainMenu?.performKeyEquivalent(with: try event(18, text: "1", modifiers: .command))
         try await settle()

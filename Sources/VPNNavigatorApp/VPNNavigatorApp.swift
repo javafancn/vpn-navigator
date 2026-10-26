@@ -359,7 +359,7 @@ final class AppModel: ObservableObject {
         await importFiles([url], presentReport: false)
     }
     var incomingPresentationReady: Bool {
-        profileOpenReady && profileIndexIssue == nil && !incomingProfiles.isEmpty && !profileDropLoading && !profilePickerPresented &&
+        profileOpenReady && !nativeDialogPresented && profileIndexIssue == nil && !incomingProfiles.isEmpty && !profileDropLoading && !profilePickerPresented &&
         !routingModeSwitching && !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress && !busy &&
         !connecting && !stopping && !showingConnectionHistory && profileHealthTarget == nil && !showingImportReport && !showingSetup && !showingMaintenance &&
         !showingPreferences && !showingKeyboardHelp && !showingPublicEgress && !showingDiagnostics && !showingRouteExplanation && !showingTroubleshooting && customRuleEditorProfile == nil && !showingProfileIndexRecovery && !showingAccountCredentials &&
@@ -399,7 +399,7 @@ final class AppModel: ObservableObject {
         !busy && !connecting && !stopping
     }
     var canChooseProfileFiles: Bool {
-        !routingModeSwitching && !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress &&
+        !nativeDialogPresented && !routingModeSwitching && !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress &&
         !showingImportReport && !showingProfileIndexRecovery && profileIndexIssue == nil && !busy && !connecting && !stopping
     }
     func importFiles(_ urls: [URL], presentReport: Bool = true) async {

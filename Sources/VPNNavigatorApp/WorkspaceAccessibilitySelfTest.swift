@@ -3,14 +3,34 @@ import VPNNavigatorCore
 
 /// Exercises the real SwiftUI scene, generated native menus, AppKit responder
 /// chain and in-process accessibility tree. No external accessibility grant,
-/// VPN, file import, credential storage or public network request is involved.
+/// VPN, user configuration, credential storage or public network request is involved.
 @MainActor
 enum WorkspaceAccessibilitySelfTest {
+    private static let fixtureRoot: URL? = {
+        guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
+              ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") else { return nil }
+        return FileManager.default.temporaryDirectory.appendingPathComponent("VPNNavWorkspaceCI-" + UUID().uuidString)
+    }()
+    static func applicationModel() -> AppModel {
+        guard let root = fixtureRoot, let defaults = UserDefaults(suiteName: root.lastPathComponent) else { return AppModel() }
+        return AppModel(backgroundServiceDefaults: defaults, profileStoreRoot: root.appendingPathComponent("Profiles"), libraryDefaults: defaults, smartDefaults: defaults)
+    }
     static func run(model: AppModel, navigation: WorkspaceNavigation, router: WorkspaceCommandRouter) async throws {
         guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" else { throw Failure.check("CI only") }
-        let a = VPNProfile(name: "Alpha", sourceFilename: "alpha.ovpn", relativePath: "fixture-only", isFavorite: true)
-        let b = VPNProfile(name: "Beta", sourceFilename: "beta.ovpn", relativePath: "fixture-only")
-        model.profiles = [a, b]; model.selectedID = nil
+        guard let root = fixtureRoot else { throw Failure.check("isolated fixture root") }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            UserDefaults(suiteName: root.lastPathComponent)?.removePersistentDomain(forName: root.lastPathComponent)
+        }
+        for name in ["Alpha", "Beta"] {
+            let file = root.appendingPathComponent(name + ".ovpn")
+            try "client\ndev tun\nremote fixture.example 1194\n<ca>\nFAKE\n</ca>\n".write(to: file, atomically: true, encoding: .utf8)
+            await model.importFile(file); model.clearImportReport(); model.message = nil
+        }
+        guard let a = model.profiles.first(where: { $0.name == "Alpha" }), let b = model.profiles.first(where: { $0.name == "Beta" }) else { throw Failure.check("fixture profiles") }
+        await model.setProfileFavorite(true, for: a.id)
+        model.selectedID = nil
         NSApp.activate(ignoringOtherApps: true)
         try await settle()
         guard let window = NSApp.windows.first(where: { $0.title == "VPN Navigator" && !($0 is NSPanel) }) else { throw Failure.check("main window") }
@@ -122,7 +142,7 @@ enum WorkspaceAccessibilitySelfTest {
         model.showingAccountCredentials = true
         guard model.workspaceNavigationBlocked else { throw Failure.check("authentication modal exclusion") }
         model.showingAccountCredentials = false
-        print("PASS workspace accessibility: actual native command-1/2/F, repeated/cross-page search focus, Return and list arrows/bounds, empty results, accessible profile press without VPN change, selected/favorite/power labels and native/model modal exclusion; no network requests")
+        print("PASS workspace accessibility: actual native command-1/2/F, repeated/cross-page search focus, Return and list arrows/bounds, empty results, accessible profile press without VPN change, selected/favorite/power labels and native/model modal exclusion; temporary profile fixtures cleaned; no network requests")
     }
     private static func settle() async throws { try await Task.sleep(nanoseconds: 400_000_000) }
     enum Failure: Error { case check(String) }

@@ -1365,7 +1365,7 @@ final class AppModel: ObservableObject {
 @main
 struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
-    @StateObject private var model = AppModel()
+    @StateObject private var model = WorkspaceAccessibilitySelfTest.applicationModel()
     @StateObject private var workspaceCommands = WorkspaceCommandRouter()
     init() {
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-public-egress-self-test") {
@@ -1484,7 +1484,6 @@ struct VPNNavigatorApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 700)
         .commands {
-            WorkspaceCommands(router: workspaceCommands, available: workspaceCommands.available)
             CommandGroup(after: .newItem) {
                 Button("快速打开…") { model.quickAccess.toggle() }
                     .keyboardShortcut("p", modifiers: [.command, .shift])

@@ -15,22 +15,32 @@ final class WorkspaceNavigation: ObservableObject {
 /// Explicit native-window ownership also works before any SwiftUI field has
 /// focus. Menu actions recheck ownership at execution, not just validation.
 @MainActor
-final class WorkspaceCommandRouter: ObservableObject {
+final class WorkspaceCommandRouter: NSObject, ObservableObject {
     @Published private(set) var available = false
     private weak var window: NSWindow?
     private weak var model: AppModel?
     private weak var navigation: WorkspaceNavigation?
     private var subscriptions: [AnyCancellable] = []
-    init() {
+    private var refreshScheduled = false
+    private let menuID = NSUserInterfaceItemIdentifier("com.javafancn.vpnnav.workspace")
+    private let helpID = NSUserInterfaceItemIdentifier("com.javafancn.vpnnav.keyboard-help")
+    private weak var menuRoot: NSMenu?
+    private var workspaceMenu: NSMenu?
+    private weak var helpItem: NSMenuItem?
+    override init() {
+        super.init()
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
                      NSWindow.didBecomeMainNotification, NSWindow.didResignMainNotification,
                      NSWindow.willBeginSheetNotification, NSWindow.didEndSheetNotification,
-                     NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
-            subscriptions.append(NotificationCenter.default.publisher(for: name).sink { [weak self] _ in
-                self?.refresh()
-                // Sheet/key notifications may precede the final window state.
-                DispatchQueue.main.async { [weak self] in self?.refresh() }
-            })
+                     NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
+                     NSMenu.didAddItemNotification, NSMenu.didRemoveItemNotification] {
+            subscriptions.append(NotificationCenter.default.publisher(for: name).sink { [weak self] _ in self?.scheduleRefresh() })
+        }
+    }
+    private func scheduleRefresh() {
+        guard !refreshScheduled else { return }; refreshScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }; self.refreshScheduled = false; self.refresh()
         }
     }
     func configure(model: AppModel, navigation: WorkspaceNavigation) {
@@ -39,7 +49,7 @@ final class WorkspaceCommandRouter: ObservableObject {
     func attach(_ window: NSWindow?) {
         self.window = window
         // Representable updates run during view reconciliation.
-        DispatchQueue.main.async { [weak self] in self?.refresh() }
+        scheduleRefresh()
     }
     private var mayPerform: Bool {
         guard let window, let model, navigation != nil else { return false }
@@ -49,31 +59,62 @@ final class WorkspaceCommandRouter: ObservableObject {
         guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" else { return "disabled" }
         return "attached=\(window != nil), model=\(model != nil), navigation=\(navigation != nil), active=\(NSApp.isActive), keyMatches=\(window === NSApp.keyWindow), blocked=\(model?.workspaceNavigationBlocked ?? true), available=\(available)"
     }
-    func refresh() { let next = mayPerform; if available != next { available = next } }
+    func refresh() {
+        installMenusIfNeeded()
+        let next = mayPerform
+        if available != next { available = next }
+        for item in (workspaceMenu?.items ?? []) + [helpItem].compactMap({ $0 }) where !item.isSeparatorItem {
+            if item.isEnabled != next { item.isEnabled = next }
+        }
+    }
+    private func installMenusIfNeeded() {
+        guard model != nil, let root = NSApp.mainMenu, root.numberOfItems > 0 else { return }
+        if menuRoot !== root { menuRoot = root; workspaceMenu = nil; helpItem = nil }
+        if workspaceMenu == nil {
+            let menu = NSMenu(title: "工作区"); menu.autoenablesItems = false
+            for (index, tab) in WorkspaceTab.allCases.enumerated() {
+                let item = NSMenuItem(title: tab.title, action: #selector(selectFromMenu(_:)), keyEquivalent: String(index + 1))
+                item.target = self; item.keyEquivalentModifierMask = .command; item.representedObject = tab.rawValue
+                menu.addItem(item)
+            }
+            menu.addItem(.separator())
+            let search = NSMenuItem(title: "搜索配置…", action: #selector(searchFromMenu(_:)), keyEquivalent: "f")
+            search.target = self; search.keyEquivalentModifierMask = .command; menu.addItem(search)
+            workspaceMenu = menu
+        }
+        if !root.items.contains(where: { $0.identifier == menuID }) {
+            let item = NSMenuItem(title: "工作区", action: nil, keyEquivalent: "")
+            item.identifier = menuID; item.submenu = workspaceMenu
+            let index = root.items.firstIndex(where: { $0.submenu != nil && $0.submenu === NSApp.windowsMenu }) ?? max(1, root.numberOfItems - 1)
+            root.insertItem(item, at: min(index, root.numberOfItems))
+        }
+        var help = root.items.compactMap(\.submenu).first { $0 === NSApp.helpMenu || ["帮助", "Help"].contains($0.title) }
+        if help == nil {
+            let menu = NSMenu(title: "帮助")
+            let item = NSMenuItem(title: "帮助", action: nil, keyEquivalent: ""); item.submenu = menu
+            root.addItem(item); NSApp.helpMenu = menu; help = menu
+        }
+        if let help {
+            if let existing = help.items.first(where: { $0.identifier == helpID }) { helpItem = existing }
+            else {
+                let item = NSMenuItem(title: "键盘与辅助功能…", action: #selector(helpFromMenu(_:)), keyEquivalent: "")
+                item.identifier = helpID; item.target = self; help.addItem(item); helpItem = item
+            }
+        }
+    }
+    // Objective-C targets keep native menu validation independent of SwiftUI
+    // scene focus. No event monitor or key interception is installed.
+    @objc private func selectFromMenu(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let tab = WorkspaceTab(rawValue: raw) else { return }
+        select(tab)
+    }
+    @objc private func searchFromMenu(_ sender: NSMenuItem) { search() }
+    @objc private func helpFromMenu(_ sender: NSMenuItem) { help() }
+    @objc func validateMenuItem(_ item: NSMenuItem) -> Bool { mayPerform }
+
     func select(_ tab: WorkspaceTab) { guard mayPerform else { return }; navigation?.select(tab) }
     func search() { guard mayPerform else { return }; navigation?.searchProfiles() }
     func help() { guard mayPerform else { return }; model?.showingKeyboardHelp = true }
-}
-
-@MainActor
-struct WorkspaceCommands: Commands {
-    let router: WorkspaceCommandRouter
-    let available: Bool
-    var body: some Commands {
-        CommandMenu("工作区") {
-            ForEach(Array(WorkspaceTab.allCases.enumerated()), id: \.element.id) { index, tab in
-                Button(tab.title) { router.select(tab) }
-                    .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
-                    .disabled(!available)
-            }
-            Divider()
-            Button("搜索配置…") { router.search() }
-                .keyboardShortcut("f", modifiers: .command).disabled(!available)
-        }
-        CommandGroup(after: .help) {
-            Button("键盘与辅助功能…") { router.help() }.disabled(!available)
-        }
-    }
 }
 
 struct KeyboardHelpView: View {

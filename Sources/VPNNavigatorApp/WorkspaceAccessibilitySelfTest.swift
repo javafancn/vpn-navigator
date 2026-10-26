@@ -46,12 +46,14 @@ enum WorkspaceAccessibilitySelfTest {
         guard NSApp.isActive, window.isKeyWindow, window.isMainWindow else { throw Failure.check("active main scene") }
         func element(_ identifier: String) throws -> AXElement {
             var visited = Set<ObjectIdentifier>()
+            var inspected: [String] = []
             func find(_ item: Any, depth: Int) -> AXElement? {
                 guard depth < 40, visited.count < 6000 else { return nil }
                 let object = item as AnyObject
                 guard visited.insert(ObjectIdentifier(object)).inserted else { return nil }
                 if let native = item as? NSObject {
                     let node = AXElement(object: native)
+                    if inspected.count < 40 { inspected.append("\(type(of: native)):id=\(node.accessibilityIdentifier() ?? "-"):children=\(node.children.count)") }
                     if node.accessibilityIdentifier() == identifier { return node }
                     for child in node.children { if let match = find(child, depth: depth + 1) { return match } }
                 }
@@ -60,7 +62,11 @@ enum WorkspaceAccessibilitySelfTest {
                 }
                 return nil
             }
+            // NSWindow may expose its content via AXContents rather than
+            // AXChildren. Walk the actual hosting view as the primary root.
+            if let content = window.contentView, let result = find(content, depth: 0) { return result }
             if let result = find(window, depth: 0) { return result }
+            print("Accessibility inspected:", inspected)
             throw Failure.check("missing accessibility element: " + identifier)
         }
         func event(_ code: UInt16, text: String, modifiers: NSEvent.ModifierFlags = []) throws -> NSEvent {

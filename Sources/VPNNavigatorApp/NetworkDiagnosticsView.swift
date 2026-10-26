@@ -47,7 +47,11 @@ struct NetworkDiagnosticsView: View {
     var body: some View {
         GeometryReader { geometry in
             VStack(alignment: .leading, spacing: 16) {
-                WorkspaceHeading(title: "网络诊断", subtitle: "以真实探测核对连接、解析、路径和延迟", symbol: "waveform.path.ecg")
+                HStack {
+                    WorkspaceHeading(title: "网络诊断", subtitle: "以真实探测核对连接、解析、路径和延迟", symbol: "waveform.path.ecg")
+                    Spacer()
+                    Button("公网出口…") { cancel(); model.showingPublicEgress = true }.buttonStyle(ReferenceSecondaryButton()).disabled(!model.canStartEgressProbe)
+                }
                 HStack(spacing: 14) {
                     HStack(spacing: 2) {
                         ForEach(DiagnosticTab.allCases) { tab in

@@ -16,6 +16,7 @@ jobs:
           plutil -lint Resources/Info.plist Resources/LaunchDaemons/*.plist Resources/LaunchAgents/*.plist
           zsh -n scripts/build-app.sh scripts/build-pkg.sh scripts/notarize.sh scripts/release-audit.sh scripts/pkg-scripts/preinstall scripts/live-route-assert.sh
           python3 -m py_compile scripts/vendor-openvpn.py
+          python3 scripts/check-localization.py
       - name: Build dual-architecture developer-only app
         env:
           VPNNAV_BUILD_UNIVERSAL: "1"
@@ -124,6 +125,8 @@ jobs:
           python3 - <<'PYTEST'
           import subprocess
           subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-workspace-accessibility-self-test'], check=True, timeout=45)
+          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-workspace-accessibility-self-test', '--vpnnav-language=en'], check=True, timeout=45)
+          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-localization-self-test', '--vpnnav-language=en'], check=True, timeout=45)
           PYTEST
       - name: Ad-hoc sign development UI for local integrity checks
         run: |
@@ -269,6 +272,22 @@ jobs:
           screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-high-contrast.png"
           test -s "$RUNNER_TEMP/VPNNavigator-high-contrast.png"
           killall VPNNavigatorApp 2>/dev/null || true
+          for PAGE in overview profiles routing diagnostics settings; do
+            open -n "$APP" --args "--vpnnav-ui-tab=$PAGE" --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot --vpnnav-language=en
+            sleep 7
+            WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift")"
+            screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-English-$PAGE.png"
+            test -s "$RUNNER_TEMP/VPNNavigator-English-$PAGE.png"
+            killall VPNNavigatorApp 2>/dev/null || true
+          done
+          for TOOL in language-settings keyboard-help profile-health profile-backup public-egress; do
+            open -n "$APP" --args --vpnnav-ui-tab=settings --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot --vpnnav-language=en "--vpnnav-ui-$TOOL-snapshot"
+            sleep 7
+            WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift")"
+            screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-English-$TOOL.png"
+            test -s "$RUNNER_TEMP/VPNNavigator-English-$TOOL.png"
+            killall VPNNavigatorApp 2>/dev/null || true
+          done
           for SCENE in cool warm; do
             swift scripts/capture-glass-calibration.swift "$SCENE" "$RUNNER_TEMP"
             sleep 3
@@ -284,6 +303,7 @@ jobs:
         with:
           name: VPNNavigator-visual-smoke
           path: |
+            ${{ runner.temp }}/VPNNavigator-English-*.png
             ${{ runner.temp }}/VPNNavigator-high-contrast.png
             ${{ runner.temp }}/VPNNavigator-overview.png
             ${{ runner.temp }}/VPNNavigator-profiles.png

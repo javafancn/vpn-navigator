@@ -32,14 +32,14 @@ final class QuickAccessCoordinator: NSObject, NSWindowDelegate {
     private func register(_ shortcut: QuickAccessShortcut) {
         do {
             try hotKey.register(shortcut)
-            model?.quickAccessShortcutStatus = shortcut == .disabled ? "全局快捷键已关闭" : "已启用 " + shortcut.title
+            model?.quickAccessShortcutStatus = shortcut == .disabled ? L10n.text("全局快捷键已关闭") : L10n.text("已启用 ") + shortcut.title
         } catch { model?.quickAccessShortcutStatus = error.localizedDescription }
     }
     func retryShortcut() { if let model { register(model.quickAccessShortcut) } }
     func toggle() { if panel?.isVisible == true { hide() } else { show() } }
     func show() {
         guard let model else { return }
-        guard !model.nativeDialogPresented, !model.showingKeyboardHelp, !model.showingPublicEgress, !model.showingConnectionHistory, model.profileHealthTarget == nil, !model.showingProfileBackup, !model.showingAccountCredentials,
+        guard !model.nativeDialogPresented, !model.showingLanguageSettings, !model.showingKeyboardHelp, !model.showingPublicEgress, !model.showingConnectionHistory, model.profileHealthTarget == nil, !model.showingProfileBackup, !model.showingAccountCredentials,
               model.authenticationChallenge == nil, !model.showingSetup,
               !model.showingMaintenance, !model.maintenanceInProgress,
               !model.showingImportReport, !model.profileTransferInProgress,

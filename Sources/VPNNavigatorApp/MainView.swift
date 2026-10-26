@@ -11,11 +11,11 @@ enum WorkspaceTab: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .overview: return "连接总览"
-        case .profiles: return "配置文件"
-        case .routing: return "路由与规则"
-        case .diagnostics: return "网络诊断"
-        case .settings: return "设置与维护"
+        case .overview: return L10n.text("连接总览")
+        case .profiles: return L10n.text("配置文件")
+        case .routing: return L10n.text("路由与规则")
+        case .diagnostics: return L10n.text("网络诊断")
+        case .settings: return L10n.text("设置与维护")
         }
     }
     var symbol: String {
@@ -68,7 +68,7 @@ struct MainView: View {
                             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                             Text(issue).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
                             Spacer(minLength: 0)
-                            Button("查看恢复…") { Task { await model.inspectProfileIndex() } }
+                            Button(L10n.text("查看恢复…")) { Task { await model.inspectProfileIndex() } }
                                 .buttonStyle(ReferenceSecondaryButton()).disabled(model.busy || model.profileTransferInProgress)
                         }.padding(12).glassCard(cornerRadius: 12).padding(.horizontal, 16).padding(.top, 16)
                     }
@@ -102,7 +102,7 @@ struct MainView: View {
             if dropTargeted {
                 RoundedRectangle(cornerRadius: 18).strokeBorder(GlassPalette.blue, lineWidth: 2)
                     .padding(10).overlay {
-                        Label("松开以导入 .ovpn 配置", systemImage: "square.and.arrow.down")
+                        Label(L10n.text("松开以导入 .ovpn 配置"), systemImage: "square.and.arrow.down")
                             .font(.system(size: 18, weight: .semibold)).padding(24)
                             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                     }.allowsHitTesting(false)
@@ -110,7 +110,7 @@ struct MainView: View {
         }
         .onChange(of: model.workspaceNavigationBlocked) { _ in workspaceCommands.refresh() }
         .preferredColorScheme(.light)
-        .environment(\.locale, Locale(identifier: "zh_CN"))
+        .environment(\.locale, L10n.locale)
         .onAppear {
             workspaceCommands.configure(model: model, navigation: navigation)
             if ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") {
@@ -137,7 +137,9 @@ struct MainView: View {
             }
             if ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
                ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot"), !model.profiles.isEmpty {
-                if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-keyboard-help-snapshot") {
+                if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-language-settings-snapshot") {
+                    model.showingLanguageSettings = true
+                } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-keyboard-help-snapshot") {
                     model.showingKeyboardHelp = true
                 } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-custom-routes-snapshot") ||
                    ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-route-explanation-snapshot") {
@@ -195,6 +197,7 @@ struct MainView: View {
                 model.message = error.localizedDescription
             }
         }
+        .sheet(isPresented: $model.showingLanguageSettings) { LanguageSettingsView() }
         .sheet(isPresented: $model.showingKeyboardHelp) { KeyboardHelpView() }
         .sheet(isPresented: $model.showingAccountCredentials) { AccountCredentialsView().environmentObject(model) }
         .sheet(item: $model.authenticationChallenge) { challenge in
@@ -222,7 +225,7 @@ struct MainView: View {
             get: { model.message != nil },
             set: { if !$0 { model.message = nil } }
         )) {
-            Button("确定") { model.message = nil }
+            Button(L10n.text("确定")) { model.message = nil }
         } message: { Text(model.message ?? "") }
     }
 
@@ -233,7 +236,7 @@ struct MainView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("VPN Navigator").font(.system(size: 16, weight: .semibold))
                         .lineLimit(1)
-                    Text("网络连接控制台").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(L10n.text("网络连接控制台")).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
             .padding(.leading, 18)
@@ -241,7 +244,7 @@ struct MainView: View {
             .padding(.top, 42)
             .padding(.bottom, 30)
 
-            Text("工作区")
+            Text(L10n.text("工作区"))
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
                 .padding(.leading, 28)
@@ -277,7 +280,7 @@ struct MainView: View {
                 .buttonStyle(ReferenceQuietButton())
                 .accessibilityIdentifier("workspace-" + item.rawValue)
                 .accessibilityLabel(item.title)
-                .accessibilityValue(tab == item ? "已选择" : "未选择")
+                .accessibilityValue(tab == item ? L10n.text("已选择") : L10n.text("未选择"))
                 .accessibilityAddTraits(tab == item ? .isSelected : [])
                 .padding(.horizontal, 15)
                 .padding(.bottom, 5)
@@ -285,26 +288,26 @@ struct MainView: View {
             Spacer(minLength: 20)
             VStack(alignment: .leading, spacing: 15) {
                 Button { model.profilePickerPresented = true } label: {
-                    Label("导入配置", systemImage: "plus")
+                    Label(L10n.text("导入配置"), systemImage: "plus")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(ReferenceSecondaryButton())
                 .keyboardShortcut("o", modifiers: .command)
                 .disabled(!model.canChooseProfileFiles)
-                Text(model.profileDropLoading ? "正在接收文件…" : "可将 .ovpn 文件拖入窗口")
+                Text(model.profileDropLoading ? L10n.text("正在接收文件…") : L10n.text("可将 .ovpn 文件拖入窗口"))
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                 if !model.incomingProfiles.isEmpty && !model.reviewingIncomingProfiles {
-                    Text("待处理：\(model.incomingProfiles.urls.count) 个配置")
+                    Text(L10n.format("待处理：{0} 个配置", [String(describing: model.incomingProfiles.urls.count)]))
                         .font(.system(size: 11)).foregroundStyle(GlassPalette.blue)
                 }
                 Rectangle().fill(GlassPalette.ink.opacity(0.07)).frame(height: 0.75)
                 HStack(spacing: 8) {
                     Circle().fill(model.connected ? Color.green : Color.secondary.opacity(0.45))
                         .frame(width: 6, height: 6)
-                    Text(model.connected ? "VPN 已连接" : model.connecting ? "正在连接…" : "VPN 未连接")
+                    Text(model.connected ? L10n.text("VPN 已连接") : model.connecting ? L10n.text("正在连接…") : L10n.text("VPN 未连接"))
                         .font(.system(size: 12, weight: .medium))
                     Spacer(minLength: 0)
-                    Text("\(model.profiles.count) 个配置")
+                    Text(L10n.format("{0} 个配置", [String(describing: model.profiles.count)]))
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
@@ -383,7 +386,7 @@ private struct ConnectionOverview: View {
 
     private var hasError: Bool { model.connectionStatus.hasPrefix("failed:") }
     private var statusTitle: String {
-        model.connected ? "已连接" : model.firewallRecoveryRequired && !model.connecting ? "网络保护待处理" : model.stopping ? "正在断开" : model.connecting ? "正在连接" : hasError ? "连接需检查" : "未连接"
+        model.connected ? L10n.text("已连接") : model.firewallRecoveryRequired && !model.connecting ? L10n.text("网络保护待处理") : model.stopping ? L10n.text("正在断开") : model.connecting ? L10n.text("正在连接") : hasError ? L10n.text("连接需检查") : L10n.text("未连接")
     }
     private func bytes(_ value: UInt64?) -> String {
         guard let value else { return "— MB" }
@@ -393,16 +396,16 @@ private struct ConnectionOverview: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                WorkspaceHeading(title: "连接总览", subtitle: "清晰掌控当前 VPN 状态与网络策略", symbol: "globe.americas.fill")
+                WorkspaceHeading(title: L10n.text("连接总览"), subtitle: L10n.text("清晰掌控当前 VPN 状态与网络策略"), symbol: "globe.americas.fill")
                 Spacer()
-                Button("会话质量与历史…") { model.showingConnectionHistory = true }.buttonStyle(ReferenceSecondaryButton())
+                Button(L10n.text("会话质量与历史…")) { model.showingConnectionHistory = true }.buttonStyle(ReferenceSecondaryButton())
             }.padding(.bottom, 4)
             HStack(spacing: 12) {
                 VStack(spacing: 6) {
                     Spacer(minLength: 0)
                     Button {
                         guard model.selected != nil || model.connected else {
-                            model.message = "请先导入并选择一个 .ovpn 配置文件。"
+                            model.message = L10n.text("请先导入并选择一个 .ovpn 配置文件。")
                             return
                         }
                         Task {
@@ -413,16 +416,16 @@ private struct ConnectionOverview: View {
                     .buttonStyle(ReferenceQuietButton(cornerRadius: 110, hoverOpacity: 0.04))
                     .disabled(model.stopping || (model.busy && !model.connecting && !model.connected && !model.firewallRecoveryRequired))
                     .accessibilityIdentifier("vpn-power")
-                    .accessibilityLabel(model.firewallRecoveryRequired && !model.connected && !model.connecting ? "解除断线保护" : model.connected ? "断开 VPN" : model.connecting ? "取消连接" : "连接 VPN")
+                    .accessibilityLabel(model.firewallRecoveryRequired && !model.connected && !model.connecting ? L10n.text("解除断线保护") : model.connected ? L10n.text("断开 VPN") : model.connecting ? L10n.text("取消连接") : L10n.text("连接 VPN"))
                     .accessibilityValue(statusTitle)
                     Text(statusTitle)
                         .font(.system(size: 28, weight: .semibold))
                         .foregroundStyle(model.connected ? Color.green : hasError ? Color.orange : GlassPalette.blue)
-                    Text(model.connected ? "安全连接已建立" : model.connecting ? "点击上方按钮取消连接" : model.firewallRecoveryRequired ? "点击上方按钮解除断线保护" : "点击上方按钮开始连接")
+                    Text(model.connected ? L10n.text("安全连接已建立") : model.connecting ? L10n.text("点击上方按钮取消连接") : model.firewallRecoveryRequired ? L10n.text("点击上方按钮解除断线保护") : L10n.text("点击上方按钮开始连接"))
                         .font(.system(size: 16))
                         .foregroundStyle(model.connected ? Color.green : GlassPalette.ink.opacity(0.6))
                     if model.connected && model.activeProfileID != model.selectedID && model.selectedID != nil {
-                        Button("切换到所选配置") { confirmSwitch = true }
+                        Button(L10n.text("切换到所选配置")) { confirmSwitch = true }
                             .buttonStyle(ReferenceSecondaryButton())
                     }
                     Spacer(minLength: 0)
@@ -435,7 +438,7 @@ private struct ConnectionOverview: View {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(spacing: 8) {
                             Image(systemName: "slider.horizontal.3")
-                            Text("快速连接").fontWeight(.semibold)
+                            Text(L10n.text("快速连接")).fontWeight(.semibold)
                             Spacer()
                             Button { showingCredentials = true } label: {
                                 Image(systemName: "key.horizontal")
@@ -443,48 +446,48 @@ private struct ConnectionOverview: View {
                                     .foregroundStyle(GlassPalette.ink.opacity(0.45))
                             }
                             .buttonStyle(.plain)
-                            .help("身份验证").accessibilityLabel("身份验证")
+                            .help(L10n.text("身份验证")).accessibilityLabel(L10n.text("身份验证"))
                             .popover(isPresented: $showingCredentials) {
                                 VStack(alignment: .leading, spacing: 12) {
-                                    Text("身份验证").font(.headline)
-                                    TextField("用户名", text: $model.username).textFieldStyle(.plain).referenceInput()
-                                    SecureField("密码", text: $model.password).textFieldStyle(.plain).referenceInput()
-                                    Toggle("保存在钥匙串", isOn: $model.rememberCredentials)
+                                    Text(L10n.text("身份验证")).font(.headline)
+                                    TextField(L10n.text("用户名"), text: $model.username).textFieldStyle(.plain).referenceInput()
+                                    SecureField(L10n.text("密码"), text: $model.password).textFieldStyle(.plain).referenceInput()
+                                    Toggle(L10n.text("保存在钥匙串"), isOn: $model.rememberCredentials)
                                 }.padding(20).frame(width: 290)
                             }
                         }
                         .font(.system(size: 18))
-                        quickRow("配置文件") {
+                        quickRow(L10n.text("配置文件")) {
                             Menu {
                                 ForEach(model.profiles) { profile in
                                     Button(profile.name) { model.selectedID = profile.id }
                                 }
                             } label: {
-                                selectionField(model.selected?.name ?? "请选择配置", stepper: true)
+                                selectionField(model.selected?.name ?? L10n.text("请选择配置"), stepper: true)
                             }
                                                         .menuIndicator(.hidden)
                             .buttonStyle(.plain)
-                            .accessibilityLabel("选择连接配置")
-                            .accessibilityValue(model.selected?.name ?? "未选择")
+                            .accessibilityLabel(L10n.text("选择连接配置"))
+                            .accessibilityValue(model.selected?.name ?? L10n.text("未选择"))
                             .disabled(model.profiles.isEmpty || model.busy)
                         }
-                        quickRow("路由模式") {
+                        quickRow(L10n.text("路由模式")) {
                             Menu {
                                 ForEach(RoutingMode.allCases) { mode in
                                     Button(mode.title) { Task { await model.setMode(mode) } }
                                         .disabled(!model.canSetRoutingMode(mode, for: model.selectedID))
                                 }
                             } label: {
-                                selectionField(model.displayedRoutingMode(for: model.selectedID)?.title ?? "待核验", stepper: false)
+                                selectionField(model.displayedRoutingMode(for: model.selectedID)?.title ?? L10n.text("待核验"), stepper: false)
                             }
                                                         .menuIndicator(.hidden)
                             .buttonStyle(.plain)
-                            .accessibilityLabel("选择路由模式")
-                            .accessibilityValue(model.displayedRoutingMode(for: model.selectedID)?.title ?? "待核验")
+                            .accessibilityLabel(L10n.text("选择路由模式"))
+                            .accessibilityValue(model.displayedRoutingMode(for: model.selectedID)?.title ?? L10n.text("待核验"))
                             .disabled(model.selected == nil || model.busy || model.routingModeSwitching || model.connecting || model.stopping)
                         }
-                        quickRow("源文件") {
-                            Text(model.selected?.sourceFilename ?? "未选择配置")
+                        quickRow(L10n.text("源文件")) {
+                            Text(model.selected?.sourceFilename ?? L10n.text("未选择配置"))
                                 .lineLimit(1).truncationMode(.middle)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .referenceInput()
@@ -499,9 +502,9 @@ private struct ConnectionOverview: View {
                             .font(.system(size: 29, weight: .regular))
                             .foregroundStyle(GlassPalette.blue)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(model.activeProfile?.name ?? model.selected?.name ?? "尚未选择配置")
+                            Text(model.activeProfile?.name ?? model.selected?.name ?? L10n.text("尚未选择配置"))
                                 .font(.system(size: 15, weight: .medium)).lineLimit(1)
-                            Text(model.activeProfile?.sourceFilename ?? model.selected?.sourceFilename ?? "等待导入 .ovpn 文件")
+                            Text(model.activeProfile?.sourceFilename ?? model.selected?.sourceFilename ?? L10n.text("等待导入 .ovpn 文件"))
                                 .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer(minLength: 0)
@@ -519,9 +522,9 @@ private struct ConnectionOverview: View {
                 .frame(height: 310)
             }
             HStack(spacing: 12) {
-                statistic("累计接收", symbol: "arrow.down.circle", value: bytes(model.traffic?.receivedBytes), samples: model.receiveTrend.samples, rate: model.connected && model.connectionHistory.state.quality.verified ? model.connectionHistory.state.quality.receivedPerSecond : nil)
+                statistic(L10n.text("累计接收"), symbol: "arrow.down.circle", value: bytes(model.traffic?.receivedBytes), samples: model.receiveTrend.samples, rate: model.connected && model.connectionHistory.state.quality.verified ? model.connectionHistory.state.quality.receivedPerSecond : nil)
                     .frame(width: 188)
-                statistic("累计发送", symbol: "arrow.up.circle", value: bytes(model.traffic?.sentBytes), samples: model.sendTrend.samples, rate: model.connected && model.connectionHistory.state.quality.verified ? model.connectionHistory.state.quality.sentPerSecond : nil)
+                statistic(L10n.text("累计发送"), symbol: "arrow.up.circle", value: bytes(model.traffic?.sentBytes), samples: model.sendTrend.samples, rate: model.connected && model.connectionHistory.state.quality.verified ? model.connectionHistory.state.quality.sentPerSecond : nil)
                     .frame(width: 188)
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "checkmark.shield.fill")
@@ -530,10 +533,10 @@ private struct ConnectionOverview: View {
                         .frame(width: 54, height: 54)
                         .background(Color.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 15))
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("连接保护").font(.system(size: 18, weight: .semibold))
-                        Label(model.firewallActive ? "PF 断线保护已接入" : "受管连接异常时停止会话", systemImage: model.firewallActive ? "checkmark.circle.fill" : "info.circle")
+                        Text(L10n.text("连接保护")).font(.system(size: 18, weight: .semibold))
+                        Label(model.firewallActive ? L10n.text("PF 断线保护已接入") : L10n.text("受管连接异常时停止会话"), systemImage: model.firewallActive ? "checkmark.circle.fill" : "info.circle")
                             .font(.system(size: 12)).foregroundStyle(.green)
-                        Text(model.firewallActive ? "实验性保护，完整真机防泄漏验收待完成。" : "可在连接偏好中启用实验性断线保护。")
+                        Text(model.firewallActive ? L10n.text("实验性保护，完整真机防泄漏验收待完成。") : L10n.text("可在连接偏好中启用实验性断线保护。"))
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -549,9 +552,9 @@ private struct ConnectionOverview: View {
         .padding(.horizontal, GlassLayout.pageInset)
         .padding(.top, GlassLayout.pageTop)
         .padding(.bottom, 16)
-        .confirmationDialog("切换 VPN 配置？", isPresented: $confirmSwitch) {
-            Button("断开当前连接并切换") { Task { await model.switchToSelected() } }
-            Button("取消", role: .cancel) { }
+        .confirmationDialog(L10n.text("切换 VPN 配置？"), isPresented: $confirmSwitch) {
+            Button(L10n.text("断开当前连接并切换")) { Task { await model.switchToSelected() } }
+            Button(L10n.text("取消"), role: .cancel) { }
         }
     }
 
@@ -619,9 +622,9 @@ private struct RoutingWorkspace: View {
     private func title(for mode: RoutingMode) -> String { mode.title }
     private func subtitle(for mode: RoutingMode) -> String {
         switch mode {
-        case .original: return "遵循配置文件及服务器下发的路由"
-        case .fullVPN: return "服务器承载的 IPv4／IPv6 默认流量走 VPN"
-        case .chinaDirect: return "中国 IPv4／IPv6 直连，其余默认流量走 VPN"
+        case .original: return L10n.text("遵循配置文件及服务器下发的路由")
+        case .fullVPN: return L10n.text("服务器承载的 IPv4／IPv6 默认流量走 VPN")
+        case .chinaDirect: return L10n.text("中国 IPv4／IPv6 直连，其余默认流量走 VPN")
         }
     }
 
@@ -629,33 +632,33 @@ private struct RoutingWorkspace: View {
         GeometryReader { geometry in
         ScrollView {
         VStack(alignment: .leading, spacing: 14) {
-            WorkspaceHeading(title: "路由与规则", subtitle: "管理双栈 VPN 路由、国内规则和自定义例外", symbol: "point.3.connected.trianglepath.dotted")
+            WorkspaceHeading(title: L10n.text("路由与规则"), subtitle: L10n.text("管理双栈 VPN 路由、国内规则和自定义例外"), symbol: "point.3.connected.trianglepath.dotted")
             HStack(spacing: 8) {
                 Image(systemName: "doc.text").foregroundStyle(GlassPalette.blue)
-                Text("当前配置").foregroundStyle(.secondary)
-                Text(model.selected?.name ?? "尚未选择").fontWeight(.medium)
+                Text(L10n.text("当前配置")).foregroundStyle(.secondary)
+                Text(model.selected?.name ?? L10n.text("尚未选择")).fontWeight(.medium)
                 Spacer()
-                Text(model.connected && model.selectedID == model.activeProfileID ? model.routingModeStatus : "保存后在下次连接生效").foregroundStyle(.secondary)
+                Text(model.connected && model.selectedID == model.activeProfileID ? model.routingModeStatus : L10n.text("保存后在下次连接生效")).foregroundStyle(.secondary)
             }
             .font(.system(size: 12))
             .padding(.vertical, 4)
             HStack(spacing: 10) {
-                Button("自定义规则 (\(model.selected?.customRules.filter(\.enabled).count ?? 0))") { model.customRuleEditorProfile = model.selected }
+                Button(L10n.format("自定义规则 ({0})", [String(describing: model.selected?.customRules.filter(\.enabled).count ?? 0)])) { model.customRuleEditorProfile = model.selected }
                     .buttonStyle(ReferenceSecondaryButton()).disabled(model.selected == nil || model.profileTransferInProgress || model.busy)
-                Button("路由解释…") { model.showingRouteExplanation = true }.buttonStyle(ReferenceSecondaryButton())
-                Button("一键排障…") { model.showingTroubleshooting = true }.buttonStyle(ReferenceSecondaryButton())
+                Button(L10n.text("路由解释…")) { model.showingRouteExplanation = true }.buttonStyle(ReferenceSecondaryButton())
+                Button(L10n.text("一键排障…")) { model.showingTroubleshooting = true }.buttonStyle(ReferenceSecondaryButton())
                 Spacer(minLength: 0)
             }.font(.system(size: 13))
             if model.connected, let count = model.activeCustomRuleCount {
-                Text((model.activeIPStack?.title ?? "地址族待核验") + " · 本次自定义规则：\(count) 条；编辑该配置需先断开。")
+                Text((model.activeIPStack?.title ?? L10n.text("地址族待核验")) + L10n.format(" · 本次自定义规则：{0} 条；编辑该配置需先断开。", [String(describing: count)]))
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             HStack(alignment: .top, spacing: 14) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("路由模式").font(.system(size: 20, weight: .semibold))
+                    Text(L10n.text("路由模式")).font(.system(size: 20, weight: .semibold))
                     ForEach(RoutingMode.allCases) { mode in routeOption(mode) }
                     Spacer(minLength: 8)
-                    Text("规则与全局直接切换，不主动重连。原始配置需先断开；收紧断线保护会重置网络连接。")
+                    Text(L10n.text("规则与全局直接切换，不主动重连。原始配置需先断开；收紧断线保护会重置网络连接。"))
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -665,29 +668,29 @@ private struct RoutingWorkspace: View {
                 .glassCard(cornerRadius: 18)
                 VStack(spacing: 14) {
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("中国 IPv4 规则").font(.system(size: 20, weight: .semibold))
+                        Text(L10n.text("中国 IPv4 规则")).font(.system(size: 20, weight: .semibold))
                         HStack(alignment: .top, spacing: 16) {
                             GlassIcon(symbol: "globe.asia.australia", size: 67)
                             VStack(alignment: .leading, spacing: 16) {
-                                ruleDetail("规则版本", model.rulesUpdatedAt.map { $0.formatted(.dateTime.year().month().day()) } ?? "未下载")
-                                ruleDetail("规则来源", "chnroutes2")
-                                ruleDetail("规则数量", model.rules.map { "\($0.routes.count) 条" } ?? "未下载")
-                                ruleDetail("最后更新", model.rulesUpdatedAt.map { $0.formatted(.dateTime.month().day().hour().minute()) } ?? "尚无缓存")
+                                ruleDetail(L10n.text("规则版本"), model.rulesUpdatedAt.map { $0.formatted(.dateTime.locale(L10n.locale).year().month().day()) } ?? L10n.text("未下载"))
+                                ruleDetail(L10n.text("规则来源"), "chnroutes2")
+                                ruleDetail(L10n.text("规则数量"), model.rules.map { L10n.format("{0} 条", [String(describing: $0.routes.count)]) } ?? L10n.text("未下载"))
+                                ruleDetail(L10n.text("最后更新"), model.rulesUpdatedAt.map { $0.formatted(.dateTime.locale(L10n.locale).month().day().hour().minute()) } ?? L10n.text("尚无缓存"))
                             }
                         }
                         Spacer(minLength: 0)
                         HStack(spacing: 12) {
                             Button { Task { await model.refreshRules() } } label: {
-                                Text(model.busy ? "更新中…" : "更新规则").frame(maxWidth: .infinity)
+                                Text(model.busy ? L10n.text("更新中…") : L10n.text("更新规则")).frame(maxWidth: .infinity)
                             }
                             .buttonStyle(ReferencePrimaryButton()).disabled(model.busy)
                             Menu {
-                                Button("导入规则文件…") { importingRules = true }
+                                Button(L10n.text("导入规则文件…")) { importingRules = true }
                                 Divider()
                                 ForEach(model.ruleSnapshots) { saved in
-                                    Button(saved.savedAt.formatted(.dateTime.year().month().day().hour().minute())) { snapshotToRestore = saved }
+                                    Button(saved.savedAt.formatted(.dateTime.locale(L10n.locale).year().month().day().hour().minute())) { snapshotToRestore = saved }
                                 }
-                            } label: { Text("历史与导入").frame(maxWidth: .infinity) }
+                            } label: { Text(L10n.text("历史与导入")).frame(maxWidth: .infinity) }
                             .menuIndicator(.hidden)
                             .buttonStyle(ReferenceSecondaryButton())
                             .disabled(model.busy)
@@ -700,18 +703,18 @@ private struct RoutingWorkspace: View {
                         GlassIcon(symbol: "shield.lefthalf.filled", size: 44)
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Text("中国 IPv6 规则").font(.system(size: 16, weight: .semibold))
+                                Text(L10n.text("中国 IPv6 规则")).font(.system(size: 16, weight: .semibold))
                                 Spacer(minLength: 0)
                                 Text("APNIC").font(.system(size: 11)).foregroundStyle(.secondary)
                                     .padding(.horizontal, 8).padding(.vertical, 3)
                                     .background(Color.gray.opacity(0.09), in: Capsule())
                             }
-                            Text(model.ipv6Preview.map { "\($0.routes.count) 条注册归属前缀 · 连接时应用" } ?? "双栈规则模式连接前请先更新。")
+                            Text(model.ipv6Preview.map { L10n.format("{0} 条注册归属前缀 · 连接时应用", [String(describing: $0.routes.count)]) } ?? L10n.text("双栈规则模式连接前请先更新。"))
                                 .font(.system(size: 12)).foregroundStyle(.secondary)
                         }
                         Button { Task { await model.updateIPv6Preview() } } label: {
                             Image(systemName: "arrow.clockwise").foregroundStyle(GlassPalette.blue)
-                        }.buttonStyle(.plain).disabled(model.busy).help("更新 IPv6 分流规则")
+                        }.buttonStyle(.plain).disabled(model.busy).help(L10n.text("更新 IPv6 分流规则"))
                     }
                     .padding(16)
                     .frame(height: 100)
@@ -730,17 +733,17 @@ private struct RoutingWorkspace: View {
         .fileImporter(isPresented: $importingRules, allowedContentTypes: [.plainText]) { result in
             if case .success(let url) = result { Task { await model.importRules(url) } }
         }
-        .confirmationDialog("恢复旧版 IPv4 规则？", isPresented: Binding(
+        .confirmationDialog(L10n.text("恢复旧版 IPv4 规则？"), isPresented: Binding(
             get: { snapshotToRestore != nil }, set: { if !$0 { snapshotToRestore = nil } }
         )) {
             if let snapshot = snapshotToRestore {
-                Button("确认恢复历史快照") {
+                Button(L10n.text("确认恢复历史快照")) {
                     Task { await model.restoreRuleSnapshot(snapshot.id) }
                     snapshotToRestore = nil
                 }
             }
-            Button("取消", role: .cancel) { snapshotToRestore = nil }
-        } message: { Text("恢复会替换当前规则，已有受管连接的安全限制仍然适用。") }
+            Button(L10n.text("取消"), role: .cancel) { snapshotToRestore = nil }
+        } message: { Text(L10n.text("恢复会替换当前规则，已有受管连接的安全限制仍然适用。")) }
         }
     }
 
@@ -804,24 +807,30 @@ struct SystemSettingsPane: View {
     private var build: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
     }
-    private var helperReady: Bool { model.helperStatus == "已启用" }
+    private var helperReady: Bool { model.helperStatus == L10n.text("已启用") }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 11) {
-                WorkspaceHeading(title: "设置与维护",
-                    subtitle: "管理系统服务、应用更新与网络恢复", symbol: "gearshape")
+                WorkspaceHeading(title: L10n.text("设置与维护"),
+                    subtitle: L10n.text("管理系统服务、应用更新与网络恢复"), symbol: "gearshape")
                     .padding(.bottom, 10)
 
-                settingsSection("系统与网络")
+                settingsSection(L10n.text("显示与语言"))
+                VStack(spacing: 0) {
+                    settingsRow(L10n.text("界面语言"), subtitle: L10n.text("跟随系统、简体中文或 English；下次启动后生效"), symbol: "globe") {
+                        Button(L10n.text("选择语言…")) { model.showingLanguageSettings = true }.buttonStyle(ReferenceSecondaryButton())
+                    }
+                }.glassCard(cornerRadius: 15)
+                settingsSection(L10n.text("系统与网络"))
                 VStack(spacing: 0) {
 
-                settingsRow("特权助手",
-                    subtitle: "管理系统使用此配置所需的特权助手",
+                settingsRow(L10n.text("特权助手"),
+                    subtitle: L10n.text("管理系统使用此配置所需的特权助手"),
                     symbol: "shield.lefthalf.filled") {
                     Menu {
-                        Button("启用服务…") { model.requestHelper() }
-                        Button("停用服务…") {
+                        Button(L10n.text("启用服务…")) { model.requestHelper() }
+                        Button(L10n.text("停用服务…")) {
                             Task { await model.disableServices() }
                         }
                     } label: {
@@ -837,24 +846,24 @@ struct SystemSettingsPane: View {
                     .fixedSize()
                 }
 
-                settingsRow("加密备份与迁移",
-                    subtitle: "配置、证书材料和历史版本的加密备份与预览恢复",
+                settingsRow(L10n.text("加密备份与迁移"),
+                    subtitle: L10n.text("配置、证书材料和历史版本的加密备份与预览恢复"),
                     symbol: "lock.doc") {
-                    Button("备份与恢复…") { model.quickAccess.openMainWindow(); model.showingProfileBackup = true }
+                    Button(L10n.text("备份与恢复…")) { model.quickAccess.openMainWindow(); model.showingProfileBackup = true }
                         .buttonStyle(ReferenceSecondaryButton()).disabled(!model.canUseProfileBackup)
                 }
-                settingsRow("配置列表备份",
+                settingsRow(L10n.text("配置列表备份"),
                     subtitle: model.profileIndexBackupStatus,
                     symbol: "externaldrive.badge.timemachine") {
-                    Button("检查与恢复…") { Task { await model.inspectProfileIndex() } }
+                    Button(L10n.text("检查与恢复…")) { Task { await model.inspectProfileIndex() } }
                         .buttonStyle(ReferenceSecondaryButton())
                         .disabled(model.busy || model.profileTransferInProgress || model.maintenanceInProgress)
                 }
 
-                settingsRow("安全恢复",
-                    subtitle: "遇到网络问题时，可尝试恢复残留的网络设置",
+                settingsRow(L10n.text("安全恢复"),
+                    subtitle: L10n.text("遇到网络问题时，可尝试恢复残留的网络设置"),
                     symbol: "globe") {
-                    Button("开始恢复") {
+                    Button(L10n.text("开始恢复")) {
                         Task { await model.retryNetworkRecovery() }
                     }
                     .buttonStyle(ReferenceSecondaryButton())
@@ -865,30 +874,30 @@ struct SystemSettingsPane: View {
                 }
                 .glassCard(cornerRadius: 16)
 
-                settingsSection("应用")
+                settingsSection(L10n.text("应用"))
                 VStack(spacing: 0) {
-                settingsRow("智能连接与状态通知",
+                settingsRow(L10n.text("智能连接与状态通知"),
                     subtitle: model.smartConnection.status,
                     symbol: "bolt.shield") {
-                    Button("配置…") { model.quickAccess.openMainWindow(); model.showingSmartConnection = true }.buttonStyle(ReferenceSecondaryButton())
+                    Button(L10n.text("配置…")) { model.quickAccess.openMainWindow(); model.showingSmartConnection = true }.buttonStyle(ReferenceSecondaryButton())
                 }
-                settingsRow("应用更新",
-                    subtitle: "当前版本：\(version) (Build \(build))",
+                settingsRow(L10n.text("应用更新"),
+                    subtitle: L10n.format("当前版本：{0} (Build {1})", [String(describing: version), String(describing: build)]),
                     symbol: "arrow.triangle.2.circlepath") {
                     Menu {
-                        Button("检查更新") {
+                        Button(L10n.text("检查更新")) {
                             Task { await model.checkForUpdates() }
                         }
-                        Button("下载已验证的更新包…") {
+                        Button(L10n.text("下载已验证的更新包…")) {
                             Task { await model.downloadVerifiedUpdate() }
                         }
                         .disabled(model.availableInstaller == nil || model.busy)
-                        Button("查看发布说明…") { model.viewReleasePage() }
+                        Button(L10n.text("查看发布说明…")) { model.viewReleasePage() }
                             .disabled(model.availableReleasePage == nil)
                     } label: {
                         HStack(spacing: 8) {
                             statePill(model.availableInstaller == nil ?
-                                      "检查更新" : "可下载更新")
+                                      L10n.text("检查更新") : L10n.text("可下载更新"))
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundStyle(.secondary)
@@ -898,13 +907,13 @@ struct SystemSettingsPane: View {
                     .fixedSize()
                 }
 
-                settingsRow("关于",
+                settingsRow(L10n.text("关于"),
                     subtitle: "VPN Navigator · \(version) (Build \(build)) · \(BuildChannel.label)",
                     symbol: "info.circle.fill") {
                     Menu {
                         Text("macOS 13+")
-                        Text("PF 断线保护为实验性功能")
-                        Text("支持 IPv4／IPv6 分流；需服务器提供对应隧道")
+                        Text(L10n.text("PF 断线保护为实验性功能"))
+                        Text(L10n.text("支持 IPv4／IPv6 分流；需服务器提供对应隧道"))
                     } label: {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 16, weight: .semibold))
@@ -917,26 +926,26 @@ struct SystemSettingsPane: View {
                 }
                 .glassCard(cornerRadius: 16)
 
-                settingsSection("使用与排查")
+                settingsSection(L10n.text("使用与排查"))
                 VStack(spacing: 0) {
-                    settingsRow("连接偏好", subtitle: "连接超时、重连与登录启动", symbol: "slider.horizontal.3") {
-                        Button("设置…") { model.showingPreferences = true }.buttonStyle(ReferenceSecondaryButton())
+                    settingsRow(L10n.text("连接偏好"), subtitle: L10n.text("连接超时、重连与登录启动"), symbol: "slider.horizontal.3") {
+                        Button(L10n.text("设置…")) { model.showingPreferences = true }.buttonStyle(ReferenceSecondaryButton())
                     }
-                    settingsRow("诊断报告", subtitle: "查看脱敏会话事件并导出支持报告", symbol: "doc.text.magnifyingglass") {
-                        Button("查看…") { model.showingDiagnostics = true }.buttonStyle(ReferenceSecondaryButton())
+                    settingsRow(L10n.text("诊断报告"), subtitle: L10n.text("查看脱敏会话事件并导出支持报告"), symbol: "doc.text.magnifyingglass") {
+                        Button(L10n.text("查看…")) { model.showingDiagnostics = true }.buttonStyle(ReferenceSecondaryButton())
                     }
-                    settingsRow("连接历史", subtitle: "采集速率、会话时间线及本机记录保留期限", symbol: "clock.arrow.circlepath") {
-                        Button("查看…") { model.showingConnectionHistory = true }.buttonStyle(ReferenceSecondaryButton())
+                    settingsRow(L10n.text("连接历史"), subtitle: L10n.text("采集速率、会话时间线及本机记录保留期限"), symbol: "clock.arrow.circlepath") {
+                        Button(L10n.text("查看…")) { model.showingConnectionHistory = true }.buttonStyle(ReferenceSecondaryButton())
                     }
-                    settingsRow("升级与卸载", subtitle: "准备安装更新或安全移除应用", symbol: "shippingbox") {
-                        Button("准备…") { model.showingMaintenance = true }.buttonStyle(ReferenceSecondaryButton())
+                    settingsRow(L10n.text("升级与卸载"), subtitle: L10n.text("准备安装更新或安全移除应用"), symbol: "shippingbox") {
+                        Button(L10n.text("准备…")) { model.showingMaintenance = true }.buttonStyle(ReferenceSecondaryButton())
                     }
-                    settingsRow("安装检查", subtitle: "检查引擎、后台助手和配置是否就绪", symbol: "checklist") {
-                        Button("打开…") { model.showingSetup = true }.buttonStyle(ReferenceSecondaryButton())
+                    settingsRow(L10n.text("安装检查"), subtitle: L10n.text("检查引擎、后台助手和配置是否就绪"), symbol: "checklist") {
+                        Button(L10n.text("打开…")) { model.showingSetup = true }.buttonStyle(ReferenceSecondaryButton())
                     }
                 }.glassCard(cornerRadius: 16)
 
-                Label("系统操作可能需要管理员授权。", systemImage: "lock.shield")
+                Label(L10n.text("系统操作可能需要管理员授权。"), systemImage: "lock.shield")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                     .padding(.top, 8)
             }
@@ -992,7 +1001,7 @@ struct SystemSettingsPane: View {
         .frame(minHeight: 88)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottom) {
-            if title == "特权助手" || title == "应用更新" {
+            if title == L10n.text("特权助手") || title == L10n.text("应用更新") {
                 Rectangle().fill(GlassPalette.ink.opacity(0.06))
                     .frame(height: 0.75).padding(.leading, 79).padding(.trailing, 20)
             }
@@ -1038,39 +1047,39 @@ struct ProfileDetail: View {
                 }
             }
         }
-        .alert("自定义类别", isPresented: $editingCustomGroup) {
-            TextField("类别名称", text: $customGroupDraft)
-            Button("确定") { draftGroup = customGroupDraft.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .alert(L10n.text("自定义类别"), isPresented: $editingCustomGroup) {
+            TextField(L10n.text("类别名称"), text: $customGroupDraft)
+            Button(L10n.text("确定")) { draftGroup = customGroupDraft.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .disabled(customGroupDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || customGroupDraft.trimmingCharacters(in: .whitespacesAndNewlines).count > 48)
-            Button("取消", role: .cancel) { }
+            Button(L10n.text("取消"), role: .cancel) { }
         } message: {
-            Text("输入最多 48 字的类别名称。保存配置后，可在其它配置中复用。")
+            Text(L10n.text("输入最多 48 字的类别名称。保存配置后，可在其它配置中复用。"))
         }
-        .confirmationDialog("确定要删除此配置？", isPresented: $confirmDelete) {
-            Button("删除配置", role: .destructive) {
+        .confirmationDialog(L10n.text("确定要删除此配置？"), isPresented: $confirmDelete) {
+            Button(L10n.text("删除配置"), role: .destructive) {
                 Task { await model.deleteProfile(profile.id) }
             }
-            Button("取消", role: .cancel) {}
+            Button(L10n.text("取消"), role: .cancel) {}
         } message: {
-            Text("会删除本机存储的配置及相应凭据，且无法撤销。")
+            Text(L10n.text("会删除本机存储的配置及相应凭据，且无法撤销。"))
         }
         .sheet(isPresented: $showingEditor) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("编辑 OpenVPN 配置")
+                Text(L10n.text("编辑 OpenVPN 配置"))
                     .font(.system(size: 20, weight: .bold))
-                Text("文件可能含有私钥。危险脚本和不受支持的配置不能保存；修改在重新连接后生效。")
+                Text(L10n.text("文件可能含有私钥。危险脚本和不受支持的配置不能保存；修改在重新连接后生效。"))
                     .font(.callout).foregroundStyle(.secondary)
                 TextEditor(text: $editorText)
                     .font(.system(.body, design: .monospaced))
                     .padding(5)
                     .glassCard(cornerRadius: 12)
                 HStack {
-                    Button("取消") {
+                    Button(L10n.text("取消")) {
                         editorText = ""
                         showingEditor = false
                     }
                     Spacer()
-                    Button("保存新版本") {
+                    Button(L10n.text("保存新版本")) {
                         Task {
                             if await model.saveSource(for: profile, text: editorText) {
                                 editorText = ""
@@ -1114,23 +1123,23 @@ struct ProfileDetail: View {
                             .foregroundStyle(profile.isFavorite ? .orange : .secondary)
                     }
                     .buttonStyle(ReferenceSecondaryButton())
-                    .help(profile.isFavorite ? "取消收藏" : "收藏此配置")
-                    .accessibilityLabel(profile.isFavorite ? "取消收藏此配置" : "收藏此配置")
-                    .accessibilityValue(profile.isFavorite ? "已收藏" : "未收藏")
+                    .help(profile.isFavorite ? L10n.text("取消收藏") : L10n.text("收藏此配置"))
+                    .accessibilityLabel(profile.isFavorite ? L10n.text("取消收藏此配置") : L10n.text("收藏此配置"))
+                    .accessibilityValue(profile.isFavorite ? L10n.text("已收藏") : L10n.text("未收藏"))
                     .disabled(!model.canEditProfileMetadata(profile.id))
                     Menu {
-                        Button("配置健康检查…") { model.showProfileHealth(profile.id) }
+                        Button(L10n.text("配置健康检查…")) { model.showProfileHealth(profile.id) }
                             .disabled(model.profileTransferInProgress || model.maintenanceInProgress)
-                        Button("更新配置文件…") { model.showProfileHealth(profile.id, updating: true) }
+                        Button(L10n.text("更新配置文件…")) { model.showProfileHealth(profile.id, updating: true) }
                             .disabled(model.profileTransferInProgress || model.maintenanceInProgress)
                         Divider()
-                        Button("自定义分流规则…") { model.customRuleEditorProfile = profile }
+                        Button(L10n.text("自定义分流规则…")) { model.customRuleEditorProfile = profile }
                             .disabled(model.profileTransferInProgress || model.maintenanceInProgress)
-                        Button("导出可迁移配置…") { Task { await model.exportProfile(for: profile.id) } }
+                        Button(L10n.text("导出可迁移配置…")) { Task { await model.exportProfile(for: profile.id) } }
                             .disabled(model.profileTransferInProgress || model.maintenanceInProgress)
-                        Button("导出路由预览…") { Task { await model.exportProfile(kind: .routePreview, for: profile.id) } }
+                        Button(L10n.text("导出路由预览…")) { Task { await model.exportProfile(kind: .routePreview, for: profile.id) } }
                             .disabled(model.profileTransferInProgress || model.maintenanceInProgress || (profile.mode == .chinaDirect && model.rules == nil))
-                        Button("删除配置…", role: .destructive) {
+                        Button(L10n.text("删除配置…"), role: .destructive) {
                             confirmDelete = true
                         }.disabled(!model.canDeleteProfile(profile.id))
                     } label: {
@@ -1139,7 +1148,7 @@ struct ProfileDetail: View {
                             .foregroundStyle(.secondary)
                     }
                     .menuIndicator(.hidden)
-                    .accessibilityLabel("配置操作").accessibilityValue(profile.name)
+                    .accessibilityLabel(L10n.text("配置操作")).accessibilityValue(profile.name)
                     .fixedSize()
                 }
                 HStack(spacing: 4) {
@@ -1147,7 +1156,7 @@ struct ProfileDetail: View {
                         Button {
                             tab = section
                         } label: {
-                            Text(section.rawValue)
+                            Text(L10n.text(section.rawValue))
                                 .font(.system(size: 14, weight: tab == section ?
                                               .semibold : .regular))
                                 .foregroundStyle(tab == section ?
@@ -1164,7 +1173,7 @@ struct ProfileDetail: View {
                         }
                         .buttonStyle(ReferenceQuietButton())
                         .accessibilityAddTraits(tab == section ? .isSelected : [])
-                        .accessibilityValue(tab == section ? "已选择" : "未选择")
+                        .accessibilityValue(tab == section ? L10n.text("已选择") : L10n.text("未选择"))
                     }
                 }
                 .referenceSegments()
@@ -1181,17 +1190,17 @@ struct ProfileDetail: View {
                 Spacer(minLength: 0)
                 HStack {
                     Button { model.showProfileHealth(profile.id) } label: {
-                        Label(model.profileHealth.reports[profile.id]?.title ?? "检查配置", systemImage: "checkmark.shield")
+                        Label(model.profileHealth.reports[profile.id]?.title ?? L10n.text("检查配置"), systemImage: "checkmark.shield")
                     }.buttonStyle(.plain).foregroundStyle(.secondary)
                     Spacer()
-                    Button("保存更改") {
+                    Button(L10n.text("保存更改")) {
                         Task {
                             await model.updateMetadata(name: draftName, group: draftGroup,
                                                        notes: draftNotes, favorite: profile.isFavorite, for: profile.id)
                         }
                     }
                     .buttonStyle(ReferencePrimaryButton()).disabled(!model.canEditProfileMetadata(profile.id))
-                    Button(model.profileExportInProgress ? "导出中…" : "导出配置…") { Task { await model.exportProfile(for: profile.id) } }
+                    Button(model.profileExportInProgress ? L10n.text("导出中…") : L10n.text("导出配置…")) { Task { await model.exportProfile(for: profile.id) } }
                         .buttonStyle(ReferenceSecondaryButton())
                         .disabled(model.profileTransferInProgress || model.maintenanceInProgress)
                 }
@@ -1206,22 +1215,22 @@ struct ProfileDetail: View {
 
     private var metadata: some View {
         VStack(alignment: .leading, spacing: 8) {
-            editorRow("名称") {
-                TextField("配置名称", text: $draftName)
+            editorRow(L10n.text("名称")) {
+                TextField(L10n.text("配置名称"), text: $draftName)
                     .textFieldStyle(.plain)
                     .focused($focusedField, equals: .name)
                     .referenceInput(focused: focusedField == .name)
             }
-            editorRow("类别") {
+            editorRow(L10n.text("类别")) {
                 Menu {
                     ForEach(ProfileLibraryQuery.groupChoices(model.profiles, current: draftGroup), id: \.self) { group in
                         Button(group) { draftGroup = group }
                     }
                     Divider()
-                    Button("自定义类别…") { customGroupDraft = draftGroup; editingCustomGroup = true }
+                    Button(L10n.text("自定义类别…")) { customGroupDraft = draftGroup; editingCustomGroup = true }
                 } label: {
                     HStack {
-                        Text(draftGroup.isEmpty ? "选择类别" : draftGroup)
+                        Text(draftGroup.isEmpty ? L10n.text("选择类别") : draftGroup)
                             .font(.system(size: 16))
                             .foregroundStyle(.primary)
                         Spacer()
@@ -1234,7 +1243,7 @@ struct ProfileDetail: View {
                 }
                 .buttonStyle(.plain)
             }
-            editorRow("配置文件") {
+            editorRow(L10n.text("源文件")) {
                 Label(profile.sourceFilename, systemImage: "doc.text.fill")
                     .font(.system(size: 14))
                     .foregroundStyle(GlassPalette.blue)
@@ -1249,7 +1258,7 @@ struct ProfileDetail: View {
                         }
                     }
                 } label: {
-                    Text("编辑文件…")
+                    Text(L10n.text("编辑文件…"))
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(GlassPalette.ink)
                         .frame(width: 94, height: 34)
@@ -1266,26 +1275,26 @@ struct ProfileDetail: View {
                 .layoutPriority(1)
                 .disabled(model.connected || model.connecting)
             }
-            editorRow("备注") {
-                TextField("添加备注信息…", text: $draftNotes, axis: .vertical)
+            editorRow(L10n.text("备注")) {
+                TextField(L10n.text("添加备注信息…"), text: $draftNotes, axis: .vertical)
                     .lineLimit(2...2)
                     .textFieldStyle(.plain)
                     .focused($focusedField, equals: .notes)
                     .referenceInput(height: 58, focused: focusedField == .notes)
             }
             VStack(alignment: .leading, spacing: 5) {
-                LabeledContent("创建时间") {
+                LabeledContent(L10n.text("创建时间")) {
                     Text(profile.importedAt, format: .dateTime.year().month().day().hour().minute())
                 }
-                LabeledContent("修改时间") {
+                LabeledContent(L10n.text("修改时间")) {
                     if let editedAt = history.first?.createdAt {
                         Text(editedAt, format: .dateTime.year().month().day().hour().minute())
                     } else {
-                        Text("无编辑记录")
+                        Text(L10n.text("无编辑记录"))
                     }
                 }
-                LabeledContent("文件大小", value: model.profileSizes[profile.id].map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) } ?? "—")
-                LabeledContent("配置类型", value: "OpenVPN")
+                LabeledContent(L10n.text("文件大小"), value: model.profileSizes[profile.id].map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) } ?? "—")
+                LabeledContent(L10n.text("配置类型"), value: "OpenVPN")
             }
             .font(.system(size: 13))
             .foregroundStyle(.secondary)
@@ -1299,11 +1308,11 @@ struct ProfileDetail: View {
 
     private var advanced: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label("安全编辑", systemImage: "curlybraces")
+            Label(L10n.text("安全编辑"), systemImage: "curlybraces")
                 .font(.system(size: 18, weight: .semibold))
-            Text("保留原始 .ovpn 文件及版本快照，不会执行导入文件中的脚本。")
+            Text(L10n.text("保留原始 .ovpn 文件及版本快照，不会执行导入文件中的脚本。"))
                 .font(.system(size: 14)).foregroundStyle(.secondary)
-            Button("编辑 .ovpn 文件…") {
+            Button(L10n.text("编辑 .ovpn 文件…")) {
                 Task {
                     if let text = await model.editSource(for: profile) {
                         editorText = text
@@ -1313,9 +1322,9 @@ struct ProfileDetail: View {
             }
             .buttonStyle(ReferencePrimaryButton())
             .disabled(model.connected || model.connecting || model.stopping)
-            LabeledContent("源文件", value: profile.sourceFilename)
-            LabeledContent("保存位置", value: "本机私有配置仓库")
-            Text("只有断开连接后才能更改或恢复配置。")
+            LabeledContent(L10n.text("源文件"), value: profile.sourceFilename)
+            LabeledContent(L10n.text("保存位置"), value: L10n.text("本机私有配置仓库"))
+            Text(L10n.text("只有断开连接后才能更改或恢复配置。"))
                 .font(.system(size: 14)).foregroundStyle(.secondary)
         }
         .padding(17)
@@ -1324,7 +1333,7 @@ struct ProfileDetail: View {
 
     private var routeMode: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("所选配置的默认路由策略")
+            Text(L10n.text("所选配置的默认路由策略"))
                 .font(.system(size: 16, weight: .medium))
             ForEach(RoutingMode.allCases) { mode in
                 Button { Task { await model.setMode(mode, for: profile.id) } } label: {
@@ -1338,7 +1347,7 @@ struct ProfileDetail: View {
             if model.connected, model.activeProfileID == profile.id {
                 Text(model.routingModeStatus).font(.system(size: 12)).foregroundStyle(.secondary)
             }
-            Text("规则路由使用中国 IPv4 及 APNIC 中国 IPv6 注册前缀。全局与规则可在线切换；IPv6 需服务器分配隧道地址及有效规则缓存。")
+            Text(L10n.text("规则路由使用中国 IPv4 及 APNIC 中国 IPv6 注册前缀。全局与规则可在线切换；IPv6 需服务器分配隧道地址及有效规则缓存。"))
                 .font(.system(size: 14)).foregroundStyle(.secondary)
         }
         .padding(17)
@@ -1348,16 +1357,16 @@ struct ProfileDetail: View {
     private var revisions: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("已保存的配置版本")
+                Text(L10n.text("已保存的配置版本"))
                     .font(.system(size: 18, weight: .semibold))
                 Spacer()
-                Button("刷新历史") {
+                Button(L10n.text("刷新历史")) {
                     Task { history = await model.revisions(for: profile) }
                 }
                 .controlSize(.small)
             }
             if history.isEmpty {
-                Label("暂无历史版本", systemImage: "clock.arrow.circlepath")
+                Label(L10n.text("暂无历史版本"), systemImage: "clock.arrow.circlepath")
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(history.prefix(10)) { revision in
@@ -1365,7 +1374,7 @@ struct ProfileDetail: View {
                         Image(systemName: "clock").foregroundStyle(.blue)
                         Text(revision.createdAt, format: .dateTime.year().month().day().hour().minute())
                         Spacer()
-                        Button("恢复此版本") {
+                        Button(L10n.text("恢复此版本")) {
                             Task {
                                 if await model.restoreSource(for: profile, revision: revision.filename) {
                                     history = await model.revisions(for: profile)
@@ -1378,7 +1387,7 @@ struct ProfileDetail: View {
                     Divider().opacity(0.3)
                 }
             }
-            Text("版本保存在本机，不会上传至云端。")
+            Text(L10n.text("版本保存在本机，不会上传至云端。"))
                 .font(.system(size: 13)).foregroundStyle(.secondary)
         }
         .padding(16)
@@ -1392,7 +1401,7 @@ struct ProfileDetail: View {
             Text(title)
                 .font(.system(size: 16))
                 .foregroundStyle(.secondary)
-                .frame(width: 66, alignment: .leading)
+                .frame(width: L10n.language == .english ? 88 : 66, alignment: .leading)
             content()
         }
     }

@@ -22,7 +22,7 @@ public struct AuthenticationChallenge: Codable, Equatable, Identifiable, Sendabl
     }
     public static func parse(_ line: String) -> Self? {
         if line == ">PASSWORD:Need 'Private Key' password" {
-            return .init(kind: .privateKey, prompt: "输入此配置私钥的解锁密码")
+            return .init(kind: .privateKey, prompt: L10n.text("输入此配置私钥的解锁密码"))
         }
         let prefix = ">PASSWORD:Need 'Auth' username/password SC:"
         guard line.hasPrefix(prefix) else { return nil }

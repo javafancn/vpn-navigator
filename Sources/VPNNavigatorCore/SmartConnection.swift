@@ -4,12 +4,12 @@ public enum SmartTrigger: String, Codable, Sendable { case launch, wake, network
 public enum SmartNetworkScope: String, Codable, CaseIterable, Identifiable, Sendable {
     case any, wifi, wired, specifiedWiFi
     public var id: String { rawValue }
-    public var title: String { switch self { case .any: return "任意可用网络"; case .wifi: return "仅 Wi-Fi"; case .wired: return "仅有线网络"; case .specifiedWiFi: return "指定 Wi-Fi 名称" } }
+    public var title: String { switch self { case .any: return L10n.text("任意可用网络"); case .wifi: return L10n.text("仅 Wi-Fi"); case .wired: return L10n.text("仅有线网络"); case .specifiedWiFi: return L10n.text("指定 Wi-Fi 名称") } }
 }
 public enum StatusNoticeScope: String, Codable, CaseIterable, Identifiable, Sendable {
     case errors, all
     public var id: String { rawValue }
-    public var title: String { self == .errors ? "仅异常与认证请求" : "连接变化与异常" }
+    public var title: String { self == .errors ? L10n.text("仅异常与认证请求") : L10n.text("连接变化与异常") }
 }
 public struct SmartConnectionPreferences: Codable, Equatable, Sendable {
     public var enabled = false
@@ -76,25 +76,25 @@ public enum SmartConnectionPlanner {
     public static func decide(preferences: SmartConnectionPreferences, trigger: SmartTrigger, network: SmartNetworkState,
                               context: SmartConnectionContext, target: UUID?) -> SmartConnectionDecision {
         guard preferences.enabled, preferences.accepts(trigger) else { return .disabled }
-        guard !preferences.paused else { return .wait("自动连接已暂停，恢复后等待下一次触发。") }
-        guard preferences.valid else { return .wait("自动连接设置无效，请检查网络名称列表。") }
-        guard !context.sleeping else { return .wait("系统休眠中，等待唤醒。") }
-        guard network.online else { return .wait("等待可用网络。") }
-        guard preferences.allowExpensive || !network.expensive else { return .wait("当前网络按流量计费，自动连接已跳过。") }
+        guard !preferences.paused else { return .wait(L10n.text("自动连接已暂停，恢复后等待下一次触发。")) }
+        guard preferences.valid else { return .wait(L10n.text("自动连接设置无效，请检查网络名称列表。")) }
+        guard !context.sleeping else { return .wait(L10n.text("系统休眠中，等待唤醒。")) }
+        guard network.online else { return .wait(L10n.text("等待可用网络。")) }
+        guard preferences.allowExpensive || !network.expensive else { return .wait(L10n.text("当前网络按流量计费，自动连接已跳过。")) }
         switch preferences.networkScope {
         case .any: break
-        case .wifi: guard network.kind == .wifi else { return .wait("等待 Wi-Fi 网络。") }
-        case .wired: guard network.kind == .wired else { return .wait("等待有线网络。") }
+        case .wifi: guard network.kind == .wifi else { return .wait(L10n.text("等待 Wi-Fi 网络。")) }
+        case .wired: guard network.kind == .wired else { return .wait(L10n.text("等待有线网络。")) }
         case .specifiedWiFi:
-            guard network.kind == .wifi, let name = network.wifiName else { return .wait("无法核验当前 Wi-Fi 名称；请检查位置授权或网络状态。") }
-            guard preferences.wifiNames.contains(name) else { return .wait("当前 Wi-Fi 不在指定列表中。") }
+            guard network.kind == .wifi, let name = network.wifiName else { return .wait(L10n.text("无法核验当前 Wi-Fi 名称；请检查位置授权或网络状态。")) }
+            guard preferences.wifiNames.contains(name) else { return .wait(L10n.text("当前 Wi-Fi 不在指定列表中。")) }
         }
-        guard !context.occupied else { return .wait("应用正在处理其它操作，本次自动连接已跳过。") }
-        if context.state == .connected || ConnectionControl.inProgress(context.state) || context.activeProfileID != nil { return .wait("已有活动会话，自动连接不会切换或重复启动。") }
-        guard context.helperReady else { return .wait("助手状态尚未通过核验，请检查安装与授权。") }
-        guard !context.recoveryRequired else { return .wait("网络恢复尚未完成，请先处理恢复记录。") }
-        guard context.state == .disconnected else { return .wait("连接发生异常，请先手动检查并重试。") }
-        guard let target else { return .wait(preferences.profileID == nil ? "请先成功连接一次，或选择固定的自动连接配置。" : "指定配置已不存在，请重新选择。") }
+        guard !context.occupied else { return .wait(L10n.text("应用正在处理其它操作，本次自动连接已跳过。")) }
+        if context.state == .connected || ConnectionControl.inProgress(context.state) || context.activeProfileID != nil { return .wait(L10n.text("已有活动会话，自动连接不会切换或重复启动。")) }
+        guard context.helperReady else { return .wait(L10n.text("助手状态尚未通过核验，请检查安装与授权。")) }
+        guard !context.recoveryRequired else { return .wait(L10n.text("网络恢复尚未完成，请先处理恢复记录。")) }
+        guard context.state == .disconnected else { return .wait(L10n.text("连接发生异常，请先手动检查并重试。")) }
+        guard let target else { return .wait(preferences.profileID == nil ? L10n.text("请先成功连接一次，或选择固定的自动连接配置。") : L10n.text("指定配置已不存在，请重新选择。")) }
         return .connect(target)
     }
 }
@@ -129,10 +129,10 @@ public enum SmartConnectionError: Error, LocalizedError {
     case invalidPreferences, needsCredentials, occupied, cancelled
     public var errorDescription: String? {
         switch self {
-        case .invalidPreferences: return "最多保存 32 个不重复的 Wi-Fi 名称，每个名称限 32 字节且不能包含控制字符。"
-        case .needsCredentials: return "此配置需要身份验证，请先手动连接并按需保存凭据。自动连接不会使用输入框中的临时密码。"
-        case .occupied: return "当前有活动会话、待恢复记录或正在编辑的内容，未执行自动连接。"
-        case .cancelled: return "自动连接条件已改变，本次任务已取消。"
+        case .invalidPreferences: return L10n.text("最多保存 32 个不重复的 Wi-Fi 名称，每个名称限 32 字节且不能包含控制字符。")
+        case .needsCredentials: return L10n.text("此配置需要身份验证，请先手动连接并按需保存凭据。自动连接不会使用输入框中的临时密码。")
+        case .occupied: return L10n.text("当前有活动会话、待恢复记录或正在编辑的内容，未执行自动连接。")
+        case .cancelled: return L10n.text("自动连接条件已改变，本次任务已取消。")
         }
     }
 }
@@ -142,25 +142,25 @@ public enum VPNStatusNotice: String, Codable, Sendable {
     public var isError: Bool { ![Self.connected, .reconnecting, .disconnected, .test].contains(self) }
     public var title: String {
         switch self {
-        case .connected: return "VPN 已连接"; case .reconnecting: return "VPN 正在重连"; case .disconnected: return "VPN 已断开"
-        case .lost: return "VPN 连接中断"; case .authentication: return "VPN 需要身份验证"; case .authenticationFailed: return "VPN 认证失败或凭据失效"
-        case .certificateFailed: return "VPN 证书或 TLS 验证失败"; case .recovery: return "VPN 网络恢复未完成"
-        case .failure: return "VPN 连接未成功"; case .unavailable: return "无法核验 VPN 状态"; case .test: return "VPN Navigator 通知测试"
+        case .connected: return L10n.text("VPN 已连接"); case .reconnecting: return L10n.text("VPN 正在重连"); case .disconnected: return L10n.text("VPN 已断开")
+        case .lost: return L10n.text("VPN 连接中断"); case .authentication: return L10n.text("VPN 需要身份验证"); case .authenticationFailed: return L10n.text("VPN 认证失败或凭据失效")
+        case .certificateFailed: return L10n.text("VPN 证书或 TLS 验证失败"); case .recovery: return L10n.text("VPN 网络恢复未完成")
+        case .failure: return L10n.text("VPN 连接未成功"); case .unavailable: return L10n.text("无法核验 VPN 状态"); case .test: return L10n.text("VPN Navigator 通知测试")
         }
     }
     public var body: String {
         switch self {
-        case .connected: return "助手已确认 VPN 会话。可在应用中查看路由策略并核验具体目标路径。"
-        case .reconnecting: return "正在按已配置的重连策略处理，请等待状态稳定。"
-        case .disconnected: return "本次断开已由助手确认。"
-        case .lost: return "连接意外结束，请打开应用检查网络与服务器状态。"
-        case .authentication: return "请打开应用完成认证。应用不会自动填写动态验证码。"
-        case .authenticationFailed: return "请重新核对账户或凭据。自动连接不会反复尝试失败的认证。"
-        case .certificateFailed: return "请检查证书有效期与服务器配置；不会跳过校验。"
-        case .recovery: return "请打开应用查看恢复结果，保留尚未确认的路由与 DNS 记录。"
-        case .failure: return "请打开应用检查认证、配置与网络；自动连接已停止本次尝试。"
-        case .unavailable: return "助手状态无法确认，请检查安装与服务授权。"
-        case .test: return "通知已由应用提交。是否显示横幅和播放声音仍由系统设置决定。"
+        case .connected: return L10n.text("助手已确认 VPN 会话。可在应用中查看路由策略并核验具体目标路径。")
+        case .reconnecting: return L10n.text("正在按已配置的重连策略处理，请等待状态稳定。")
+        case .disconnected: return L10n.text("本次断开已由助手确认。")
+        case .lost: return L10n.text("连接意外结束，请打开应用检查网络与服务器状态。")
+        case .authentication: return L10n.text("请打开应用完成认证。应用不会自动填写动态验证码。")
+        case .authenticationFailed: return L10n.text("请重新核对账户或凭据。自动连接不会反复尝试失败的认证。")
+        case .certificateFailed: return L10n.text("请检查证书有效期与服务器配置；不会跳过校验。")
+        case .recovery: return L10n.text("请打开应用查看恢复结果，保留尚未确认的路由与 DNS 记录。")
+        case .failure: return L10n.text("请打开应用检查认证、配置与网络；自动连接已停止本次尝试。")
+        case .unavailable: return L10n.text("助手状态无法确认，请检查安装与服务授权。")
+        case .test: return L10n.text("通知已由应用提交。是否显示横幅和播放声音仍由系统设置决定。")
         }
     }
 }

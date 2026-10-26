@@ -6,12 +6,12 @@ enum InstallerUpdateError: Error, LocalizedError {
     case invalidURL, oversized, unauthenticated, signatureMismatch, gatekeeperRejected, downloadFailed
     var errorDescription: String? {
         switch self {
-        case .invalidURL: return "Update URL is not an official VPN Navigator GitHub Release asset."
-        case .oversized: return "Downloaded installer exceeds the size limit."
-        case .unauthenticated: return "The current app has no trusted Developer ID Team."
-        case .signatureMismatch: return "The installer is not signed by this application's Developer ID Team."
-        case .gatekeeperRejected: return "macOS Gatekeeper did not approve the installer."
-        case .downloadFailed: return "The update download was incomplete."
+        case .invalidURL: return L10n.text("Update URL is not an official VPN Navigator GitHub Release asset.")
+        case .oversized: return L10n.text("Downloaded installer exceeds the size limit.")
+        case .unauthenticated: return L10n.text("The current app has no trusted Developer ID Team.")
+        case .signatureMismatch: return L10n.text("The installer is not signed by this application's Developer ID Team.")
+        case .gatekeeperRejected: return L10n.text("macOS Gatekeeper did not approve the installer.")
+        case .downloadFailed: return L10n.text("The update download was incomplete.")
         }
     }
 }

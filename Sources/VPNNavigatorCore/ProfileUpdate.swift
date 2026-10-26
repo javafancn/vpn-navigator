@@ -20,10 +20,10 @@ public enum ProfileUpdateFailure: Error, LocalizedError {
     case stale, unsafe, pending, unchanged
     public var errorDescription: String? {
         switch self {
-        case .stale: return "配置或设置已改变，请重新选择文件并预览。"
-        case .unsafe: return "更新文件不兼容、材料缺失，或配置存储状态无法核验。"
-        case .pending: return "请先断开 VPN、完成网络恢复并等待其它操作结束。"
-        case .unchanged: return "新文件与当前配置相同，无需更新。"
+        case .stale: return L10n.text("配置或设置已改变，请重新选择文件并预览。")
+        case .unsafe: return L10n.text("更新文件不兼容、材料缺失，或配置存储状态无法核验。")
+        case .pending: return L10n.text("请先断开 VPN、完成网络恢复并等待其它操作结束。")
+        case .unchanged: return L10n.text("新文件与当前配置相同，无需更新。")
         }
     }
 }
@@ -61,11 +61,11 @@ extension ProfileStore {
             do {
                 var report = ProfileHealth.inspect(runtime: try runtimeConfig(for: profile), mode: profile.mode, now: now)
                 if (try? CustomRuleSet(profile.customRules)) == nil {
-                    report = .init(checkedAt: now, issues: report.issues + [.init(id: "custom-rules", severity: .error, message: "自定义分流规则无效，请检查后再连接。")], certificates: report.certificates)
+                    report = .init(checkedAt: now, issues: report.issues + [.init(id: "custom-rules", severity: .error, message: L10n.text("自定义分流规则无效，请检查后再连接。"))], certificates: report.certificates)
                 }
                 result[profile.id] = report
             } catch is CancellationError { throw CancellationError() }
-            catch { result[profile.id] = .init(checkedAt: now, issues: [.init(id: "storage", severity: .error, message: "无法读取本机配置，请检查文件权限或恢复备份。")], certificates: []) }
+            catch { result[profile.id] = .init(checkedAt: now, issues: [.init(id: "storage", severity: .error, message: L10n.text("无法读取本机配置，请检查文件权限或恢复备份。"))], certificates: []) }
         }
         return result
     }

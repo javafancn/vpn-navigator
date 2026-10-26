@@ -66,11 +66,11 @@ public enum ProfileFileIO {
         case unreadable, notRegular, tooLarge, unsafeDestination, cannotWrite
         public var errorDescription: String? {
             switch self {
-            case .unreadable: return "无法读取所选文件，请检查访问权限。"
-            case .notRegular: return "所选项目不是普通文件。"
-            case .tooLarge: return "文件超过支持的大小限制。"
-            case .unsafeDestination: return "保存位置是链接或特殊文件，请选择普通文件位置。"
-            case .cannotWrite: return "无法安全保存文件，请选择可写且支持私有文件权限的位置。"
+            case .unreadable: return L10n.text("无法读取所选文件，请检查访问权限。")
+            case .notRegular: return L10n.text("所选项目不是普通文件。")
+            case .tooLarge: return L10n.text("文件超过支持的大小限制。")
+            case .unsafeDestination: return L10n.text("保存位置是链接或特殊文件，请选择普通文件位置。")
+            case .cannotWrite: return L10n.text("无法安全保存文件，请选择可写且支持私有文件权限的位置。")
             }
         }
     }

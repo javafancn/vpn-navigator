@@ -55,9 +55,9 @@ public enum RoutingModeSwitchError: Error, LocalizedError {
     case unavailable, stale, missingRules
     public var errorDescription: String? {
         switch self {
-        case .unavailable: return "当前会话不支持在线切换。原始配置模式需先断开连接。"
-        case .stale: return "会话或路由版本已改变，请重新确认后切换。"
-        case .missingRules: return "规则路由需要至少 100 条已校验的中国 IPv4 规则。"
+        case .unavailable: return L10n.text("当前会话不支持在线切换。原始配置模式需先断开连接。")
+        case .stale: return L10n.text("会话或路由版本已改变，请重新确认后切换。")
+        case .missingRules: return L10n.text("规则路由需要至少 100 条已校验的中国 IPv4 规则。")
         }
     }
 }

@@ -1,0 +1,197 @@
+[
+  {
+    "path": "Sources/VPNNavigatorApp/NetworkDiagnosticsView.swift",
+    "key": "连接测试",
+    "reason": "stable enum raw value"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/NetworkDiagnosticsView.swift",
+    "key": "DNS 解析",
+    "reason": "stable enum raw value"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/NetworkDiagnosticsView.swift",
+    "key": "路由追踪",
+    "reason": "stable enum raw value"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/NetworkDiagnosticsView.swift",
+    "key": "延迟测试",
+    "reason": "stable enum raw value"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/WorkspaceNavigation.swift",
+    "key": "帮助",
+    "reason": "native menu title recognizer"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/ProfileBackupView.swift",
+    "key": "创建备份",
+    "reason": "stable enum raw value"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/ProfileBackupView.swift",
+    "key": "从备份恢复",
+    "reason": "stable enum raw value"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/MainView.swift",
+    "key": "节点",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/MainView.swift",
+    "key": "工作",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/MainView.swift",
+    "key": "/ui-fixture/工作网络.ovpn",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/MainView.swift",
+    "key": "/ui-fixture/家庭网络.ovpn",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/MainView.swift",
+    "key": "/ui-fixture/工作网络.ovpn",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/MainView.swift",
+    "key": "/ui-fixture/说明.txt",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/MainView.swift",
+    "key": "基本信息",
+    "reason": "stable enum raw value"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/MainView.swift",
+    "key": "高级设置",
+    "reason": "stable enum raw value"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/MainView.swift",
+    "key": "路由策略",
+    "reason": "stable enum raw value"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/MainView.swift",
+    "key": "历史版本",
+    "reason": "stable enum raw value"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/VPNNavigatorApp.swift",
+    "key": "工作网络",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/VPNNavigatorApp.swift",
+    "key": "家庭网络",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/VPNNavigatorApp.swift",
+    "key": "新加坡节点",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/VPNNavigatorApp.swift",
+    "key": "美国节点",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/VPNNavigatorApp.swift",
+    "key": "日本节点",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/VPNNavigatorApp.swift",
+    "key": "工作网络",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/VPNNavigatorApp.swift",
+    "key": "工作",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/VPNNavigatorApp.swift",
+    "key": "家庭网络",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/VPNNavigatorApp.swift",
+    "key": "家庭",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/VPNNavigatorApp.swift",
+    "key": "个人",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/VPNNavigatorApp.swift",
+    "key": "节点",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/VPNNavigatorApp.swift",
+    "key": "工作网络.ovpn",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/VPNNavigatorApp.swift",
+    "key": "公司",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/VPNNavigatorApp.swift",
+    "key": "工作网络.ovpn",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/VPNNavigatorApp.swift",
+    "key": "家庭网络.ovpn",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/VPNNavigatorApp.swift",
+    "key": "测试节点.ovpn",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorApp/VPNNavigatorApp.swift",
+    "key": "备用节点.ovpn",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorCore/ProfileLibraryQuery.swift",
+    "key": "个人",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorCore/ProfileLibraryQuery.swift",
+    "key": "工作",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorCore/ProfileLibraryQuery.swift",
+    "key": "家庭",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorCore/ProfileLibraryQuery.swift",
+    "key": "其他",
+    "reason": "metadata or native language name"
+  },
+  {
+    "path": "Sources/VPNNavigatorCore/ProfileHealth.swift",
+    "key": "客户端",
+    "reason": "stable enum raw value"
+  }
+]

@@ -1,0 +1,2 @@
+"NSLocationUsageDescription" = "仅在你选择指定 Wi-Fi 自动连接时，读取当前 Wi-Fi 名称以匹配规则，不获取地理坐标。";
+"NSLocationWhenInUseUsageDescription" = "仅在你选择指定 Wi-Fi 自动连接时，读取当前 Wi-Fi 名称以匹配规则，不获取地理坐标。";

@@ -81,13 +81,42 @@ enum WorkspaceAccessibilitySelfTest {
             // on SwiftUI-owned NSMenus invokes a different validation path.
             NSApp.sendEvent(try event(code, text: text, modifiers: .command))
         }
+        let workspaceID = NSUserInterfaceItemIdentifier("com.javafancn.vpnnav.workspace")
+        func waitForNativeMenu() async throws {
+            for _ in 0..<20 {
+                if let menu = NSApp.mainMenu?.items.first(where: { $0.identifier == workspaceID })?.submenu,
+                   let item = menu.items.first(where: { $0.keyEquivalent == "2" }),
+                   item.target === router, item.isEnabled { return }
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
+            throw Failure.check("native workspace menu readiness: " + router.selfTestState())
+        }
+        try await waitForNativeMenu()
         print("Workspace router readiness:", router.selfTestState(), "nativeDialog=", model.nativeDialogPresented,
               "message=", model.message != nil, "setup=", model.showingSetup, "maintenance=", model.showingMaintenance)
-        if let menu = NSApp.mainMenu?.items.first(where: { $0.title == "工作区" })?.submenu {
+        if let menu = NSApp.mainMenu?.items.first(where: { $0.identifier == workspaceID })?.submenu {
             print("Workspace command readiness:", menu.items.filter { !$0.isSeparatorItem }.map { "\($0.title):\($0.keyEquivalent):\($0.isEnabled)" })
         }
         try command("2", code: 19); try await settle()
         guard navigation.tab == .profiles else { throw Failure.check("command-2 navigation") }
+        // Reproduce a complete SwiftUI menu replacement without item-change
+        // notifications on the newly installed root. Normal AppKit updates
+        // must restore the actual menu; never call the router's refresh here.
+        // SwiftUI's private NSMenuItem subclass cannot be copied through
+        // NSCopying. Construct ordinary native items instead of cloning it.
+        let rebuilt = NSMenu(title: "CI rebuilt main menu")
+        let applicationItem = NSMenuItem(title: "VPN Navigator", action: nil, keyEquivalent: "")
+        applicationItem.submenu = NSMenu(title: "VPN Navigator")
+        rebuilt.addItem(applicationItem)
+        try await settle() // Drain notifications from constructing the detached root before installing it.
+        NSApp.mainMenu = rebuilt
+        NSApp.updateWindows()
+        try await waitForNativeMenu()
+        guard NSApp.mainMenu?.items.filter({ $0.identifier == workspaceID }).count == 1 else { throw Failure.check("rebuilt workspace menu ownership") }
+        try command("1", code: 18); try await settle()
+        guard navigation.tab == .overview else { throw Failure.check("command after menu root replacement") }
+        try command("2", code: 19); try await settle()
+        guard navigation.tab == .profiles else { throw Failure.check("profiles after menu root replacement") }
         // A standard, independent SwiftUI control distinguishes an unavailable
         // in-process AX tree from an accidentally hidden application tree.
         let reference = NSHostingView(rootView: Button("AX Reference") { }.accessibilityIdentifier("ax-reference"))
@@ -100,7 +129,7 @@ enum WorkspaceAccessibilitySelfTest {
         let axAvailable = referenceExposed || applicationExposed
         if axAvailable {
             let profiles = try element("workspace-profiles")
-            guard profiles.accessibilityLabel() == "配置文件", String(describing: profiles.accessibilityValue()).contains("已选择") else { throw Failure.check("workspace semantics") }
+            guard profiles.accessibilityLabel() == L10n.text("配置文件"), String(describing: profiles.accessibilityValue()).contains(L10n.text("已选择")) else { throw Failure.check("workspace semantics") }
         } else {
             print("SKIP AX assertions: both independent standard SwiftUI button and application hosting view expose no in-process AX nodes; VoiceOver labels/actions require a real assistive client and remain manual acceptance")
         }
@@ -122,7 +151,7 @@ enum WorkspaceAccessibilitySelfTest {
         guard model.selectedID == a.id else { throw Failure.check("list up") }
         if axAvailable {
             let row = try element("library-profile-" + a.id.uuidString)
-            guard row.accessibilityLabel() == "Alpha", String(describing: row.accessibilityValue()).contains("已收藏") else { throw Failure.check("profile semantics") }
+            guard row.accessibilityLabel() == "Alpha", String(describing: row.accessibilityValue()).contains(L10n.text("已收藏")) else { throw Failure.check("profile semantics") }
         }
         model.connectionStatus = "connected: fixture only"; model.activeProfileID = a.id
         try await settle()
@@ -137,7 +166,7 @@ enum WorkspaceAccessibilitySelfTest {
         guard model.selectedID == b.id, model.connected, model.activeProfileID == a.id else { throw Failure.check("selection must not connect") }
         try command("1", code: 18); try await settle()
         guard navigation.tab == .overview else { throw Failure.check("command-1 navigation") }
-        if axAvailable { guard try element("vpn-power").accessibilityLabel() == "断开 VPN" else { throw Failure.check("power semantics") } }
+        if axAvailable { guard try element("vpn-power").accessibilityLabel() == L10n.text("断开 VPN") else { throw Failure.check("power semantics") } }
         try command("f", code: 3); try await settle()
         guard navigation.tab == .profiles, window.firstResponder is NSTextView else { throw Failure.check("cross-workspace search focus") }
         model.profileLibrary.query = "no result"; try await settle()
@@ -173,7 +202,7 @@ enum WorkspaceAccessibilitySelfTest {
         model.showingAccountCredentials = true
         guard model.workspaceNavigationBlocked else { throw Failure.check("authentication modal exclusion") }
         model.showingAccountCredentials = false
-        print("PASS workspace accessibility: actual native command-1/2/F, repeated/cross-page search focus, Return and list arrows/bounds, empty results, profile selection without VPN change and native/model modal exclusion; AX available=\(axAvailable); temporary profile fixtures cleaned; no network requests")
+        print("PASS workspace accessibility: actual native command-1/2/F, menu root replacement, repeated/cross-page search focus, Return and list arrows/bounds, empty results, profile selection without VPN change and native/model modal exclusion; AX available=\(axAvailable); temporary profile fixtures cleaned; no network requests")
     }
     /// SwiftUI virtual nodes adopt role-specific accessibility protocols,
     /// rather than the full NSAccessibilityProtocol. Query documented public

@@ -26,37 +26,37 @@ struct NetworkDiagnosticsView: View {
         var id: String { rawValue }
     }
     private var ipv6Description: String {
-        guard let local else { return "尚未取得 IPv6 路由状态" }
+        guard let local else { return L10n.text("尚未取得 IPv6 路由状态") }
         switch local.health.ipv6Safety {
-        case .noDefaultRoute: return "未发现 IPv6 默认路由"
-        case .tunnelOnly: return "发现隧道路由，归属仍需核验"
-        case .physicalBypass: return "发现物理网络 IPv6 默认路由"
-        case .unknown: return "无法确认 IPv6 路由状态"
+        case .noDefaultRoute: return L10n.text("未发现 IPv6 默认路由")
+        case .tunnelOnly: return L10n.text("发现隧道路由，归属仍需核验")
+        case .physicalBypass: return L10n.text("发现物理网络 IPv6 默认路由")
+        case .unknown: return L10n.text("无法确认 IPv6 路由状态")
         }
     }
     private var statusTitle: String {
-        if checking { return "正在进行实际探测…" }
-        if !error.isEmpty { return "本次探测未成功" }
+        if checking { return L10n.text("正在进行实际探测…") }
+        if !error.isEmpty { return L10n.text("本次探测未成功") }
         switch selectedTab {
-        case .connection: return tcp?.summary ?? "等待连接探测"
-        case .dns: return dnsAnswer.isEmpty ? "等待系统解析" : "已收到系统解析结果"
-        case .routing: return traceAnswer.isEmpty ? "等待路由追踪" : "追踪完成，最多 8 跳"
-        case .latency: return ping.map { $0.received > 0 ? "已收到 ICMP 响应" : "目标未响应 ICMP" } ?? "等待延迟探测"
+        case .connection: return tcp?.summary ?? L10n.text("等待连接探测")
+        case .dns: return dnsAnswer.isEmpty ? L10n.text("等待系统解析") : L10n.text("已收到系统解析结果")
+        case .routing: return traceAnswer.isEmpty ? L10n.text("等待路由追踪") : L10n.text("追踪完成，最多 8 跳")
+        case .latency: return ping.map { $0.received > 0 ? L10n.text("已收到 ICMP 响应") : L10n.text("目标未响应 ICMP") } ?? L10n.text("等待延迟探测")
         }
     }
     var body: some View {
         GeometryReader { geometry in
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    WorkspaceHeading(title: "网络诊断", subtitle: "以真实探测核对连接、解析、路径和延迟", symbol: "waveform.path.ecg")
+                    WorkspaceHeading(title: L10n.text("网络诊断"), subtitle: L10n.text("以真实探测核对连接、解析、路径和延迟"), symbol: "waveform.path.ecg")
                     Spacer()
-                    Button("公网出口…") { cancel(); model.showingPublicEgress = true }.buttonStyle(ReferenceSecondaryButton()).disabled(!model.canStartEgressProbe)
+                    Button(L10n.text("公网出口…")) { cancel(); model.showingPublicEgress = true }.buttonStyle(ReferenceSecondaryButton()).disabled(!model.canStartEgressProbe)
                 }
                 HStack(spacing: 14) {
                     HStack(spacing: 2) {
                         ForEach(DiagnosticTab.allCases) { tab in
                             Button { selectedTab = tab } label: {
-                                Text(tab.rawValue).font(.system(size: 14, weight: selectedTab == tab ? .semibold : .regular))
+                                Text(L10n.text(tab.rawValue)).font(.system(size: 14, weight: selectedTab == tab ? .semibold : .regular))
                                     .foregroundStyle(selectedTab == tab ? GlassPalette.blue : GlassPalette.ink.opacity(0.58))
                                     .frame(maxWidth: .infinity).frame(height: 34)
                                     .background {
@@ -67,25 +67,25 @@ struct NetworkDiagnosticsView: View {
                                     }
                             }.buttonStyle(ReferenceQuietButton())
                                 .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
-                                .accessibilityValue(selectedTab == tab ? "已选择" : "未选择")
+                                .accessibilityValue(selectedTab == tab ? L10n.text("已选择") : L10n.text("未选择"))
                         }
                     }.referenceSegments().frame(width: 420)
                         .animation(GlassMotion.selection(reduceMotion), value: selectedTab)
                     Spacer(minLength: 0)
-                    Button("一键排障…") { cancel(); model.showingTroubleshooting = true }.buttonStyle(ReferenceSecondaryButton())
+                    Button(L10n.text("一键排障…")) { cancel(); model.showingTroubleshooting = true }.buttonStyle(ReferenceSecondaryButton())
                     Button {
                         if checking { cancel() } else { run() }
-                    } label: { Label(checking ? "取消探测" : "重新检查", systemImage: checking ? "xmark" : "arrow.clockwise") }
+                    } label: { Label(checking ? L10n.text("取消探测") : L10n.text("重新检查"), systemImage: checking ? "xmark" : "arrow.clockwise") }
                         .buttonStyle(ReferenceSecondaryButton())
                 }
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 16) {
                         HStack {
-                            Label(selectedTab.rawValue, systemImage: "waveform.path.ecg")
+                            Label(L10n.text(selectedTab.rawValue), systemImage: "waveform.path.ecg")
                                 .font(.system(size: 18, weight: .semibold))
                             Spacer()
                             Button { showingTarget = true } label: { Image(systemName: "ellipsis").foregroundStyle(GlassPalette.blue) }
-                                .buttonStyle(ReferenceQuietButton()).help("设置诊断目标").accessibilityLabel("设置诊断目标")
+                                .buttonStyle(ReferenceQuietButton()).help(L10n.text("设置诊断目标")).accessibilityLabel(L10n.text("设置诊断目标"))
                                 .popover(isPresented: $showingTarget) { targetEditor }
                         }
                         probeContent
@@ -96,7 +96,7 @@ struct NetworkDiagnosticsView: View {
                                 else { Image(systemName: !error.isEmpty || tcp?.reachable == false && selectedTab == .connection ? "exclamationmark.circle" : "info.circle") }
                                 Text(statusTitle).font(.system(size: 15, weight: .semibold))
                             }
-                            Text(error.isEmpty ? "结果仅表示所测目标的状态，不等同于 VPN 安全或无泄漏证明。" : error)
+                            Text(error.isEmpty ? L10n.text("结果仅表示所测目标的状态，不等同于 VPN 安全或无泄漏证明。") : error)
                                 .font(.system(size: 12)).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
@@ -106,21 +106,21 @@ struct NetworkDiagnosticsView: View {
                         .frame(maxHeight: .infinity).glassCard(cornerRadius: 18)
                     VStack(spacing: 14) {
                         VStack(alignment: .leading, spacing: 16) {
-                            Label("当前系统路由", systemImage: "point.3.connected.trianglepath.dotted")
+                            Label(L10n.text("当前系统路由"), systemImage: "point.3.connected.trianglepath.dotted")
                                 .font(.system(size: 18, weight: .semibold))
-                            routeStep("本机出口", local?.health.ipv4DefaultInterface ?? "未取得", final: false)
-                            routeStep("目标网关", local?.gateway.isEmpty == false ? local!.gateway : "未取得", final: false)
-                            routeStep("目的地址", address, final: true)
+                            routeStep(L10n.text("本机出口"), local?.health.ipv4DefaultInterface ?? L10n.text("未取得"), final: false)
+                            routeStep(L10n.text("目标网关"), local?.gateway.isEmpty == false ? local!.gateway : L10n.text("未取得"), final: false)
+                            routeStep(L10n.text("目的地址"), address, final: true)
                             if !localError.isEmpty {
                                 Text(localError).font(.system(size: 12)).foregroundStyle(.orange)
                             }
                             Spacer(minLength: 0)
                         }.padding(18).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).glassCard()
                         VStack(alignment: .leading, spacing: 7) {
-                            Label("IPv6 路由检查", systemImage: "exclamationmark.circle")
+                            Label(L10n.text("IPv6 路由检查"), systemImage: "exclamationmark.circle")
                                 .font(.system(size: 16, weight: .semibold))
                             Text(ipv6Description).font(.system(size: 12)).foregroundStyle(.secondary)
-                            Text("此检查不会修改 IPv6 或防火墙。")
+                            Text(L10n.text("此检查不会修改 IPv6 或防火墙。"))
                                 .font(.system(size: 12)).foregroundStyle(.secondary)
                         }.padding(16).frame(maxWidth: .infinity, alignment: .leading).frame(height: 112).glassCard()
                     }.frame(maxWidth: .infinity)
@@ -136,34 +136,34 @@ struct NetworkDiagnosticsView: View {
         switch selectedTab {
         case .connection:
             VStack(spacing: 0) {
-                resultRow("本机接口", subtitle: "系统默认 IPv4 出口", value: local?.health.ipv4DefaultInterface ?? "未取得")
-                resultRow("目标路由", subtitle: "系统路由表的实际接口", value: local?.interface ?? "未取得")
-                resultRow("DNS 配置", subtitle: "系统解析器数量", value: local.map { "\($0.health.resolverCount) 个" } ?? "未取得")
-                resultRow("TCP \(port)", subtitle: "\(address) 的端口连接", value: tcp.map { $0.reachable ? "\(Int($0.milliseconds)) ms" : "未连通" } ?? "等待结果")
+                resultRow(L10n.text("本机接口"), subtitle: L10n.text("系统默认 IPv4 出口"), value: local?.health.ipv4DefaultInterface ?? L10n.text("未取得"))
+                resultRow(L10n.text("目标路由"), subtitle: L10n.text("系统路由表的实际接口"), value: local?.interface ?? L10n.text("未取得"))
+                resultRow(L10n.text("DNS 配置"), subtitle: L10n.text("系统解析器数量"), value: local.map { L10n.format("{0} 个", [String(describing: $0.health.resolverCount)]) } ?? L10n.text("未取得"))
+                resultRow("TCP \(port)", subtitle: L10n.format("{0} 的端口连接", [String(describing: address)]), value: tcp.map { $0.reachable ? "\(Int($0.milliseconds)) ms" : L10n.text("未连通") } ?? L10n.text("等待结果"))
             }.padding(.horizontal, 10).background(Color.white.opacity(0.2), in: RoundedRectangle(cornerRadius: 12))
         case .dns:
             Text(hostname).font(.system(size: 14, weight: .medium)).textSelection(.enabled)
-            resultText(dnsAnswer.isEmpty ? "切换到此页会向系统解析器发起实际查询。" : dnsAnswer)
+            resultText(dnsAnswer.isEmpty ? L10n.text("切换到此页会向系统解析器发起实际查询。") : dnsAnswer)
         case .routing:
-            Text("\(address) · 每跳一个探测，最多 8 跳")
+            Text(L10n.format("{0} · 每跳一个探测，最多 8 跳", [String(describing: address)]))
                 .font(.system(size: 12)).foregroundStyle(.secondary)
-            resultText(traceAnswer.isEmpty ? "追踪中或尚无返回；* 表示该跳未响应。" : traceAnswer)
+            resultText(traceAnswer.isEmpty ? L10n.text("追踪中或尚无返回；* 表示该跳未响应。") : traceAnswer)
         case .latency:
             if let ping {
                 HStack(spacing: 26) {
                     VStack(alignment: .leading, spacing: 7) {
-                        Text("平均延迟").foregroundStyle(.secondary)
+                        Text(L10n.text("平均延迟")).foregroundStyle(.secondary)
                         Text(ping.averageMilliseconds.map { String(format: "%.1f ms", $0) } ?? "—").font(.system(size: 30, weight: .medium))
                     }
                     VStack(alignment: .leading, spacing: 7) {
-                        Text("丢包率").foregroundStyle(.secondary)
+                        Text(L10n.text("丢包率")).foregroundStyle(.secondary)
                         Text(String(format: "%.0f%%", ping.loss)).font(.system(size: 30, weight: .medium))
                     }
                 }.padding(.vertical, 25)
-                Text("\(address) · 已收到 \(ping.received)/3 个 ICMP 响应")
+                Text(L10n.format("{0} · 已收到 {1}/3 个 ICMP 响应", [String(describing: address), String(describing: ping.received)]))
                     .font(.system(size: 13)).foregroundStyle(.secondary)
-            } else { resultText("向 \(address) 发出 3 个 ICMP 探测，数据来自系统 ping。") }
-            Text("目标禁用 ICMP 时也可能不响应，不能据此认定 VPN 故障。")
+            } else { resultText(L10n.format("向 {0} 发出 3 个 ICMP 探测，数据来自系统 ping。", [String(describing: address)])) }
+            Text(L10n.text("目标禁用 ICMP 时也可能不响应，不能据此认定 VPN 故障。"))
                 .font(.system(size: 12)).foregroundStyle(.secondary)
         }
     }
@@ -199,11 +199,11 @@ struct NetworkDiagnosticsView: View {
     }
     private var targetEditor: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("诊断目标").font(.headline)
-            TextField("目标 IPv4／IPv6", text: $address).textFieldStyle(.plain).referenceInput()
-            TextField("TCP 端口", text: $port).textFieldStyle(.plain).referenceInput()
-            TextField("DNS 查询域名", text: $hostname).textFieldStyle(.plain).referenceInput()
-            Button("应用并检查") { showingTarget = false; run() }.buttonStyle(ReferencePrimaryButton())
+            Text(L10n.text("诊断目标")).font(.headline)
+            TextField(L10n.text("目标 IPv4／IPv6"), text: $address).textFieldStyle(.plain).referenceInput()
+            TextField(L10n.text("TCP 端口"), text: $port).textFieldStyle(.plain).referenceInput()
+            TextField(L10n.text("DNS 查询域名"), text: $hostname).textFieldStyle(.plain).referenceInput()
+            Button(L10n.text("应用并检查")) { showingTarget = false; run() }.buttonStyle(ReferencePrimaryButton())
                 .disabled(IPAddress.canonical(address) == nil || UInt16(port).map { $0 > 0 } != true || !DiagnosticTargetPolicy.validHostname(hostname))
         }.padding(18).frame(width: 300)
     }
@@ -224,7 +224,7 @@ struct NetworkDiagnosticsView: View {
                 guard attempt == token else { return }; local = snapshot
             } catch {
                 guard attempt == token else { return }; local = nil
-                localError = "未能读取完整本机网络状态。"
+                localError = L10n.text("未能读取完整本机网络状态。")
             }
             do {
                 try Task.checkCancellation()

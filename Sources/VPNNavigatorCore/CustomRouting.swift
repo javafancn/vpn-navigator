@@ -4,7 +4,7 @@ import CryptoKit
 public enum CustomRouteAction: String, Codable, CaseIterable, Identifiable, Sendable {
     case direct, vpn
     public var id: String { rawValue }
-    public var title: String { self == .direct ? "直连" : "走 VPN" }
+    public var title: String { self == .direct ? L10n.text("直连") : L10n.text("走 VPN") }
 }
 public struct CustomRouteRule: Codable, Identifiable, Equatable, Sendable {
     public let id: UUID
@@ -19,11 +19,11 @@ public enum CustomRouteError: Error, LocalizedError {
     case invalidPrefix, overlap, tooMany, protectedNetwork, complexity
     public var errorDescription: String? {
         switch self {
-        case .invalidPrefix: return "请输入有效的 IP 网段：IPv4 /8–/32，IPv6 全球单播 /16–/128 或 ULA /7–/128；不能使用回环、链路本地、组播或保留地址。"
-        case .overlap: return "启用的自定义规则不能重叠；请缩小网段、停用或删除冲突项。"
-        case .tooMany: return "每个配置最多保存 128 条规则，规则 ID 必须唯一。"
-        case .protectedNetwork: return "自定义规则覆盖了当前局域网或 VPN 服务器，请缩小网段后重新连接。"
-        case .complexity: return "组合后的直连路由超过 30000 条，请减少例外规则。"
+        case .invalidPrefix: return L10n.text("请输入有效的 IP 网段：IPv4 /8–/32，IPv6 全球单播 /16–/128 或 ULA /7–/128；不能使用回环、链路本地、组播或保留地址。")
+        case .overlap: return L10n.text("启用的自定义规则不能重叠；请缩小网段、停用或删除冲突项。")
+        case .tooMany: return L10n.text("每个配置最多保存 128 条规则，规则 ID 必须唯一。")
+        case .protectedNetwork: return L10n.text("自定义规则覆盖了当前局域网或 VPN 服务器，请缩小网段后重新连接。")
+        case .complexity: return L10n.text("组合后的直连路由超过 30000 条，请减少例外规则。")
         }
     }
 }

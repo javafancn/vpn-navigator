@@ -47,9 +47,9 @@ public struct RuleSet: Sendable {
 public enum RuleError: Error, LocalizedError {
     case empty, tooLarge, suspiciousChange
     public var errorDescription: String? {
-        switch self { case .empty: return "Rules file was empty"
-        case .tooLarge: return "Rules file exceeds the safe limit"
-        case .suspiciousChange: return "The IP feed changed unexpectedly; the previous validated version was preserved" }
+        switch self { case .empty: return L10n.text("Rules file was empty")
+        case .tooLarge: return L10n.text("Rules file exceeds the safe limit")
+        case .suspiciousChange: return L10n.text("The IP feed changed unexpectedly; the previous validated version was preserved") }
     }
 }
 

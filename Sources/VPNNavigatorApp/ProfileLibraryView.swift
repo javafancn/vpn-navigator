@@ -15,8 +15,8 @@ struct ProfileLibrary: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
-            WorkspaceHeading(title: "配置文件",
-                subtitle: "管理和编辑 VPN 配置文件",
+            WorkspaceHeading(title: L10n.text("配置文件"),
+                subtitle: L10n.text("管理和编辑 VPN 配置文件"),
                 symbol: "square.stack.3d.up.fill")
                 .padding(.bottom, 4)
 
@@ -78,7 +78,7 @@ struct ProfileLibrary: View {
                 }
                 if model.activeProfileID == profile.id && model.connected {
                     Circle().fill(Color.green).frame(width: 7, height: 7)
-                        .accessibilityLabel("已连接")
+                        .accessibilityLabel(L10n.text("已连接"))
                 } else if !profile.isFavorite {
                     Circle()
                         .fill(Color.secondary.opacity(0.30))
@@ -109,10 +109,10 @@ struct ProfileLibrary: View {
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("library-profile-" + profile.id.uuidString)
         .accessibilityLabel(profile.name)
-        .accessibilityValue([profile.group, profile.isFavorite ? "已收藏" : "未收藏",
-            model.connected && model.activeProfileID == profile.id ? "已连接" : "未连接",
-            model.selectedID == profile.id ? "已选择" : "未选择"].joined(separator: "，"))
-        .accessibilityHint("选择并查看配置详情；不会发起连接")
+        .accessibilityValue([profile.group, profile.isFavorite ? L10n.text("已收藏") : L10n.text("未收藏"),
+            model.connected && model.activeProfileID == profile.id ? L10n.text("已连接") : L10n.text("未连接"),
+            model.selectedID == profile.id ? L10n.text("已选择") : L10n.text("未选择")].joined(separator: "，"))
+        .accessibilityHint(L10n.text("选择并查看配置详情；不会发起连接"))
         .accessibilityAddTraits(
             model.selectedID == profile.id ? .isSelected : [])
     }
@@ -123,10 +123,10 @@ struct ProfileLibrary: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
                 .font(.system(size: 16))
-            TextField("搜索名称、分组或文件名…", text: $model.profileLibrary.query)
+            TextField(L10n.text("搜索名称、分组或文件名…"), text: $model.profileLibrary.query)
                 .focused($searchFocused)
                 .accessibilityIdentifier("profile-library-search")
-                .accessibilityLabel("搜索配置名称、分组或文件名")
+                .accessibilityLabel(L10n.text("搜索配置名称、分组或文件名"))
                 .onSubmit { focusResult() }
                 .font(.system(size: 16))
                 .textFieldStyle(.plain)
@@ -138,12 +138,12 @@ struct ProfileLibrary: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("清除搜索")
+                .accessibilityLabel(L10n.text("清除搜索"))
             }
         }
             .referenceInput(height: 42, focused: searchFocused)
             Button(action: onImport) {
-                Label("导入配置", systemImage: "plus")
+                Label(L10n.text("导入配置"), systemImage: "plus")
                     .font(.system(size: 14, weight: .semibold))
                     .frame(height: 26)
             }
@@ -156,8 +156,8 @@ struct ProfileLibrary: View {
     private var filterMenuBar: some View {
         HStack(spacing: 6) {
             Menu {
-                scopeButton("全部配置", scope: .all, count: model.profiles.count)
-                scopeButton("收藏配置", scope: .favorites, count: model.profiles.filter(\.isFavorite).count)
+                scopeButton(L10n.text("全部配置"), scope: .all, count: model.profiles.count)
+                scopeButton(L10n.text("收藏配置"), scope: .favorites, count: model.profiles.filter(\.isFavorite).count)
                 if !model.libraryGroups.isEmpty {
                     Divider()
                     ForEach(model.libraryGroups) { group in
@@ -169,8 +169,8 @@ struct ProfileLibrary: View {
                     Text(model.profileLibrary.scope.title).lineLimit(1).truncationMode(.middle)
                     Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
                 }.font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
-            }.menuIndicator(.hidden).buttonStyle(.plain).help("按收藏或分组筛选配置")
-                .accessibilityLabel("配置筛选").accessibilityValue(model.profileLibrary.scope.title)
+            }.menuIndicator(.hidden).buttonStyle(.plain).help(L10n.text("按收藏或分组筛选配置"))
+                .accessibilityLabel(L10n.text("配置筛选")).accessibilityValue(model.profileLibrary.scope.title)
             Spacer(minLength: 0)
             Menu {
                 ForEach(ProfileLibrarySort.allCases) { sort in
@@ -182,18 +182,18 @@ struct ProfileLibrary: View {
                 Image(systemName: "arrow.up.arrow.down").font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
             }.menuIndicator(.hidden).buttonStyle(.plain)
-                .help("排序：" + model.profileLibrary.sort.title).accessibilityLabel("配置排序")
+                .help(L10n.text("排序：") + model.profileLibrary.sort.title).accessibilityLabel(L10n.text("配置排序"))
         }.padding(.horizontal, 6)
     }
 
     private var filterSummary: some View {
         HStack {
-            Text("显示 \(filtered.count) / \(model.profiles.count) 个 · " + model.profileLibrary.sort.title)
+            Text(L10n.format("显示 {0} / {1} 个 · ", [String(describing: filtered.count), String(describing: model.profiles.count)]) + model.profileLibrary.sort.title)
                 .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             Spacer(minLength: 0)
             if hasFilters {
-                Button("清除") { clearFilters() }.buttonStyle(.plain)
-                    .font(.system(size: 11)).foregroundStyle(GlassPalette.blue).help("清除搜索与分组筛选")
+                Button(L10n.text("清除")) { clearFilters() }.buttonStyle(.plain)
+                    .font(.system(size: 11)).foregroundStyle(GlassPalette.blue).help(L10n.text("清除搜索与分组筛选"))
             }
         }.padding(.horizontal, 6).padding(.bottom, 3)
     }
@@ -212,7 +212,7 @@ struct ProfileLibrary: View {
             profileList
 
             if filtered.isEmpty {
-                Label(model.profiles.isEmpty ? "尚无配置" : "没有匹配的配置", systemImage: "magnifyingglass")
+                Label(model.profiles.isEmpty ? L10n.text("尚无配置") : L10n.text("没有匹配的配置"), systemImage: "magnifyingglass")
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
             }
@@ -235,14 +235,14 @@ struct ProfileLibrary: View {
             if visibleSelection == nil {
                 VStack(spacing: 10) {
                     GlassIcon(symbol: "square.stack.3d.up", size: 45)
-                    Text(model.selected == nil ? "选择配置文件" : "当前选择不在筛选结果中").font(.headline)
-                    Text(model.profiles.isEmpty ? "点击右上角「导入配置」以添加 .ovpn 文件" :
-                         filtered.isEmpty ? "请调整搜索词或清除筛选。" : "从左侧列表选择要查看的配置。")
+                    Text(model.selected == nil ? L10n.text("选择配置文件") : L10n.text("当前选择不在筛选结果中")).font(.headline)
+                    Text(model.profiles.isEmpty ? L10n.text("点击右上角「导入配置」以添加 .ovpn 文件") :
+                         filtered.isEmpty ? L10n.text("请调整搜索词或清除筛选。") : L10n.text("从左侧列表选择要查看的配置。"))
                         .font(.system(size: 14)).foregroundStyle(.secondary)
                     if model.selected != nil && hasFilters {
-                        Button("显示当前选择") { clearFilters() }.buttonStyle(ReferenceSecondaryButton())
+                        Button(L10n.text("显示当前选择")) { clearFilters() }.buttonStyle(ReferenceSecondaryButton())
                     } else if hasFilters {
-                        Button("清除筛选") { clearFilters() }.buttonStyle(ReferenceSecondaryButton())
+                        Button(L10n.text("清除筛选")) { clearFilters() }.buttonStyle(ReferenceSecondaryButton())
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

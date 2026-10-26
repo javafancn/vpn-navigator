@@ -52,7 +52,7 @@ struct NativeProfileList: NSViewRepresentable {
         let column = NSTableColumn(identifier: .init("profile")); column.minWidth = 0; column.resizingMask = .autoresizingMask
         table.addTableColumn(column); table.delegate = context.coordinator; table.dataSource = context.coordinator
         table.onFocus = { [weak keyboard] in keyboard?.refresh() }
-        table.setAccessibilityLabel("配置列表")
+        table.setAccessibilityLabel(L10n.text("配置列表"))
         scroll.documentView = table; keyboard.table = table
         update(scroll, coordinator: context.coordinator)
         return scroll

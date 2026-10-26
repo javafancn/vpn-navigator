@@ -7,9 +7,9 @@ public enum RoutingMode: String, Codable, CaseIterable, Identifiable, Sendable {
     public var id: String { rawValue }
     public var title: String {
         switch self {
-        case .original: return "原始配置"
-        case .fullVPN: return "全局路由"
-        case .chinaDirect: return "规则路由"
+        case .original: return L10n.text("原始配置")
+        case .fullVPN: return L10n.text("全局路由")
+        case .chinaDirect: return L10n.text("规则路由")
         }
     }
 }
@@ -101,5 +101,5 @@ public struct IPv4CIDR: Hashable, Comparable, Codable, CustomStringConvertible, 
 }
 public enum CIDRError: Error, LocalizedError {
     case invalid(String)
-    public var errorDescription: String? { "Invalid IPv4 CIDR" }
+    public var errorDescription: String? { L10n.text("Invalid IPv4 CIDR") }
 }

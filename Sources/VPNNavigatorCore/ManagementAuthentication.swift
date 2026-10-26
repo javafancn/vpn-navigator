@@ -118,7 +118,7 @@ public struct ManagementAuthentication {
         if !connectedBefore, dynamic != nil, awaitingAuthRequest,
            snapshot.state == .reconnecting, snapshot.message == "auth-failure" {
             mayReleaseDynamicHold = true
-            return TunnelSnapshot(state: .authenticating, remoteIPv4: nil, localTunnelIPv4: nil, message: "等待动态身份验证")
+            return TunnelSnapshot(state: .authenticating, remoteIPv4: nil, localTunnelIPv4: nil, message: L10n.text("等待动态身份验证"))
         }
         return snapshot
     }

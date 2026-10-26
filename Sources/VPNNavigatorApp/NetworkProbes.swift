@@ -75,14 +75,14 @@ private final class TCPProbeRequest: @unchecked Sendable {
         connection.stateUpdateHandler = { [weak self] state in
             let elapsed = Date().timeIntervalSince(began) * 1000
             switch state {
-            case .ready: self?.finish(.success(.init(reachable: true, milliseconds: elapsed, summary: "TCP 连接成功")))
-            case .failed: self?.finish(.success(.init(reachable: false, milliseconds: elapsed, summary: "TCP 连接失败")))
+            case .ready: self?.finish(.success(.init(reachable: true, milliseconds: elapsed, summary: L10n.text("TCP 连接成功"))))
+            case .failed: self?.finish(.success(.init(reachable: false, milliseconds: elapsed, summary: L10n.text("TCP 连接失败"))))
             default: break
             }
         }
         timer.schedule(deadline: .now() + 5)
         timer.setEventHandler { [weak self] in
-            self?.finish(.success(.init(reachable: false, milliseconds: 5000, summary: "TCP 连接超时")))
+            self?.finish(.success(.init(reachable: false, milliseconds: 5000, summary: L10n.text("TCP 连接超时"))))
         }
         connection.start(queue: .global(qos: .utility)); timer.resume()
         lock.unlock()
@@ -104,11 +104,11 @@ enum ProbeError: Error, LocalizedError {
     case invalidTarget, timedOut, commandFailed, noDNSAnswer, noPingAnswer
     var errorDescription: String? {
         switch self {
-        case .invalidTarget: return "请输入有效的 IPv4／IPv6 地址、端口或域名。"
-        case .timedOut: return "探测超时，可更换目标后重试。"
-        case .commandFailed: return "系统探测未成功，请检查网络与诊断目标。"
-        case .noDNSAnswer: return "系统解析器未返回地址。"
-        case .noPingAnswer: return "未取得可解析的 ICMP 结果。目标也可能禁用 ICMP。"
+        case .invalidTarget: return L10n.text("请输入有效的 IPv4／IPv6 地址、端口或域名。")
+        case .timedOut: return L10n.text("探测超时，可更换目标后重试。")
+        case .commandFailed: return L10n.text("系统探测未成功，请检查网络与诊断目标。")
+        case .noDNSAnswer: return L10n.text("系统解析器未返回地址。")
+        case .noPingAnswer: return L10n.text("未取得可解析的 ICMP 结果。目标也可能禁用 ICMP。")
         }
     }
 }

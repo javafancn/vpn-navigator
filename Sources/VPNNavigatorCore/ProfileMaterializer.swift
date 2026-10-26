@@ -71,9 +71,9 @@ public enum MaterializeError: Error, LocalizedError {
     case invalidPath(Int), tooLarge(Int), invalidEncoding(Int)
     public var errorDescription: String? {
         switch self {
-        case .invalidPath(let line): return "Certificate file is missing, unsafe, or outside the selected folder (line \(line))."
-        case .tooLarge(let line): return "Certificate file exceeds size limit (line \(line))."
-        case .invalidEncoding(let line): return "Certificate must be UTF-8 PEM (line \(line))."
+        case .invalidPath(let line): return L10n.format("Certificate file is missing, unsafe, or outside the selected folder (line {0}).", [String(describing: line)])
+        case .tooLarge(let line): return L10n.format("Certificate file exceeds size limit (line {0}).", [String(describing: line)])
+        case .invalidEncoding(let line): return L10n.format("Certificate must be UTF-8 PEM (line {0}).", [String(describing: line)])
         }
     }
 }

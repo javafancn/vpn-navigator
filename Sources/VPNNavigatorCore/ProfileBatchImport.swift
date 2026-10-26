@@ -16,10 +16,10 @@ public enum ProfileImportFailure: String, Sendable {
     case invalidFile, material, tooLarge, storage
     public var summary: String {
         switch self {
-        case .invalidFile: return "不是有效的 UTF-8 OpenVPN 配置"
-        case .material: return "证书材料缺失、过大或引用不安全"
-        case .tooLarge: return "配置超过 2 MB 限制"
-        case .storage: return "读取或保存失败，请检查文件和目录权限"
+        case .invalidFile: return L10n.text("不是有效的 UTF-8 OpenVPN 配置")
+        case .material: return L10n.text("证书材料缺失、过大或引用不安全")
+        case .tooLarge: return L10n.text("配置超过 2 MB 限制")
+        case .storage: return L10n.text("读取或保存失败，请检查文件和目录权限")
         }
     }
     static func classify(_ error: Error) -> Self {
@@ -63,6 +63,6 @@ public struct ProfileBatchImporter: Sendable {
     }
     public enum Failure: Error, LocalizedError {
         case fileCount
-        public var errorDescription: String? { "一次请选择 1–100 个配置文件。" }
+        public var errorDescription: String? { L10n.text("一次请选择 1–100 个配置文件。") }
     }
 }

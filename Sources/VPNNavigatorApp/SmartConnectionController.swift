@@ -12,9 +12,9 @@ import VPNNavigatorCore
 @MainActor
 final class SmartConnectionController: NSObject, ObservableObject, CLLocationManagerDelegate, UNUserNotificationCenterDelegate {
     @Published private(set) var preferences: SmartConnectionPreferences
-    @Published private(set) var status = "自动连接未开启"
+    @Published private(set) var status = L10n.text("自动连接未开启")
     @Published private(set) var network = SmartNetworkState(online: false)
-    @Published private(set) var notificationStatus = "状态通知未开启"
+    @Published private(set) var notificationStatus = L10n.text("状态通知未开启")
     private weak var model: AppModel?
     private let store: SmartConnectionStore
     private var monitor: NWPathMonitor?
@@ -38,7 +38,7 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
     init(model: AppModel, defaults: UserDefaults = .standard) {
         self.model = model; store = SmartConnectionStore(defaults: defaults); preferences = store.load()
         super.init()
-        status = preferences.enabled ? (preferences.paused ? "自动连接已暂停" : "等待触发条件") : "自动连接未开启"
+        status = preferences.enabled ? (preferences.paused ? L10n.text("自动连接已暂停") : L10n.text("等待触发条件")) : L10n.text("自动连接未开启")
         subscription = objectWillChange.sink { [weak model] _ in model?.objectWillChange.send() }
     }
     func start() {
@@ -64,7 +64,7 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
         var value = preferences; edit(&value)
         do {
             try store.save(value); preferences = value; cancelPending()
-            status = value.enabled ? (value.paused ? "自动连接已暂停" : "设置已保存，等待下一次触发") : "自动连接未开启"
+            status = value.enabled ? (value.paused ? L10n.text("自动连接已暂停") : L10n.text("设置已保存，等待下一次触发")) : L10n.text("自动连接未开启")
         } catch { model?.message = error.localizedDescription }
     }
     func willStartConnection() { expectedDisconnect = false }
@@ -76,8 +76,8 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
         SmartConnectionPlanner.target(profiles: model?.profiles ?? [], successes: store.successes(), preferred: preferences.profileID, automatic: automatic)
     }
     func connectNow() {
-        guard let model, let target = target(automatic: false) else { status = "没有可用配置，请先导入配置。"; return }
-        guard !model.nativeDialogPresented, !model.showingKeyboardHelp, !model.showingPublicEgress, !model.showingConnectionHistory, model.profileHealthTarget == nil, !model.showingSetup, !model.showingMaintenance,
+        guard let model, let target = target(automatic: false) else { status = L10n.text("没有可用配置，请先导入配置。"); return }
+        guard !model.nativeDialogPresented, !model.showingLanguageSettings, !model.showingKeyboardHelp, !model.showingPublicEgress, !model.showingConnectionHistory, model.profileHealthTarget == nil, !model.showingSetup, !model.showingMaintenance,
               !model.showingPreferences, !model.showingSmartConnection, !model.showingProfileBackup else { model.quickAccess.openMainWindow(); return }
         cancelPending()
         // Reuse the existing confirmation panel when a different VPN is active.
@@ -111,7 +111,7 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
                 schedule(preferences.onLaunch || !startupWaitedForNetwork ? .launch : .networkRestored)
             } else { startupWaitedForNetwork = true }
         }
-        else if !next.online { cancelPending(); status = preferences.enabled ? "等待可用网络" : "自动连接未开启" }
+        else if !next.online { cancelPending(); status = preferences.enabled ? L10n.text("等待可用网络") : L10n.text("自动连接未开启") }
         else if !old.online || old.identity != next.identity || old.expensive != next.expensive { schedule(.networkRestored) }
     }
     func schedule(_ trigger: SmartTrigger) {
@@ -128,7 +128,7 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
             case .disabled: break
             case .wait(let reason): self.status = reason
             case .connect(let id):
-                self.status = "正在智能连接…"
+                self.status = L10n.text("正在智能连接…")
                 model.selectedID = id
                 await model.connectSelected(automatically: true, automationPermit: { [weak self] in
                     guard let self else { return false }
@@ -139,9 +139,9 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
                 })
                 if token == self.generation {
                     if model.sessionState == .failed {
-                        self.update { $0.paused = true }; self.status = "连接未成功，自动连接已暂停；请检查后主动恢复。"
+                        self.update { $0.paused = true }; self.status = L10n.text("连接未成功，自动连接已暂停；请检查后主动恢复。")
                         await self.deliver(.failure)
-                    } else { self.status = model.connected ? "智能连接已完成" : model.connecting ? "连接请求已提交，等待助手确认" : "本次自动连接已跳过，等待下一次触发" }
+                    } else { self.status = model.connected ? L10n.text("智能连接已完成") : model.connecting ? L10n.text("连接请求已提交，等待助手确认") : L10n.text("本次自动连接已跳过，等待下一次触发") }
                 }
             }
         }
@@ -156,7 +156,7 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
         let events = reducer.observe(report, expectedDisconnect: expectedDisconnect)
         if let report, report.state == .disconnected || report.state == .failed { expectedDisconnect = false }
         if let report, report.state == .failed, preferences.enabled, !preferences.paused {
-            update { $0.paused = true }; status = "连接异常，自动连接已暂停；请检查后主动恢复。"
+            update { $0.paused = true }; status = L10n.text("连接异常，自动连接已暂停；请检查后主动恢复。")
         }
         for notice in events { Task { await deliver(notice) } }
     }
@@ -173,21 +173,21 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
     }
     func enableNotifications(_ enabled: Bool) async {
         if !enabled {
-            update { $0.notifications = false }; notificationStatus = "状态通知未开启"
+            update { $0.notifications = false }; notificationStatus = L10n.text("状态通知未开启")
             notices?.removeAllPendingNotificationRequests(); return
         }
         guard !permissionBusy else { return }; permissionBusy = true; defer { permissionBusy = false }
         update { $0.notifications = enabled }
         if enabled {
             do { _ = try await notificationCenter().requestAuthorization(options: [.alert, .sound]) }
-            catch { notificationStatus = "无法请求通知授权，请检查系统设置。"; return }
+            catch { notificationStatus = L10n.text("无法请求通知授权，请检查系统设置。"); return }
         }
         await refreshNotificationPermission()
     }
     func refreshNotificationPermission() async {
-        guard preferences.notifications else { notificationStatus = "状态通知未开启"; return }
+        guard preferences.notifications else { notificationStatus = L10n.text("状态通知未开启"); return }
         let settings = await notificationCenter().notificationSettings()
-        notificationStatus = settings.authorizationStatus == .authorized ? "系统已允许通知；横幅与声音由系统设置控制" : "系统尚未允许通知，请前往通知设置检查"
+        notificationStatus = settings.authorizationStatus == .authorized ? L10n.text("系统已允许通知；横幅与声音由系统设置控制") : L10n.text("系统尚未允许通知，请前往通知设置检查")
     }
     func deliver(_ notice: VPNStatusNotice) async {
         guard preferences.notifications, notice == .test || preferences.noticeScope == .all || notice.isError else { return }
@@ -196,7 +196,7 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
         let content = UNMutableNotificationContent(); content.title = notice.title; content.body = notice.body
         if preferences.sound { content.sound = .default }
         do { try await center.add(UNNotificationRequest(identifier: "vpnnav-status-" + UUID().uuidString, content: content, trigger: nil)) }
-        catch { notificationStatus = "通知提交失败，请检查系统通知设置。" }
+        catch { notificationStatus = L10n.text("通知提交失败，请检查系统通知设置。") }
     }
     func requestCertificatePermission() async throws -> Bool {
         try await notificationCenter().requestAuthorization(options: [.alert, .sound])
@@ -206,8 +206,8 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
         let center = notificationCenter(), settings = await center.notificationSettings()
         guard settings.authorizationStatus == .authorized, model?.profileHealth.remindersEnabled == true else { return false }
         let content = UNMutableNotificationContent()
-        content.title = "VPN 证书需要关注"
-        content.body = "有配置的证书即将到期或已过期，请打开应用检查并按需更新。"
+        content.title = L10n.text("VPN 证书需要关注")
+        content.body = L10n.text("有配置的证书即将到期或已过期，请打开应用检查并按需更新。")
         content.userInfo = ["profileID": id.uuidString]
         do { try await center.add(.init(identifier: "vpnnav-certificate-" + id.uuidString, content: content, trigger: nil)); return true }
         catch { return false }

@@ -7,13 +7,13 @@ public enum ProfileBackupFailure: Error, LocalizedError {
     case password, unsupported, damaged, limits, invalidContents, staleLibrary, pendingRecovery
     public var errorDescription: String? {
         switch self {
-        case .password: return "备份密码至少需要 12 个字符，且不能超过 1024 字节。"
-        case .unsupported: return "文件不是受支持的 VPN Navigator 加密备份。"
-        case .damaged: return "无法解密：密码不正确或备份文件已损坏。"
-        case .limits: return "备份超过限制：最多 1000 个配置、每配置 1000 个历史版本，文件不超过 16 MB。请分批导出配置。"
-        case .invalidContents: return "备份内容无法通过完整性或配置检查，未执行恢复。"
-        case .staleLibrary: return "配置列表已改变，请重新预览后再确认恢复。"
-        case .pendingRecovery: return "上次备份恢复记录无法安全核验。配置文件已保留，请先检查配置列表或保留目录进行排障。"
+        case .password: return L10n.text("备份密码至少需要 12 个字符，且不能超过 1024 字节。")
+        case .unsupported: return L10n.text("文件不是受支持的 VPN Navigator 加密备份。")
+        case .damaged: return L10n.text("无法解密：密码不正确或备份文件已损坏。")
+        case .limits: return L10n.text("备份超过限制：最多 1000 个配置、每配置 1000 个历史版本，文件不超过 16 MB。请分批导出配置。")
+        case .invalidContents: return L10n.text("备份内容无法通过完整性或配置检查，未执行恢复。")
+        case .staleLibrary: return L10n.text("配置列表已改变，请重新预览后再确认恢复。")
+        case .pendingRecovery: return L10n.text("上次备份恢复记录无法安全核验。配置文件已保留，请先检查配置列表或保留目录进行排障。")
         }
     }
 }

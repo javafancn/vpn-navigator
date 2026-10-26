@@ -11,15 +11,15 @@ public enum EgressProbeFailure: Error, Equatable, Sendable, LocalizedError {
     case timeout, transport, httpStatus, redirect, tooLarge, invalidResponse, wrongFamily, nonPublicAddress, authentication
     public var errorDescription: String? {
         switch self {
-        case .timeout: return "检测服务未在期限内响应，请检查网络或稍后重试。"
-        case .transport: return "未能连接检测服务；可能与地址族可用性、阻断或服务状态有关。"
-        case .httpStatus: return "检测服务未返回成功状态，本次未取得出口地址。"
-        case .redirect: return "检测服务要求跳转；为固定请求范围，本次未跟随跳转。"
-        case .tooLarge: return "检测响应超过地址数据上限，已停止读取。"
-        case .invalidResponse: return "检测服务未返回有效的单个 IP 地址。"
-        case .wrongFamily: return "检测响应的地址族与所选检测不符。"
-        case .nonPublicAddress: return "检测响应不是支持核验的公网地址。"
-        case .authentication: return "检测服务要求额外身份验证，本次未提供凭据。"
+        case .timeout: return L10n.text("检测服务未在期限内响应，请检查网络或稍后重试。")
+        case .transport: return L10n.text("未能连接检测服务；可能与地址族可用性、阻断或服务状态有关。")
+        case .httpStatus: return L10n.text("检测服务未返回成功状态，本次未取得出口地址。")
+        case .redirect: return L10n.text("检测服务要求跳转；为固定请求范围，本次未跟随跳转。")
+        case .tooLarge: return L10n.text("检测响应超过地址数据上限，已停止读取。")
+        case .invalidResponse: return L10n.text("检测服务未返回有效的单个 IP 地址。")
+        case .wrongFamily: return L10n.text("检测响应的地址族与所选检测不符。")
+        case .nonPublicAddress: return L10n.text("检测响应不是支持核验的公网地址。")
+        case .authentication: return L10n.text("检测服务要求额外身份验证，本次未提供凭据。")
         }
     }
 }
@@ -79,13 +79,13 @@ public enum EgressPathAssessment: String, Equatable, Sendable {
     case vpnRoute, directRoute, systemRoute, mismatch, unknown, stale, standalone
     public var title: String {
         switch self {
-        case .vpnRoute: return "检测目标路由匹配 VPN"
-        case .directRoute: return "检测目标按当前规则直连"
-        case .systemRoute: return "原始配置：仅展示系统观测"
-        case .mismatch: return "检测目标与当前策略不一致"
-        case .unknown: return "已取得地址，路径尚无法核验"
-        case .stale: return "会话已改变，结果已过期"
-        case .standalone: return "未连接 VPN，仅显示请求出口"
+        case .vpnRoute: return L10n.text("检测目标路由匹配 VPN")
+        case .directRoute: return L10n.text("检测目标按当前规则直连")
+        case .systemRoute: return L10n.text("原始配置：仅展示系统观测")
+        case .mismatch: return L10n.text("检测目标与当前策略不一致")
+        case .unknown: return L10n.text("已取得地址，路径尚无法核验")
+        case .stale: return L10n.text("会话已改变，结果已过期")
+        case .standalone: return L10n.text("未连接 VPN，仅显示请求出口")
         }
     }
     public static func evaluate(family: EgressFamily, response: EgressHTTPResult, before: EgressSessionContext,

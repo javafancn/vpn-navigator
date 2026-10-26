@@ -15,17 +15,17 @@ struct QuickAccessView: View {
     private var action: QuickAccessAction { state.selectedID.map { model.quickAccessAction(for: $0) } ?? .blocked }
     private var actionTitle: String {
         switch action {
-        case .blocked: return "请在主窗口检查状态"
-        case .openMain: return "查看连接"
-        case .connect: return "连接"
-        case .requestSwitch: return "切换连接…"
+        case .blocked: return L10n.text("请在主窗口检查状态")
+        case .openMain: return L10n.text("查看连接")
+        case .connect: return L10n.text("连接")
+        case .requestSwitch: return L10n.text("切换连接…")
         }
     }
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass").font(.system(size: 23, weight: .light)).foregroundStyle(.secondary)
-                TextField("搜索配置名称、分组或文件名", text: $state.query)
+                TextField(L10n.text("搜索配置名称、分组或文件名"), text: $state.query)
                     .textFieldStyle(.plain).font(.system(size: 20)).focused($searchFocused)
                     .accessibilityIdentifier("quick-profile-search")
                 Text("esc").font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
@@ -39,8 +39,8 @@ struct QuickAccessView: View {
                             VStack(spacing: 10) {
                                 Image(systemName: model.profiles.isEmpty ? "doc.badge.plus" : "magnifyingglass")
                                     .font(.system(size: 28, weight: .light))
-                                Text(model.profiles.isEmpty ? "尚未导入配置" : "没有匹配的配置")
-                                Text(model.profiles.isEmpty ? "在主窗口导入 .ovpn 后即可快速连接" : "试试其他名称、分组或文件名")
+                                Text(model.profiles.isEmpty ? L10n.text("尚未导入配置") : L10n.text("没有匹配的配置"))
+                                Text(model.profiles.isEmpty ? L10n.text("在主窗口导入 .ovpn 后即可快速连接") : L10n.text("试试其他名称、分组或文件名"))
                                     .font(.system(size: 12))
                             }.foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 65)
                         }
@@ -49,10 +49,10 @@ struct QuickAccessView: View {
                                 .buttonStyle(.plain).id(profile.id)
                                 .accessibilityElement(children: .ignore)
                                 .accessibilityLabel(profile.name)
-                                .accessibilityValue([profile.group, profile.isFavorite ? "已收藏" : "未收藏",
-                                    model.connected && model.activeProfileID == profile.id ? "已连接" : "未连接",
-                                    state.selectedID == profile.id ? "已选择" : "未选择"].joined(separator: "，"))
-                                .accessibilityHint("选择配置；使用底部按钮连接或查看当前连接")
+                                .accessibilityValue([profile.group, profile.isFavorite ? L10n.text("已收藏") : L10n.text("未收藏"),
+                                    model.connected && model.activeProfileID == profile.id ? L10n.text("已连接") : L10n.text("未连接"),
+                                    state.selectedID == profile.id ? L10n.text("已选择") : L10n.text("未选择")].joined(separator: "，"))
+                                .accessibilityHint(L10n.text("选择配置；使用底部按钮连接或查看当前连接"))
                                 .accessibilityAddTraits(state.selectedID == profile.id ? .isSelected : [])
                         }
                     }.padding(10)
@@ -62,18 +62,18 @@ struct QuickAccessView: View {
             Divider().opacity(0.25)
             if let id = state.pendingSwitchID, let target = model.profiles.first(where: { $0.id == id }) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("将断开当前 VPN，再连接“\(target.name)”。").font(.system(size: 13)).lineLimit(2)
+                    Text(L10n.format("将断开当前 VPN，再连接“{0}”。", [String(describing: target.name)])).font(.system(size: 13)).lineLimit(2)
                     HStack {
-                        Button("取消", action: onCancel).buttonStyle(ReferenceSecondaryButton())
+                        Button(L10n.text("取消"), action: onCancel).buttonStyle(ReferenceSecondaryButton())
                         Spacer()
-                        Button("断开并连接", action: onConfirm).buttonStyle(ReferencePrimaryButton())
+                        Button(L10n.text("断开并连接"), action: onConfirm).buttonStyle(ReferencePrimaryButton())
                     }
                 }.padding(16)
             } else {
                 HStack(spacing: 10) {
-                    Text("↑↓ 选择 · ↵ 打开").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(L10n.text("↑↓ 选择 · ↵ 打开")).font(.system(size: 11)).foregroundStyle(.secondary)
                     Spacer()
-                    Button("主窗口", action: onOpenMain).buttonStyle(ReferenceQuietButton())
+                    Button(L10n.text("主窗口"), action: onOpenMain).buttonStyle(ReferenceQuietButton())
                     Button(actionTitle, action: onActivate).buttonStyle(ReferencePrimaryButton())
                         .disabled(action == .blocked)
                 }.padding(.horizontal, 18).frame(height: 64)
@@ -99,8 +99,8 @@ struct QuickAccessView: View {
             }
             Spacer(minLength: 4)
             if model.connected && model.activeProfileID == profile.id {
-                Label("已连接", systemImage: "checkmark.circle.fill").font(.system(size: 11)).foregroundStyle(.green)
-            } else { Text(profile.mode.rawValue).font(.system(size: 11)).foregroundStyle(.secondary) }
+                Label(L10n.text("已连接"), systemImage: "checkmark.circle.fill").font(.system(size: 11)).foregroundStyle(.green)
+            } else { Text(profile.mode.title).font(.system(size: 11)).foregroundStyle(.secondary) }
         }
         .foregroundStyle(GlassPalette.ink).padding(.horizontal, 12).frame(height: 58)
         .background(RoundedRectangle(cornerRadius: 10).fill(state.selectedID == profile.id ? GlassPalette.blue.opacity(0.13) : .clear))

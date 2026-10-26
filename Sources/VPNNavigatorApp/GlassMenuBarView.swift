@@ -26,7 +26,7 @@ struct GlassMenuBarView: View {
                 BrandMark(size: 38)
                 Text("VPN Navigator").font(.system(size: 18, weight: .semibold))
                 Spacer(minLength: 0)
-                Toggle("VPN 连接", isOn: connectionToggle)
+                Toggle(L10n.text("VPN 连接"), isOn: connectionToggle)
                     .toggleStyle(.switch).labelsHidden().tint(GlassPalette.blue)
                     .disabled(model.stopping || (model.busy && !model.connecting && !model.connected && !model.firewallRecoveryRequired) || (!model.connected && model.selected == nil) || (!model.connected && !model.connecting && (model.profileTransferInProgress || model.showingImportReport)))
             }
@@ -37,9 +37,9 @@ struct GlassMenuBarView: View {
                 HStack(spacing: 12) {
                     Image(systemName: "globe").font(.system(size: 32)).foregroundStyle(GlassPalette.blue)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(model.activeProfile?.name ?? model.selected?.name ?? "尚未选择配置")
+                        Text(model.activeProfile?.name ?? model.selected?.name ?? L10n.text("尚未选择配置"))
                             .font(.system(size: 15, weight: .medium)).lineLimit(1)
-                        Text(model.activeProfile?.sourceFilename ?? model.selected?.sourceFilename ?? "导入 .ovpn 后即可连接")
+                        Text(model.activeProfile?.sourceFilename ?? model.selected?.sourceFilename ?? L10n.text("导入 .ovpn 后即可连接"))
                             .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer(minLength: 0)
@@ -66,28 +66,28 @@ struct GlassMenuBarView: View {
                 }
             }.padding(12).glassCard(cornerRadius: 15)
             VStack(spacing: 0) {
-                Button { model.smartConnection.connectNow() } label: { menuRow("智能连接", symbol: "bolt.shield") }
+                Button { model.smartConnection.connectNow() } label: { menuRow(L10n.text("智能连接"), symbol: "bolt.shield") }
                     .buttonStyle(ReferenceQuietButton()).disabled(model.profiles.isEmpty || model.busy || model.stopping)
                 if model.smartConnection.preferences.enabled {
                     Button { model.smartConnection.togglePause() } label: {
-                        menuRow(model.smartConnection.preferences.paused ? "恢复自动连接" : "暂停自动连接", symbol: model.smartConnection.preferences.paused ? "play.circle" : "pause.circle")
+                        menuRow(model.smartConnection.preferences.paused ? L10n.text("恢复自动连接") : L10n.text("暂停自动连接"), symbol: model.smartConnection.preferences.paused ? "play.circle" : "pause.circle")
                     }.buttonStyle(ReferenceQuietButton())
                 }
                 Text(model.smartConnection.status).font(.system(size: 11)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
-                Button { openWindow(id: "main"); model.showingSmartConnection = true; NSApp.activate(ignoringOtherApps: true) } label: { menuRow("智能连接设置…", symbol: "bell.badge") }
+                Button { openWindow(id: "main"); model.showingSmartConnection = true; NSApp.activate(ignoringOtherApps: true) } label: { menuRow(L10n.text("智能连接设置…"), symbol: "bell.badge") }
                     .buttonStyle(ReferenceQuietButton())
-                Button { model.quickAccess.toggle() } label: { menuRow("快速打开…", symbol: "magnifyingglass") }
+                Button { model.quickAccess.toggle() } label: { menuRow(L10n.text("快速打开…"), symbol: "magnifyingglass") }
                     .buttonStyle(ReferenceQuietButton())
                 Divider().opacity(0.2)
                 Button {
                     openWindow(id: "main")
                     NSApp.activate(ignoringOtherApps: true)
-                } label: { menuRow("打开主窗口", symbol: "macwindow") }
+                } label: { menuRow(L10n.text("打开主窗口"), symbol: "macwindow") }
                 .buttonStyle(ReferenceQuietButton())
                 Divider().opacity(0.2)
                 Button {
                     NSApp.terminate(nil)
-                } label: { menuRow("退出", symbol: "power") }
+                } label: { menuRow(L10n.text("退出"), symbol: "power") }
                 .buttonStyle(ReferenceQuietButton()).disabled(model.stopping)
             }
             .padding(.horizontal, 12).glassCard(cornerRadius: 15)

@@ -127,6 +127,8 @@ struct MainView: View {
                     model.selectedID = model.profiles[0].id
                     if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-custom-routes-snapshot") { model.customRuleEditorProfile = model.profiles[0] }
                     else { model.showingRouteExplanation = true }
+                } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-public-egress-snapshot") {
+                    model.showingPublicEgress = true
                 } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-connection-history-snapshot") {
                     model.connectionHistory.showSnapshot(profiles: model.profiles)
                     model.showingConnectionHistory = true
@@ -188,6 +190,7 @@ struct MainView: View {
         .sheet(item: $model.customRuleEditorProfile) { profile in CustomRoutingEditorView(profile: profile).environmentObject(model) }
         .sheet(isPresented: $model.showingRouteExplanation) { RouteExplanationView().environmentObject(model) }
         .sheet(isPresented: $model.showingTroubleshooting) { OneClickTroubleshootingView().environmentObject(model) }
+        .sheet(isPresented: $model.showingPublicEgress) { PublicEgressView().environmentObject(model) }
         .sheet(isPresented: $model.showingDiagnostics) { DiagnosticHistoryView().environmentObject(model) }
         .sheet(isPresented: $model.showingConnectionHistory) { ConnectionHistoryView().environmentObject(model) }
         .sheet(isPresented: $model.showingImportReport) {

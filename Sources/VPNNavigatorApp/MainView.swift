@@ -32,6 +32,7 @@ enum WorkspaceTab: String, CaseIterable, Identifiable {
 @MainActor
 struct MainView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var workspaceCommands: WorkspaceCommandRouter
     @StateObject private var navigation: WorkspaceNavigation
     private var tab: WorkspaceTab {
         get { navigation.tab }
@@ -57,7 +58,7 @@ struct MainView: View {
 
     var body: some View {
         ZStack {
-            GlassAtmosphere(onWindow: { model.workspaceCommands.attach($0) })
+            GlassAtmosphere(onWindow: { workspaceCommands.attach($0) })
             HStack(spacing: 0) {
                 sidebar.frame(width: 228)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
@@ -107,14 +108,14 @@ struct MainView: View {
                     }.allowsHitTesting(false)
             }
         }
-        .onChange(of: model.workspaceNavigationBlocked) { _ in model.workspaceCommands.refresh() }
+        .onChange(of: model.workspaceNavigationBlocked) { _ in workspaceCommands.refresh() }
         .preferredColorScheme(.light)
         .environment(\.locale, Locale(identifier: "zh_CN"))
         .onAppear {
-            model.workspaceCommands.configure(model: model, navigation: navigation)
+            workspaceCommands.configure(model: model, navigation: navigation)
             if ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") {
                 Task {
-                    do { try await WorkspaceAccessibilitySelfTest.run(model: model, navigation: navigation); Darwin.exit(0) }
+                    do { try await WorkspaceAccessibilitySelfTest.run(model: model, navigation: navigation, router: workspaceCommands); Darwin.exit(0) }
                     catch { print("Workspace accessibility self-test failed: \(error)"); Darwin.exit(1) }
                 }
             }

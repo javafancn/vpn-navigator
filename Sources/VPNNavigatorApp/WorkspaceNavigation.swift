@@ -57,20 +57,21 @@ final class WorkspaceCommandRouter: ObservableObject {
 
 @MainActor
 struct WorkspaceCommands: Commands {
-    @ObservedObject var router: WorkspaceCommandRouter
+    let router: WorkspaceCommandRouter
+    let available: Bool
     var body: some Commands {
         CommandMenu("工作区") {
             ForEach(Array(WorkspaceTab.allCases.enumerated()), id: \.element.id) { index, tab in
                 Button(tab.title) { router.select(tab) }
                     .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
-                    .disabled(!router.available)
+                    .disabled(!available)
             }
             Divider()
             Button("搜索配置…") { router.search() }
-                .keyboardShortcut("f", modifiers: .command).disabled(!router.available)
+                .keyboardShortcut("f", modifiers: .command).disabled(!available)
         }
         CommandGroup(after: .help) {
-            Button("键盘与辅助功能…") { router.help() }.disabled(!router.available)
+            Button("键盘与辅助功能…") { router.help() }.disabled(!available)
         }
     }
 }

@@ -46,7 +46,6 @@ final class AppModel: ObservableObject {
     @Published var showingProfileIndexRecovery = false
     @Published var quickAccessShortcutStatus = "全局快捷键已关闭"
     lazy var quickAccess = QuickAccessCoordinator(model: self)
-    lazy var workspaceCommands = WorkspaceCommandRouter()
     private let smartDefaults: UserDefaults
     lazy var smartConnection = SmartConnectionController(model: self, defaults: smartDefaults)
     @Published var showingSmartConnection = false
@@ -1367,6 +1366,7 @@ final class AppModel: ObservableObject {
 struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
     @StateObject private var model = AppModel()
+    @StateObject private var workspaceCommands = WorkspaceCommandRouter()
     init() {
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-public-egress-self-test") {
             Task {
@@ -1477,14 +1477,14 @@ struct VPNNavigatorApp: App {
     }
     var body: some Scene {
         Window("VPN Navigator", id: "main") {
-            MainView().environmentObject(model)
+            MainView().environmentObject(model).environmentObject(workspaceCommands)
                 .onAppear { appDelegate.model = model }
                 .frame(minWidth: 1100, minHeight: 700)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 700)
         .commands {
-            WorkspaceCommands(router: model.workspaceCommands)
+            WorkspaceCommands(router: workspaceCommands, available: workspaceCommands.available)
             CommandGroup(after: .newItem) {
                 Button("快速打开…") { model.quickAccess.toggle() }
                     .keyboardShortcut("p", modifiers: [.command, .shift])

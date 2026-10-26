@@ -6,7 +6,7 @@ import VPNNavigatorCore
 /// VPN, file import, credential storage or public network request is involved.
 @MainActor
 enum WorkspaceAccessibilitySelfTest {
-    static func run(model: AppModel, navigation: WorkspaceNavigation) async throws {
+    static func run(model: AppModel, navigation: WorkspaceNavigation, router: WorkspaceCommandRouter) async throws {
         guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" else { throw Failure.check("CI only") }
         let a = VPNProfile(name: "Alpha", sourceFilename: "alpha.ovpn", relativePath: "fixture-only", isFavorite: true)
         let b = VPNProfile(name: "Beta", sourceFilename: "beta.ovpn", relativePath: "fixture-only")
@@ -55,7 +55,7 @@ enum WorkspaceAccessibilitySelfTest {
             if let menu = NSApp.mainMenu { validate(menu) }
             guard NSApp.mainMenu?.performKeyEquivalent(with: try event(code, text: text, modifiers: .command)) == true else { throw Failure.check("menu shortcut: " + text) }
         }
-        print("Workspace router readiness:", model.workspaceCommands.selfTestState(), "nativeDialog=", model.nativeDialogPresented,
+        print("Workspace router readiness:", router.selfTestState(), "nativeDialog=", model.nativeDialogPresented,
               "message=", model.message != nil, "setup=", model.showingSetup, "maintenance=", model.showingMaintenance)
         if let menu = NSApp.mainMenu?.items.first(where: { $0.title == "工作区" })?.submenu {
             menu.update()
@@ -113,11 +113,11 @@ enum WorkspaceAccessibilitySelfTest {
         guard navigation.tab == .overview else { throw Failure.check("commands resume after native sheet") }
         let otherWindow = NSWindow(contentRect: NSRect(x: 40, y: 40, width: 320, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
         otherWindow.isReleasedWhenClosed = false; otherWindow.makeKeyAndOrderFront(nil); try await settle()
-        guard otherWindow.isKeyWindow, !model.workspaceCommands.available else { throw Failure.check("foreign window disables workspace commands") }
-        model.workspaceCommands.select(.settings)
+        guard otherWindow.isKeyWindow, !router.available else { throw Failure.check("foreign window disables workspace commands") }
+        router.select(.settings)
         guard navigation.tab == .overview else { throw Failure.check("foreign window routed into main") }
         otherWindow.orderOut(nil); window.makeMain(); window.makeKeyAndOrderFront(nil); try await settle()
-        guard model.workspaceCommands.available else { throw Failure.check("main window commands resume") }
+        guard router.available else { throw Failure.check("main window commands resume") }
         model.showingKeyboardHelp = true; try await settle()
         guard model.workspaceNavigationBlocked, model.smartConnectionContext().occupied,
               model.quickAccessAction(for: b.id) == .blocked else { throw Failure.check("help modal exclusion") }

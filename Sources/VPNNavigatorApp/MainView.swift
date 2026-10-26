@@ -57,7 +57,7 @@ struct MainView: View {
 
     var body: some View {
         ZStack {
-            GlassAtmosphere()
+            GlassAtmosphere(onWindow: { model.workspaceCommands.attach($0) })
             HStack(spacing: 0) {
                 sidebar.frame(width: 228)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
@@ -107,7 +107,6 @@ struct MainView: View {
                     }.allowsHitTesting(false)
             }
         }
-        .background(WorkspaceCommandWindowBridge(router: model.workspaceCommands).frame(width: 0, height: 0).accessibilityHidden(true).allowsHitTesting(false))
         .onChange(of: model.workspaceNavigationBlocked) { _ in model.workspaceCommands.refresh() }
         .preferredColorScheme(.light)
         .environment(\.locale, Locale(identifier: "zh_CN"))

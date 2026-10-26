@@ -55,6 +55,8 @@ enum WorkspaceAccessibilitySelfTest {
             if let menu = NSApp.mainMenu { validate(menu) }
             guard NSApp.mainMenu?.performKeyEquivalent(with: try event(code, text: text, modifiers: .command)) == true else { throw Failure.check("menu shortcut: " + text) }
         }
+        print("Workspace router readiness:", model.workspaceCommands.selfTestState(), "nativeDialog=", model.nativeDialogPresented,
+              "message=", model.message != nil, "setup=", model.showingSetup, "maintenance=", model.showingMaintenance)
         if let menu = NSApp.mainMenu?.items.first(where: { $0.title == "工作区" })?.submenu {
             menu.update()
             print("Workspace command readiness:", menu.items.filter { !$0.isSeparatorItem }.map { "\($0.title):\($0.keyEquivalent):\($0.isEnabled)" })

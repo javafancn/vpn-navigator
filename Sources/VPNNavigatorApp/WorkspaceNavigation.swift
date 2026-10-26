@@ -45,27 +45,14 @@ final class WorkspaceCommandRouter: ObservableObject {
         guard let window, let model, navigation != nil else { return false }
         return NSApp.isActive && NSApp.keyWindow === window && !model.workspaceNavigationBlocked
     }
+    func selfTestState() -> String {
+        guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" else { return "disabled" }
+        return "attached=\(window != nil), model=\(model != nil), navigation=\(navigation != nil), active=\(NSApp.isActive), keyMatches=\(window === NSApp.keyWindow), blocked=\(model?.workspaceNavigationBlocked ?? true), available=\(available)"
+    }
     func refresh() { let next = mayPerform; if available != next { available = next } }
     func select(_ tab: WorkspaceTab) { guard mayPerform else { return }; navigation?.select(tab) }
     func search() { guard mayPerform else { return }; navigation?.searchProfiles() }
     func help() { guard mayPerform else { return }; model?.showingKeyboardHelp = true }
-}
-
-/// Observes only this view's own NSWindow; never monitors or intercepts keys.
-@MainActor
-struct WorkspaceCommandWindowBridge: NSViewRepresentable {
-    let router: WorkspaceCommandRouter
-    func makeNSView(context: Context) -> WindowProbe {
-        let view = WindowProbe()
-        view.onWindow = { [weak router] window in router?.attach(window) }
-        view.setAccessibilityElement(false)
-        return view
-    }
-    func updateNSView(_ view: WindowProbe, context: Context) { router.attach(view.window) }
-    final class WindowProbe: NSView {
-        var onWindow: ((NSWindow?) -> Void)?
-        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); onWindow?(window) }
-    }
 }
 
 @MainActor

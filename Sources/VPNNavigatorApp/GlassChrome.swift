@@ -40,12 +40,13 @@ enum GlassSurface {
 }
 
 struct GlassAtmosphere: View {
+    var onWindow: ((NSWindow) -> Void)? = nil
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         ZStack {
-            DesktopVisualEffect()
+            DesktopVisualEffect(onWindow: onWindow)
             if GlassAccessibility.increasedContrast(contrast) || (reduceTransparency &&
                 !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot")) {
                 Color(nsColor: .windowBackgroundColor)
@@ -60,6 +61,7 @@ struct GlassAtmosphere: View {
 }
 
 final class NativeWindowGlass: NSVisualEffectView {
+    var onWindow: ((NSWindow) -> Void)?
     private weak var configuredWindow: NSWindow?
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -67,6 +69,7 @@ final class NativeWindowGlass: NSVisualEffectView {
     }
     func configureWindow() {
         guard let window else { return }
+        onWindow?(window)
         if configuredWindow !== window {
             window.isOpaque = false
             window.backgroundColor = .clear
@@ -88,14 +91,17 @@ final class NativeWindowGlass: NSVisualEffectView {
 /// One full-strength native blur. Lowering the effect view's alpha also
 /// reveals unblurred wallpaper; tune readability with the neutral veil above.
 struct DesktopVisualEffect: NSViewRepresentable {
+    var onWindow: ((NSWindow) -> Void)? = nil
     func makeNSView(context: Context) -> NativeWindowGlass {
         let view = NativeWindowGlass()
+        view.onWindow = onWindow
         view.material = .sidebar
         view.blendingMode = .behindWindow
         view.state = .followsWindowActiveState
         return view
     }
     func updateNSView(_ view: NativeWindowGlass, context: Context) {
+        view.onWindow = onWindow
         view.configureWindow()
     }
 }

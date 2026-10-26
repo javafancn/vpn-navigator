@@ -23,21 +23,21 @@ public enum ConnectionHistoryEventKind: String, Codable, Sendable {
     case modeChanged, verificationLost, observationResumed, counterReset, observationGap, observationEnded
     public var title: String {
         switch self {
-        case .requested: return "已提交连接请求"
-        case .adopted: return "开始观察现有会话"
-        case .connecting: return "正在连接"
-        case .authenticating: return "等待身份验证"
-        case .connected: return "隧道与路由已核验"
-        case .reconnecting: return "正在重连"
-        case .stopping: return "正在断开与恢复"
-        case .disconnected: return "会话已停止"
-        case .failed: return "连接失败"
-        case .modeChanged: return "路由模式已切换"
-        case .verificationLost: return "助手状态暂时无法核验"
-        case .observationResumed: return "恢复会话观察"
-        case .counterReset: return "引擎流量计数重置，已重新采样"
-        case .observationGap: return "采集间断，已重新采样"
-        case .observationEnded: return "观察结束，未推断 VPN 是否断开"
+        case .requested: return L10n.text("已提交连接请求")
+        case .adopted: return L10n.text("开始观察现有会话")
+        case .connecting: return L10n.text("正在连接")
+        case .authenticating: return L10n.text("等待身份验证")
+        case .connected: return L10n.text("隧道与路由已核验")
+        case .reconnecting: return L10n.text("正在重连")
+        case .stopping: return L10n.text("正在断开与恢复")
+        case .disconnected: return L10n.text("会话已停止")
+        case .failed: return L10n.text("连接失败")
+        case .modeChanged: return L10n.text("路由模式已切换")
+        case .verificationLost: return L10n.text("助手状态暂时无法核验")
+        case .observationResumed: return L10n.text("恢复会话观察")
+        case .counterReset: return L10n.text("引擎流量计数重置，已重新采样")
+        case .observationGap: return L10n.text("采集间断，已重新采样")
+        case .observationEnded: return L10n.text("观察结束，未推断 VPN 是否断开")
         }
     }
 }
@@ -55,11 +55,11 @@ public enum ConnectionHistoryOutcome: String, Codable, Sendable {
     case observing, completed, cancelled, failed, interrupted
     public var title: String {
         switch self {
-        case .observing: return "观察中"
-        case .completed: return "已断开"
-        case .cancelled: return "已取消"
-        case .failed: return "连接失败"
-        case .interrupted: return "观察中断"
+        case .observing: return L10n.text("观察中")
+        case .completed: return L10n.text("已断开")
+        case .cancelled: return L10n.text("已取消")
+        case .failed: return L10n.text("连接失败")
+        case .interrupted: return L10n.text("观察中断")
         }
     }
 }
@@ -290,8 +290,8 @@ public enum ConnectionHistoryFailure: Error, LocalizedError {
     case invalidArchive, storage
     public var errorDescription: String? {
         switch self {
-        case .invalidArchive: return "连接历史无法解析或格式不受支持；请先检查，或明确清空后重新记录。"
-        case .storage: return "连接历史无法保存，请检查本机目录权限和磁盘空间；VPN 连接不受影响。"
+        case .invalidArchive: return L10n.text("连接历史无法解析或格式不受支持；请先检查，或明确清空后重新记录。")
+        case .storage: return L10n.text("连接历史无法保存，请检查本机目录权限和磁盘空间；VPN 连接不受影响。")
         }
     }
 }

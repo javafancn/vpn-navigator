@@ -22,9 +22,9 @@ public struct LocalInstallTransaction: Codable, Equatable, Sendable {
     }
     public var summary: String {
         switch phase {
-        case .preparing: return "安装尚未完成。若系统安装器仍在运行，请等待；否则选择可信安装包修复。"
-        case .verifying: return "正在核验后台助手。若安装已中断，请选择可信安装包修复。"
-        case .repairRequired: return "上次安装未能完成健康检查，请通过可信安装包重新修复。"
+        case .preparing: return L10n.text("安装尚未完成。若系统安装器仍在运行，请等待；否则选择可信安装包修复。")
+        case .verifying: return L10n.text("正在核验后台助手。若安装已中断，请选择可信安装包修复。")
+        case .repairRequired: return L10n.text("上次安装未能完成健康检查，请通过可信安装包重新修复。")
         }
     }
 }

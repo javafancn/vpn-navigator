@@ -16,7 +16,7 @@ public enum IPAddress {
     }
 }
 public enum TunnelIPStack: String, Codable, Sendable { case ipv4, ipv6, dual
-    public var title: String { switch self { case .ipv4: return "IPv4 · IPv6 未建立"; case .ipv6: return "IPv6 · IPv4 未建立"; case .dual: return "IPv4＋IPv6 双栈" } }
+    public var title: String { switch self { case .ipv4: return L10n.text("IPv4 · IPv6 未建立"); case .ipv6: return L10n.text("IPv6 · IPv4 未建立"); case .dual: return L10n.text("IPv4＋IPv6 双栈") } }
 }
 public struct RoutingRuleBundle: Codable, Sendable {
     public let ipv4: String
@@ -131,11 +131,11 @@ public enum DualStackError: Error, LocalizedError {
     case missingTunnel, missingPhysical, missingRules, requireDualStack, unsafeFallback
     public var errorDescription: String? {
         switch self {
-        case .missingTunnel: return "服务器未提供所需的隧道地址，无法应用对应地址族的自定义规则。"
-        case .missingPhysical: return "没有可核验的物理出口，无法应用端点或直连规则。"
-        case .missingRules: return "双栈规则路由需要有效的中国 IPv6 规则，请先更新 IPv6 规则。"
-        case .requireDualStack: return "已要求双栈，但服务器没有同时分配 IPv4 和 IPv6 隧道地址。"
-        case .unsafeFallback: return "服务器未承载的地址族仍有系统出口；请启用断线保护或使用支持双栈的服务器。"
+        case .missingTunnel: return L10n.text("服务器未提供所需的隧道地址，无法应用对应地址族的自定义规则。")
+        case .missingPhysical: return L10n.text("没有可核验的物理出口，无法应用端点或直连规则。")
+        case .missingRules: return L10n.text("双栈规则路由需要有效的中国 IPv6 规则，请先更新 IPv6 规则。")
+        case .requireDualStack: return L10n.text("已要求双栈，但服务器没有同时分配 IPv4 和 IPv6 隧道地址。")
+        case .unsafeFallback: return L10n.text("服务器未承载的地址族仍有系统出口；请启用断线保护或使用支持双栈的服务器。")
         }
     }
 }

@@ -22,7 +22,7 @@ final class HelperClient {
     var localInstallationIssue: String? {
         guard BuildChannel.isLocal, LocalInstallation.isInstallationPending else { return nil }
         do { return try LocalInstallation.pendingTransaction()?.summary }
-        catch { return "安装事务记录无法核验，请保留现状并进行人工诊断。不要删除网络恢复记录。" }
+        catch { return L10n.text("安装事务记录无法核验，请保留现状并进行人工诊断。不要删除网络恢复记录。") }
     }
 
     func requestRegistration() throws {
@@ -53,7 +53,7 @@ final class HelperClient {
             // Validate the *server* identity as well as the server's incoming
             // client requirement. Never send VPN credentials to a fake daemon.
             guard let requirement = PrivilegedServiceTrust.helperRequirement() else {
-                completion.finish("ERROR: 当前程序身份或安装批准未通过检查，请安装或修复对应通道的安装包")
+                completion.finish(L10n.text("ERROR: 当前程序身份或安装批准未通过检查，请安装或修复对应通道的安装包"))
                 return
             }
             connection.setCodeSigningRequirement(requirement)

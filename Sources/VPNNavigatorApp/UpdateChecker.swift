@@ -40,5 +40,5 @@ enum UpdateChecker {
 
 enum UpdateCheckError: Error, LocalizedError {
     case noRelease
-    var errorDescription: String? { "项目尚未提供正式 Release 安装包。" }
+    var errorDescription: String? { L10n.text("项目尚未提供正式 Release 安装包。") }
 }

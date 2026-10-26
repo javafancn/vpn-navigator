@@ -1,3 +1,4 @@
+import VPNNavigatorCore
 import Foundation
 import Security
 import LocalAuthentication
@@ -65,6 +66,6 @@ enum KeychainVault {
 }
 enum VaultError: Error, LocalizedError {
     case keychain(OSStatus)
-    var errorDescription: String? { "macOS Keychain operation failed." }
+    var errorDescription: String? { L10n.text("macOS Keychain operation failed.") }
 }
 

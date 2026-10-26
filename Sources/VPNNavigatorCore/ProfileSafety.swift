@@ -133,12 +133,12 @@ public enum ProfileValidationError: Error, Equatable, LocalizedError {
     case unsupported(Int, String), invalidLine(Int), missingRemote, missingInlineCA, unterminatedBlock, tooLarge
     public var errorDescription: String? {
         switch self {
-        case .unsupported(let line, _): return "Unsupported OpenVPN directive on line \(line). Script/plugin directives are blocked."
-        case .invalidLine(let line): return "Invalid OpenVPN option on line \(line)."
-        case .missingRemote: return "No remote VPN server configured."
-        case .missingInlineCA: return "This engine currently requires an inline <ca> certificate."
-        case .unterminatedBlock: return "Unterminated inline certificate/key block."
-        case .tooLarge: return "OpenVPN configuration exceeds size limit."
+        case .unsupported(let line, _): return L10n.format("Unsupported OpenVPN directive on line {0}. Script/plugin directives are blocked.", [String(describing: line)])
+        case .invalidLine(let line): return L10n.format("Invalid OpenVPN option on line {0}.", [String(describing: line)])
+        case .missingRemote: return L10n.text("No remote VPN server configured.")
+        case .missingInlineCA: return L10n.text("This engine currently requires an inline <ca> certificate.")
+        case .unterminatedBlock: return L10n.text("Unterminated inline certificate/key block.")
+        case .tooLarge: return L10n.text("OpenVPN configuration exceeds size limit.")
         }
     }
 }

@@ -14,6 +14,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+      - name: Check bilingual catalog and production coverage
+        run: python3 scripts/check-localization.py
       - name: Build
         run: swift build
       - name: Verify workspace keyboard and accessibility in the debug build
@@ -25,6 +27,8 @@ jobs:
           from pathlib import Path
           folder = subprocess.check_output(['swift', 'build', '--show-bin-path'], text=True).strip()
           subprocess.run([str(Path(folder) / 'VPNNavigatorApp'), '--vpnnav-workspace-accessibility-self-test'], check=True, timeout=45)
+          subprocess.run([str(Path(folder) / 'VPNNavigatorApp'), '--vpnnav-workspace-accessibility-self-test', '--vpnnav-language=en'], check=True, timeout=45)
+          subprocess.run([str(Path(folder) / 'VPNNavigatorApp'), '--vpnnav-localization-self-test', '--vpnnav-language=en'], check=True, timeout=45)
           PYTEST
       - name: Unit tests
         run: swift test

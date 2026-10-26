@@ -4,8 +4,8 @@ public enum ProfileLibraryScope: Equatable, Sendable {
     case all, favorites, group(String)
     public var title: String {
         switch self {
-        case .all: return "全部配置"
-        case .favorites: return "收藏配置"
+        case .all: return L10n.text("全部配置")
+        case .favorites: return L10n.text("收藏配置")
         case .group(let name): return name
         }
     }
@@ -16,9 +16,9 @@ public enum ProfileLibrarySort: String, CaseIterable, Identifiable, Sendable {
     public var id: String { rawValue }
     public var title: String {
         switch self {
-        case .recommended: return "收藏优先"
-        case .name: return "名称排序"
-        case .newest: return "最近导入"
+        case .recommended: return L10n.text("收藏优先")
+        case .name: return L10n.text("名称排序")
+        case .newest: return L10n.text("最近导入")
         }
     }
     public init(savedValue: String?) { self = savedValue.flatMap(Self.init(rawValue:)) ?? .recommended }

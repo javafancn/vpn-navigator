@@ -60,6 +60,6 @@ final class GlobalQuickAccessHotKey {
     }
     struct RegistrationError: LocalizedError {
         let status: OSStatus
-        var errorDescription: String? { "快捷键无法注册，可能已被占用（\(status)）。请选择其他组合或重试。" }
+        var errorDescription: String? { L10n.format("快捷键无法注册，可能已被占用（{0}）。请选择其他组合或重试。", [String(describing: status)]) }
     }
 }

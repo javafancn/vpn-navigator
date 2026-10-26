@@ -4,7 +4,7 @@ import VPNNavigatorCore
 enum ConnectionHistoryDisplay {
     static func bytes(_ value: UInt64) -> String { ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .binary) }
     static func rate(_ value: Double?) -> String {
-        guard let value, value.isFinite, value >= 0 else { return "等待采样" }
+        guard let value, value.isFinite, value >= 0 else { return L10n.text("等待采样") }
         return ByteCountFormatter.string(fromByteCount: Int64(min(value, 9_000_000_000_000_000_000)), countStyle: .binary) + "/s"
     }
     static func duration(_ value: Double) -> String {
@@ -17,9 +17,9 @@ struct ConnectionQualityCard: View {
     let snapshot: ConnectionQualitySnapshot
     var body: some View {
         HStack(spacing: 18) {
-            metric("下载速率", ConnectionHistoryDisplay.rate(snapshot.verified ? snapshot.receivedPerSecond : nil))
-            metric("上传速率", ConnectionHistoryDisplay.rate(snapshot.verified ? snapshot.sentPerSecond : nil))
-            metric("已采集连接时长", ConnectionHistoryDisplay.duration(snapshot.observedConnectedSeconds))
+            metric(L10n.text("下载速率"), ConnectionHistoryDisplay.rate(snapshot.verified ? snapshot.receivedPerSecond : nil))
+            metric(L10n.text("上传速率"), ConnectionHistoryDisplay.rate(snapshot.verified ? snapshot.sentPerSecond : nil))
+            metric(L10n.text("已采集连接时长"), ConnectionHistoryDisplay.duration(snapshot.observedConnectedSeconds))
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: 16)
     }
     private func metric(_ label: String, _ value: String) -> some View {
@@ -41,23 +41,23 @@ struct ConnectionHistoryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label("会话质量与连接历史", systemImage: "clock.arrow.circlepath").font(.system(size: 23, weight: .bold))
+                Label(L10n.text("会话质量与连接历史"), systemImage: "clock.arrow.circlepath").font(.system(size: 23, weight: .bold))
                 Spacer()
-                Toggle("仅看失败", isOn: $onlyFailures).toggleStyle(.checkbox).font(.callout)
+                Toggle(L10n.text("仅看失败"), isOn: $onlyFailures).toggleStyle(.checkbox).font(.callout)
             }
-            Text("仅统计已采集区间，不补算退出、休眠或失联期间的数据；采集流量不作为计费依据。")
+            Text(L10n.text("仅统计已采集区间，不补算退出、休眠或失联期间的数据；采集流量不作为计费依据。"))
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             ConnectionQualityCard(snapshot: controller.state.quality)
             HStack(spacing: 20) {
-                Toggle("本机记录连接历史", isOn: Binding(get: { controller.state.preferences.enabled }, set: { value in
+                Toggle(L10n.text("本机记录连接历史"), isOn: Binding(get: { controller.state.preferences.enabled }, set: { value in
                     var preferences = controller.state.preferences; preferences.enabled = value
                     Task { await controller.configure(preferences) }
                 }))
                 Spacer()
-                Picker("保留", selection: Binding(get: { controller.state.preferences.retentionDays }, set: { value in
+                Picker(L10n.text("保留"), selection: Binding(get: { controller.state.preferences.retentionDays }, set: { value in
                     var preferences = controller.state.preferences; preferences.retentionDays = value
                     Task { await controller.configure(preferences) }
-                })) { Text("7 天").tag(7); Text("30 天").tag(30); Text("90 天").tag(90) }.frame(width: 150)
+                })) { Text(L10n.text("7 天")).tag(7); Text(L10n.text("30 天")).tag(30); Text(L10n.text("90 天")).tag(90) }.frame(width: 150)
             }.font(.callout).disabled(controller.busy || ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot"))
             if let problem = controller.actionProblem ?? controller.state.problem {
                 Label(problem, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange)
@@ -65,7 +65,7 @@ struct ConnectionHistoryView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if rows.isEmpty {
-                        Text(onlyFailures ? "暂无已记录的失败会话。" : controller.state.preferences.enabled ? "暂无连接历史，下一次会话将开始记录。" : "记录已暂停；开启后开始采集，已有历史按所选期限保留。")
+                        Text(onlyFailures ? L10n.text("暂无已记录的失败会话。") : controller.state.preferences.enabled ? L10n.text("暂无连接历史，下一次会话将开始记录。") : L10n.text("记录已暂停；开启后开始采集，已有历史按所选期限保留。"))
                             .font(.callout).foregroundStyle(.secondary).padding(20)
                     }
                     ForEach(rows) { row in
@@ -74,7 +74,7 @@ struct ConnectionHistoryView: View {
                         })) {
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack {
-                                    Text("采集时长 " + ConnectionHistoryDisplay.duration(row.observedConnectedSeconds))
+                                    Text(L10n.text("采集时长 ") + ConnectionHistoryDisplay.duration(row.observedConnectedSeconds))
                                     Spacer()
                                     Text("↓ " + ConnectionHistoryDisplay.bytes(row.receivedBytes) + "   ↑ " + ConnectionHistoryDisplay.bytes(row.sentBytes))
                                 }.font(.caption).foregroundStyle(.secondary)
@@ -92,8 +92,8 @@ struct ConnectionHistoryView: View {
                         } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(model.profiles.first(where: { $0.id == row.profileID })?.name ?? "已移除或未知配置").font(.system(size: 15, weight: .semibold)).lineLimit(1)
-                                    Text(row.beganAt.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                                    Text(model.profiles.first(where: { $0.id == row.profileID })?.name ?? L10n.text("已移除或未知配置")).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                                    Text(row.beganAt.formatted(.dateTime.locale(L10n.locale).year().month().day().hour().minute())).font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 Text(row.outcome.title).font(.caption).foregroundStyle(row.outcome == .failed ? Color.orange : Color.secondary)
@@ -103,16 +103,16 @@ struct ConnectionHistoryView: View {
                 }.padding(4)
             }.frame(height: 310)
             HStack {
-                Button("清空并暂停记录…", role: .destructive) { confirmingClear = true }.buttonStyle(ReferenceSecondaryButton()).disabled(controller.busy || ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot"))
-                Text("仅本机保存，最多 200 次会话").font(.caption).foregroundStyle(.secondary)
+                Button(L10n.text("清空并暂停记录…"), role: .destructive) { confirmingClear = true }.buttonStyle(ReferenceSecondaryButton()).disabled(controller.busy || ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot"))
+                Text(L10n.text("仅本机保存，最多 200 次会话")).font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("完成") { dismiss() }.buttonStyle(ReferencePrimaryButton()).disabled(controller.busy)
+                Button(L10n.text("完成")) { dismiss() }.buttonStyle(ReferencePrimaryButton()).disabled(controller.busy)
             }
         }.padding(24).frame(width: 780).background(GlassAtmosphere()).interactiveDismissDisabled(controller.busy)
             .task { await controller.start(); if let first = rows.first { expanded.insert(first.id) } }
-            .confirmationDialog("清空全部连接历史并暂停后续记录？", isPresented: $confirmingClear) {
-                Button("清空并暂停", role: .destructive) { Task { await controller.clearAndPause() } }
-                Button("取消", role: .cancel) { }
-            } message: { Text("不会断开 VPN。清空不可撤销；可随时重新开启记录。此操作不清除独立的故障诊断日志。") }
+            .confirmationDialog(L10n.text("清空全部连接历史并暂停后续记录？"), isPresented: $confirmingClear) {
+                Button(L10n.text("清空并暂停"), role: .destructive) { Task { await controller.clearAndPause() } }
+                Button(L10n.text("取消"), role: .cancel) { }
+            } message: { Text(L10n.text("不会断开 VPN。清空不可撤销；可随时重新开启记录。此操作不清除独立的故障诊断日志。")) }
     }
 }

@@ -12,21 +12,21 @@ public enum DiagnosticCode: String, Codable, Sendable {
     case tls, dns, transport, cipher, route, networkChanged, unexpectedExit, recovery
     public var summary: String {
         switch self {
-        case .starting: return "正在启动 OpenVPN"
-        case .connected: return "隧道已建立并通过所选路由策略检查"
-        case .stopped: return "会话已停止"
-        case .cancelled: return "用户取消连接"
-        case .timeout: return "连接或认证超时，请检查服务器及网络"
-        case .authentication: return "认证失败，请检查用户名、密码或认证方式"
-        case .certificate: return "证书或私钥校验失败，请检查有效期与配置"
-        case .tls: return "TLS 协商失败，请检查证书、服务端和网络"
-        case .dns: return "服务器名称解析或 DNS 配置失败"
-        case .transport: return "连接传输失败，请检查地址、端口及网络"
-        case .cipher: return "加密算法协商失败，请检查服务端兼容性"
-        case .route: return "路由操作失败，需要核验系统网络状态"
-        case .networkChanged: return "网络路径发生变化，会话已停止"
-        case .unexpectedExit: return "OpenVPN 异常退出，请检查诊断及服务端状态"
-        case .recovery: return "已执行安全网络恢复检查"
+        case .starting: return L10n.text("正在启动 OpenVPN")
+        case .connected: return L10n.text("隧道已建立并通过所选路由策略检查")
+        case .stopped: return L10n.text("会话已停止")
+        case .cancelled: return L10n.text("用户取消连接")
+        case .timeout: return L10n.text("连接或认证超时，请检查服务器及网络")
+        case .authentication: return L10n.text("认证失败，请检查用户名、密码或认证方式")
+        case .certificate: return L10n.text("证书或私钥校验失败，请检查有效期与配置")
+        case .tls: return L10n.text("TLS 协商失败，请检查证书、服务端和网络")
+        case .dns: return L10n.text("服务器名称解析或 DNS 配置失败")
+        case .transport: return L10n.text("连接传输失败，请检查地址、端口及网络")
+        case .cipher: return L10n.text("加密算法协商失败，请检查服务端兼容性")
+        case .route: return L10n.text("路由操作失败，需要核验系统网络状态")
+        case .networkChanged: return L10n.text("网络路径发生变化，会话已停止")
+        case .unexpectedExit: return L10n.text("OpenVPN 异常退出，请检查诊断及服务端状态")
+        case .recovery: return L10n.text("已执行安全网络恢复检查")
         }
     }
 }

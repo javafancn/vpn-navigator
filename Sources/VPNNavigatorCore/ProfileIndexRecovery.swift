@@ -20,13 +20,13 @@ public enum ProfileIndexFailure: Error, LocalizedError {
     case invalidIndex, missingIndex, noBackup, invalidBackup, recoveryNotNeeded, stalePreview, missingConfiguration
     public var errorDescription: String? {
         switch self {
-        case .invalidIndex: return "配置列表损坏，已有配置文件已保留。请查看配置列表恢复。"
-        case .missingIndex: return "配置列表缺失，但本机仍有备份。请先恢复列表，再导入新配置。"
-        case .noBackup: return "尚无可用的配置列表备份。请从原始 .ovpn 文件重新导入。"
-        case .invalidBackup: return "配置列表备份无法通过校验，未修改任何文件。"
-        case .recoveryNotNeeded: return "当前配置列表可正常读取，无需恢复。"
-        case .stalePreview: return "配置列表或备份已改变，请重新检查后再确认恢复。"
-        case .missingConfiguration: return "备份引用的配置文件缺失或无法安全读取，不能恢复该列表。请保留现状并重新导入原始配置。"
+        case .invalidIndex: return L10n.text("配置列表损坏，已有配置文件已保留。请查看配置列表恢复。")
+        case .missingIndex: return L10n.text("配置列表缺失，但本机仍有备份。请先恢复列表，再导入新配置。")
+        case .noBackup: return L10n.text("尚无可用的配置列表备份。请从原始 .ovpn 文件重新导入。")
+        case .invalidBackup: return L10n.text("配置列表备份无法通过校验，未修改任何文件。")
+        case .recoveryNotNeeded: return L10n.text("当前配置列表可正常读取，无需恢复。")
+        case .stalePreview: return L10n.text("配置列表或备份已改变，请重新检查后再确认恢复。")
+        case .missingConfiguration: return L10n.text("备份引用的配置文件缺失或无法安全读取，不能恢复该列表。请保留现状并重新导入原始配置。")
         }
     }
 }

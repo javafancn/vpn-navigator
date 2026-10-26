@@ -9,7 +9,7 @@ final class ProfileHealthController: ObservableObject {
     @Published private(set) var checking = false
     @Published private(set) var problem: String?
     @Published private(set) var ledger: CertificateReminderLedger
-    @Published private(set) var notificationStatus = "证书到期通知未开启"
+    @Published private(set) var notificationStatus = L10n.text("证书到期通知未开启")
     var remindersEnabled: Bool { ledger.enabled }
     private weak var model: AppModel?
     private let store: ProfileStore
@@ -63,7 +63,7 @@ final class ProfileHealthController: ObservableObject {
                 self.reports = next; self.ledger.reconcile(ids: Set(next.keys)); self.save()
                 await self.deliverReminders(token: token)
             } catch is CancellationError { }
-            catch { if token == self.generation { self.problem = "未能完成配置检查，请检查配置存储及索引状态。" } }
+            catch { if token == self.generation { self.problem = L10n.text("未能完成配置检查，请检查配置存储及索引状态。") } }
         }
     }
     func enableReminders(_ value: Bool) async {
@@ -71,20 +71,20 @@ final class ProfileHealthController: ObservableObject {
         generation = UUID(); pending?.cancel(); checking = false
         ledger.enabled = value; save()
         if !value {
-            notificationStatus = "证书到期通知未开启"
+            notificationStatus = L10n.text("证书到期通知未开启")
             let ids = (model?.profiles ?? []).map { "vpnnav-certificate-" + $0.id.uuidString }
             UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids)
             return
         }
         do { _ = try await model?.smartConnection.requestCertificatePermission() }
-        catch { notificationStatus = "无法请求通知授权，请检查系统设置。"; return }
+        catch { notificationStatus = L10n.text("无法请求通知授权，请检查系统设置。"); return }
         await refreshPermission(); requestRefresh()
     }
     func refreshPermission() async {
-        guard ledger.enabled else { notificationStatus = "证书到期通知未开启"; return }
+        guard ledger.enabled else { notificationStatus = L10n.text("证书到期通知未开启"); return }
         let settings = await UNUserNotificationCenter.current().notificationSettings()
-        notificationStatus = settings.authorizationStatus == .authorized ? "已允许证书提醒；应用运行时检查，横幅由系统设置控制" : "系统尚未允许通知；应用内仍显示检查结果"
+        notificationStatus = settings.authorizationStatus == .authorized ? L10n.text("已允许证书提醒；应用运行时检查，横幅由系统设置控制") : L10n.text("系统尚未允许通知；应用内仍显示检查结果")
     }
     private func save() { if let data = try? JSONEncoder().encode(ledger) { defaults.set(data, forKey: key) } }
     private func deliverReminders(token: UUID) async {

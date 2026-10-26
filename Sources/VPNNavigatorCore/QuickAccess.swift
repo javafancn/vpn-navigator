@@ -5,10 +5,10 @@ public enum QuickAccessShortcut: String, CaseIterable, Identifiable, Sendable {
     public var id: String { rawValue }
     public var title: String {
         switch self {
-        case .disabled: return "关闭"
+        case .disabled: return L10n.text("关闭")
         case .controlOptionCommandV: return "⌃⌥⌘ V"
         case .controlOptionCommandJ: return "⌃⌥⌘ J"
-        case .controlOptionCommandSpace: return "⌃⌥⌘ 空格"
+        case .controlOptionCommandSpace: return L10n.text("⌃⌥⌘ 空格")
         }
     }
 }

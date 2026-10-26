@@ -80,10 +80,10 @@ public enum LeakGuardError: Error, LocalizedError {
     case invalid, incompatibleHost, unresolved, notActive
     public var errorDescription: String? {
         switch self {
-        case .invalid: return "断线保护参数无效。"
-        case .incompatibleHost: return "此 Mac 的 PF 配置无法安全接入断线保护。未替换系统规则，请检查其他网络过滤服务。"
-        case .unresolved: return "断线保护仍需恢复。请先执行安全网络恢复，再建立新连接。"
-        case .notActive: return "无法核验断线保护，已停止 VPN 会话。"
+        case .invalid: return L10n.text("断线保护参数无效。")
+        case .incompatibleHost: return L10n.text("此 Mac 的 PF 配置无法安全接入断线保护。未替换系统规则，请检查其他网络过滤服务。")
+        case .unresolved: return L10n.text("断线保护仍需恢复。请先执行安全网络恢复，再建立新连接。")
+        case .notActive: return L10n.text("无法核验断线保护，已停止 VPN 会话。")
         }
     }
 }

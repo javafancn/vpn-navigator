@@ -1,3 +1,4 @@
+import VPNNavigatorCore
 import SwiftUI
 import AppKit
 
@@ -197,10 +198,10 @@ struct TrafficSparkline: View {
                 .stroke(color, style: StrokeStyle(lineWidth: 1.6,
                                                  lineCap: .round, lineJoin: .round))
             }
-            .accessibilityLabel("真实 OpenVPN 流量趋势")
-            .accessibilityValue("最近 \(samples.count) 个采样点；当前 \(String(format: "%.0f", samples.last ?? 0)) 字节增量")
+            .accessibilityLabel(L10n.text("真实 OpenVPN 流量趋势"))
+            .accessibilityValue(L10n.format("最近 {0} 个采样点；当前 {1} 字节增量", [String(describing: samples.count), String(describing: String(format: "%.0f", samples.last ?? 0))]))
         } else {
-            Text("连接后显示趋势")
+            Text(L10n.text("连接后显示趋势"))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity,

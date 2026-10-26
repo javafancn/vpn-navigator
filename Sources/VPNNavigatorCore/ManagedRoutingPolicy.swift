@@ -56,7 +56,7 @@ public enum ManagedRoutingPolicyError: Error, Equatable, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .conflictingDirective(let line, let option):
-            return "Managed routing cannot import '\(option)' on line \(line). Remove conflicting routes from the profile or use Original mode."
+            return L10n.format("Managed routing cannot import '{0}' on line {1}. Remove conflicting routes from the profile or use Original mode.", [String(describing: option), String(describing: line)])
         }
     }
 }

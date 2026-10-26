@@ -100,7 +100,7 @@ enum WorkspaceAccessibilitySelfTest {
         let axAvailable = referenceExposed || applicationExposed
         if axAvailable {
             let profiles = try element("workspace-profiles")
-            guard profiles.accessibilityLabel() == "配置文件", String(describing: profiles.accessibilityValue()).contains("已选择") else { throw Failure.check("workspace semantics") }
+            guard profiles.accessibilityLabel() == L10n.text("配置文件"), String(describing: profiles.accessibilityValue()).contains(L10n.text("已选择")) else { throw Failure.check("workspace semantics") }
         } else {
             print("SKIP AX assertions: both independent standard SwiftUI button and application hosting view expose no in-process AX nodes; VoiceOver labels/actions require a real assistive client and remain manual acceptance")
         }
@@ -122,7 +122,7 @@ enum WorkspaceAccessibilitySelfTest {
         guard model.selectedID == a.id else { throw Failure.check("list up") }
         if axAvailable {
             let row = try element("library-profile-" + a.id.uuidString)
-            guard row.accessibilityLabel() == "Alpha", String(describing: row.accessibilityValue()).contains("已收藏") else { throw Failure.check("profile semantics") }
+            guard row.accessibilityLabel() == "Alpha", String(describing: row.accessibilityValue()).contains(L10n.text("已收藏")) else { throw Failure.check("profile semantics") }
         }
         model.connectionStatus = "connected: fixture only"; model.activeProfileID = a.id
         try await settle()
@@ -137,7 +137,7 @@ enum WorkspaceAccessibilitySelfTest {
         guard model.selectedID == b.id, model.connected, model.activeProfileID == a.id else { throw Failure.check("selection must not connect") }
         try command("1", code: 18); try await settle()
         guard navigation.tab == .overview else { throw Failure.check("command-1 navigation") }
-        if axAvailable { guard try element("vpn-power").accessibilityLabel() == "断开 VPN" else { throw Failure.check("power semantics") } }
+        if axAvailable { guard try element("vpn-power").accessibilityLabel() == L10n.text("断开 VPN") else { throw Failure.check("power semantics") } }
         try command("f", code: 3); try await settle()
         guard navigation.tab == .profiles, window.firstResponder is NSTextView else { throw Failure.check("cross-workspace search focus") }
         model.profileLibrary.query = "no result"; try await settle()

@@ -29,7 +29,7 @@ private enum EgressQueryOutcome: Sendable {
 final class PublicEgressModel: ObservableObject {
     @Published private(set) var rows: [PublicEgressRow] = []
     @Published private(set) var running = false
-    @Published private(set) var status = "等待手动开始检测"
+    @Published private(set) var status = L10n.text("等待手动开始检测")
     @Published private(set) var checkedAt: Date?
     private let service: PublicEgressService
     private var generation = UUID()
@@ -39,15 +39,15 @@ final class PublicEgressModel: ObservableObject {
     func cancel(clear: Bool = false) {
         generation = UUID(); work?.cancel(); deadline?.cancel(); work = nil; deadline = nil; running = false
         if clear { rows = []; checkedAt = nil }
-        status = "已取消；可重新手动检测"
+        status = L10n.text("已取消；可重新手动检测")
     }
-    func invalidate() { cancel(clear: true); status = "会话或网络状态改变，结果已清除，请重新检测。" }
+    func invalidate() { cancel(clear: true); status = L10n.text("会话或网络状态改变，结果已清除，请重新检测。") }
     func start(model: AppModel, families: [EgressFamily], limitNanoseconds: UInt64 = 25_000_000_000) {
         guard !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot"), model.canStartEgressProbe else { return }
         let families = EgressFamily.allCases.filter { families.contains($0) }
         guard !families.isEmpty else { return }
         cancel(clear: true); let token = UUID(); generation = token
-        running = true; status = "正在查询所选出口并核验会话…"
+        running = true; status = L10n.text("正在查询所选出口并核验会话…")
         let identity = model.egressContextIdentity
         deadline = Task { [weak self] in
             do { try await Task.sleep(nanoseconds: limitNanoseconds) } catch { return }
@@ -56,7 +56,7 @@ final class PublicEgressModel: ObservableObject {
             for family in families where !self.rows.contains(where: { $0.family == family }) {
                 self.rows.append(.init(family: family, response: nil, failure: .timeout, assessment: nil, interface: nil))
             }
-            self.rows.sort { $0.family.rawValue < $1.family.rawValue }; self.status = "整体检测超时，保留已完成的过程采样。"
+            self.rows.sort { $0.family.rawValue < $1.family.rawValue }; self.status = L10n.text("整体检测超时，保留已完成的过程采样。")
         }
         work = Task { [weak self] in
             guard let self else { return }
@@ -102,7 +102,7 @@ final class PublicEgressModel: ObservableObject {
             let final = await self.service.snapshot()
             guard token == self.generation, !Task.isCancelled else { return }
             guard before == EgressSessionContext(final), identity == model.egressContextIdentity else { self.invalidate(); return }
-            self.status = self.rows.allSatisfy { $0.response != nil } ? "检测完成；路径结论仅针对检测服务的采样。" : "检测完成，部分地址族未取得结果。"
+            self.status = self.rows.allSatisfy { $0.response != nil } ? L10n.text("检测完成；路径结论仅针对检测服务的采样。") : L10n.text("检测完成，部分地址族未取得结果。")
         }
     }
     func showSnapshotIfRequested() {
@@ -110,6 +110,6 @@ final class PublicEgressModel: ObservableObject {
               ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-public-egress-snapshot") else { return }
         rows = [.init(family: .ipv4, response: .init(address: "8.8.8.8", remoteAddress: "1.1.1.1", usedProxy: false, cacheHit: false, milliseconds: 120), failure: nil, assessment: .vpnRoute, interface: "utun4"),
                 .init(family: .ipv6, response: nil, failure: .transport, assessment: nil, interface: nil)]
-        checkedAt = Date(); status = "界面演示数据；没有发起公网请求。"
+        checkedAt = Date(); status = L10n.text("界面演示数据；没有发起公网请求。")
     }
 }

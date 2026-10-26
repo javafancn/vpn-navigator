@@ -1,0 +1,2 @@
+"NSLocationUsageDescription" = "Reads the current Wi-Fi name only when you enable auto-connect for specific Wi-Fi networks. Geographic coordinates are not collected.";
+"NSLocationWhenInUseUsageDescription" = "Reads the current Wi-Fi name only when you enable auto-connect for specific Wi-Fi networks. Geographic coordinates are not collected.";

@@ -41,10 +41,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var profileIndexIssue: String?
     @Published private(set) var profileIndexRecovery: ProfileIndexRecoveryPreview?
     @Published private(set) var profileIndexRecoveryProblem: String?
-    @Published private(set) var profileIndexBackupStatus = "尚未检查"
+    @Published private(set) var profileIndexBackupStatus = L10n.text("尚未检查")
     @Published private(set) var profileIndexRecoveryInProgress = false
     @Published var showingProfileIndexRecovery = false
-    @Published var quickAccessShortcutStatus = "全局快捷键已关闭"
+    @Published var quickAccessShortcutStatus = L10n.text("全局快捷键已关闭")
     lazy var quickAccess = QuickAccessCoordinator(model: self)
     private let smartDefaults: UserDefaults
     lazy var smartConnection = SmartConnectionController(model: self, defaults: smartDefaults)
@@ -82,6 +82,7 @@ final class AppModel: ObservableObject {
     @Published var showingRouteExplanation = false
     @Published var showingTroubleshooting = false
     @Published var showingPublicEgress = false
+    @Published var showingLanguageSettings = false
     @Published var showingKeyboardHelp = false
     /// Prevent main-window menu shortcuts from navigating behind sheets or a
     /// native file/authorization panel. The native command router rechecks it.
@@ -89,7 +90,7 @@ final class AppModel: ObservableObject {
         NSApp.modalWindow != nil || NSApp.keyWindow?.sheetParent != nil || NSApp.mainWindow?.attachedSheet != nil
     }
     var workspaceNavigationBlocked: Bool {
-        nativeDialogPresented || showingKeyboardHelp || message != nil ||
+        nativeDialogPresented || showingLanguageSettings || showingKeyboardHelp || message != nil ||
         profilePickerPresented || showingAccountCredentials || authenticationChallenge != nil ||
         showingMaintenance || showingSetup || showingPreferences || showingProfileBackup ||
         profileHealthTarget != nil || showingSmartConnection || showingProfileIndexRecovery ||
@@ -130,13 +131,13 @@ final class AppModel: ObservableObject {
     @Published private(set) var backgroundServicesBusy = false
     @Published private(set) var automaticRulesEnabled = true
     @Published private(set) var launchAtLogin = false
-    @Published private(set) var rulesServiceStatus = "未检查"
-    @Published private(set) var loginServiceStatus = "未检查"
+    @Published private(set) var rulesServiceStatus = L10n.text("未检查")
+    @Published private(set) var loginServiceStatus = L10n.text("未检查")
     @Published private(set) var backgroundServicesIssue: String?
     private let backgroundPreferences: BackgroundServicePreferences
     @Published var busy = false
     @Published var message: String?
-    @Published var helperStatus = "未启用"
+    @Published var helperStatus = L10n.text("未启用")
     @Published var installationIssue: String?
     @Published var availableInstaller: URL?
     @Published var availableReleasePage: URL?
@@ -182,7 +183,7 @@ final class AppModel: ObservableObject {
         launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-public-egress-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-connection-history-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-health-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-localization-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-public-egress-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-connection-history-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-health-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -281,9 +282,9 @@ final class AppModel: ObservableObject {
         do {
             let info = try await store.indexBackupInfo()
             profileIndexBackupStatus = info.matchesCurrentIndex ?
-                "已备份 \(info.profileCount) 个配置 · " + info.savedAt.formatted(.dateTime.locale(Locale(identifier: "zh_CN")).year().month().day().hour().minute()) :
-                "备份与当前列表不一致，请保留原始配置文件。"
-        } catch { profileIndexBackupStatus = "暂无可用备份：" + error.localizedDescription }
+                L10n.format("已备份 {0} 个配置 · ", [String(describing: info.profileCount)]) + info.savedAt.formatted(.dateTime.locale(L10n.locale).year().month().day().hour().minute()) :
+                L10n.text("备份与当前列表不一致，请保留原始配置文件。")
+        } catch { profileIndexBackupStatus = L10n.text("暂无可用备份：") + error.localizedDescription }
     }
     private func refreshProfileIndexRecovery() async {
         await refreshProfileIndexBackupStatus()
@@ -309,8 +310,8 @@ final class AppModel: ObservableObject {
         do {
             try await store.refreshIndexBackup()
             await refreshProfileIndexBackupStatus()
-            profileIndexRecoveryProblem = "配置列表备份已更新。"
-        } catch { profileIndexRecoveryProblem = "未更新备份：" + error.localizedDescription }
+            profileIndexRecoveryProblem = L10n.text("配置列表备份已更新。")
+        } catch { profileIndexRecoveryProblem = L10n.text("未更新备份：") + error.localizedDescription }
     }
     func inspectProfileIndex() async {
         guard !busy, !profileTransferInProgress, !maintenanceInProgress, !backgroundServicesBusy,
@@ -327,12 +328,12 @@ final class AppModel: ObservableObject {
         do {
             try await store.recoverIndex(preview)
             try await loadProfiles()
-            profileIndexRecoveryProblem = "配置列表已恢复。"
+            profileIndexRecoveryProblem = L10n.text("配置列表已恢复。")
         } catch {
             // Keep the confirmation disabled until the user explicitly inspects
             // again. A stale confirmation must never become a new approval.
             profileIndexRecovery = nil
-            profileIndexRecoveryProblem = "未恢复：" + error.localizedDescription
+            profileIndexRecoveryProblem = L10n.text("未恢复：") + error.localizedDescription
         }
     }
     func showProfileIndexRecoverySnapshot() async {
@@ -351,9 +352,9 @@ final class AppModel: ObservableObject {
             try Data("fixture damage".utf8).write(to: folder.appendingPathComponent("profiles.json"))
             profileIndexRecovery = try await fixture.indexRecoveryPreview()
             profileIndexIssue = ProfileIndexFailure.invalidIndex.localizedDescription
-            profileIndexBackupStatus = "已备份 1 个配置 · 本机故障恢复预览"
+            profileIndexBackupStatus = L10n.text("已备份 1 个配置 · 本机故障恢复预览")
             showingProfileIndexRecovery = true
-        } catch { message = "恢复界面预览未能生成。" }
+        } catch { message = L10n.text("恢复界面预览未能生成。") }
     }
     func importFile(_ url: URL) async {
         await importFiles([url], presentReport: false)
@@ -362,7 +363,7 @@ final class AppModel: ObservableObject {
         profileOpenReady && !nativeDialogPresented && profileIndexIssue == nil && !incomingProfiles.isEmpty && !profileDropLoading && !profilePickerPresented &&
         !routingModeSwitching && !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress && !busy &&
         !connecting && !stopping && !showingConnectionHistory && profileHealthTarget == nil && !showingImportReport && !showingSetup && !showingMaintenance &&
-        !showingPreferences && !showingKeyboardHelp && !showingPublicEgress && !showingDiagnostics && !showingRouteExplanation && !showingTroubleshooting && customRuleEditorProfile == nil && !showingProfileIndexRecovery && !showingAccountCredentials &&
+        !showingPreferences && !showingLanguageSettings && !showingKeyboardHelp && !showingPublicEgress && !showingDiagnostics && !showingRouteExplanation && !showingTroubleshooting && customRuleEditorProfile == nil && !showingProfileIndexRecovery && !showingAccountCredentials &&
         authenticationChallenge == nil && message == nil
     }
     func receiveProfileOpenRequest(_ request: ProfileOpenQueue) {
@@ -405,7 +406,7 @@ final class AppModel: ObservableObject {
     func importFiles(_ urls: [URL], presentReport: Bool = true) async {
         guard !reviewingIncomingProfiles, !maintenanceInProgress, !backgroundServicesBusy,
               !profileTransferInProgress, !routingModeSwitching, profileIndexIssue == nil, !busy, !connecting, !stopping else {
-            message = "请等待当前操作完成后再导入配置。"; return
+            message = L10n.text("请等待当前操作完成后再导入配置。"); return
         }
         guard !urls.isEmpty, urls.count <= ProfileBatchImporter.maximumFiles else {
             message = ProfileBatchImporter.Failure.fileCount.localizedDescription; return
@@ -425,9 +426,9 @@ final class AppModel: ObservableObject {
             }).first { selectedID = id }
             if !presentReport {
                 if let first = importResults.first, case .failed(let failure) = first.status { message = failure.summary }
-                else { message = "配置已导入。" }
+                else { message = L10n.text("配置已导入。") }
             }
-        } catch { message = "无法完成导入或刷新配置列表，请检查存储权限。" }
+        } catch { message = L10n.text("无法完成导入或刷新配置列表，请检查存储权限。") }
     }
     func cancelProfileImport() {
         guard profileImportInProgress else { return }
@@ -455,10 +456,10 @@ final class AppModel: ObservableObject {
         return profiles.first(where: { $0.id == id })?.mode
     }
     var routingModeStatus: String {
-        if let target = routingModeTarget { return "正在切换为" + target.title + "…" }
-        if connected { return "实际路由：" + (activeRoutingMode?.title ?? "尚未核验") }
-        if activeProfileID != nil { return "连接状态变化中，路由待核验" }
-        return "保存后在下次连接生效"
+        if let target = routingModeTarget { return L10n.text("正在切换为") + target.title + "…" }
+        if connected { return L10n.text("实际路由：") + (activeRoutingMode?.title ?? L10n.text("尚未核验")) }
+        if activeProfileID != nil { return L10n.text("连接状态变化中，路由待核验") }
+        return L10n.text("保存后在下次连接生效")
     }
     func canSetRoutingMode(_ mode: RoutingMode, for id: UUID?) -> Bool {
         guard let id, profiles.contains(where: { $0.id == id }), !busy, !routingModeSwitching,
@@ -502,14 +503,14 @@ final class AppModel: ObservableObject {
                       confirmed.state == .connected, confirmed.activeProfileID == id,
                       confirmed.attemptID == expectedAttempt, confirmed.routingMode == mode,
                       let confirmedRevision = confirmed.routingRevision, confirmedRevision != revision else {
-                    message = "路由切换未确认：" + response; return
+                    message = L10n.text("路由切换未确认：") + response; return
                 }
                 do { try await persistMode(mode, id: id) }
-                catch { message = "实际路由已切换为" + mode.title + "，但默认策略保存失败，请在下次连接前重新选择。" }
-            } catch { message = "未切换路由：" + error.localizedDescription }
+                catch { message = L10n.text("实际路由已切换为") + mode.title + L10n.text("，但默认策略保存失败，请在下次连接前重新选择。") }
+            } catch { message = L10n.text("未切换路由：") + error.localizedDescription }
         } else {
             do { try await persistMode(mode, id: id) }
-            catch { message = "无法保存路由策略：" + error.localizedDescription }
+            catch { message = L10n.text("无法保存路由策略：") + error.localizedDescription }
         }
     }
     private func persistMode(_ mode: RoutingMode, id: UUID) async throws {
@@ -521,7 +522,7 @@ final class AppModel: ObservableObject {
     private func markRoutingUnverified() {
         activeRoutingMode = nil; routingRevision = nil; activeCustomRuleDigest = nil; activeCustomRuleCount = nil; activeIPStack = nil; helperStateVerified = false
         networkRecoveryRequired = true
-        connectionStatus = "failed: 无法核验路由切换结果，请检查助手与网络恢复状态"
+        connectionStatus = L10n.text("failed: 无法核验路由切换结果，请检查助手与网络恢复状态")
     }
     func canEditProfileMetadata(_ id: UUID) -> Bool {
         profileIndexIssue == nil && profiles.contains(where: { $0.id == id }) && !busy &&
@@ -533,7 +534,7 @@ final class AppModel: ObservableObject {
         let cleanGroup = group.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty, cleanName.count <= 100,
               !cleanGroup.isEmpty, cleanGroup.count <= 48, notes.count <= 4000 else {
-            message = "名称最多 100 字、类别最多 48 字、备注最多 4000 字，名称与类别不能为空。"; return
+            message = L10n.text("名称最多 100 字、类别最多 48 字、备注最多 4000 字，名称与类别不能为空。"); return
         }
         await persistProfileMetadata(id) { item in
             item.name = cleanName; item.group = cleanGroup; item.notes = notes; item.isFavorite = favorite
@@ -554,24 +555,24 @@ final class AppModel: ObservableObject {
             change(&item)
             try await store.update(item)
             try await loadProfiles()
-        } catch { message = "无法保存配置信息：" + error.localizedDescription }
+        } catch { message = L10n.text("无法保存配置信息：") + error.localizedDescription }
     }
 
     func canEditCustomRules(_ id: UUID) -> Bool {
         canEditProfileMetadata(id) && id != activeProfileID && !connecting && !stopping
     }
     func saveCustomRules(for id: UUID, original: [CustomRouteRule], draft: [CustomRouteRule]) async -> String? {
-        guard canEditCustomRules(id) else { return "请先断开该配置的连接并等待其它操作完成。" }
+        guard canEditCustomRules(id) else { return L10n.text("请先断开该配置的连接并等待其它操作完成。") }
         profileMetadataInProgress = true; profileMutations += 1
         defer { profileMetadataInProgress = false; profileMutations -= 1 }
         do {
             let validated = try CustomRuleSet(draft)
             let latest = try await store.list()
-            guard var item = latest.first(where: { $0.id == id }), item.customRules == original else { return "配置规则已改变，请关闭后重新打开编辑器。" }
+            guard var item = latest.first(where: { $0.id == id }), item.customRules == original else { return L10n.text("配置规则已改变，请关闭后重新打开编辑器。") }
             item.customRules = validated.rules
             try await store.update(item); try await loadProfiles()
             return nil
-        } catch { return "未保存规则：" + error.localizedDescription }
+        } catch { return L10n.text("未保存规则：") + error.localizedDescription }
     }
     func checkConfiguration(_ profile: VPNProfile?, mode: RoutingMode?) async -> ConfigurationCheckState {
         guard let profile else { return .missing }
@@ -585,7 +586,7 @@ final class AppModel: ObservableObject {
     }
     func editSource(for profile: VPNProfile) async -> String? {
         do { return try await store.runtimeConfig(for: profile) }
-        catch { message = "Cannot open configuration: \(error.localizedDescription)"; return nil }
+        catch { message = L10n.format("Cannot open configuration: {0}", [String(describing: error.localizedDescription)]); return nil }
     }
 
     func saveSource(for profile: VPNProfile, text: String) async -> Bool {
@@ -593,7 +594,7 @@ final class AppModel: ObservableObject {
         profileUpdateInProgress = true; profileMutations += 1
         defer { profileUpdateInProgress = false; profileMutations -= 1; profileHealth.requestRefresh() }
         guard !connected && !connecting else {
-            message = "Disconnect before editing a VPN profile."
+            message = L10n.text("Disconnect before editing a VPN profile.")
             return false
         }
         do {
@@ -602,10 +603,10 @@ final class AppModel: ObservableObject {
             if profiles.first(where: { $0.id == profile.id })?.credentialID != profile.credentialID {
                 username = ""; password = ""; KeychainVault.remove(id: profile.credentialID)
             }
-            message = "Configuration saved and previous version archived."
+            message = L10n.text("Configuration saved and previous version archived.")
             return true
         } catch {
-            message = "Configuration was not saved: \(error.localizedDescription)"
+            message = L10n.format("Configuration was not saved: {0}", [String(describing: error.localizedDescription)])
             return false
         }
     }
@@ -615,7 +616,7 @@ final class AppModel: ObservableObject {
             return []
         }
         do { return try await store.revisions(for: profile) }
-        catch { message = "Cannot read profile history: \(error.localizedDescription)"; return [] }
+        catch { message = L10n.format("Cannot read profile history: {0}", [String(describing: error.localizedDescription)]); return [] }
     }
 
     func restoreSource(for profile: VPNProfile, revision: String) async -> Bool {
@@ -623,7 +624,7 @@ final class AppModel: ObservableObject {
         profileUpdateInProgress = true; profileMutations += 1
         defer { profileUpdateInProgress = false; profileMutations -= 1; profileHealth.requestRefresh() }
         guard !connected && !connecting else {
-            message = "Disconnect before restoring a VPN profile."
+            message = L10n.text("Disconnect before restoring a VPN profile.")
             return false
         }
         do {
@@ -632,10 +633,10 @@ final class AppModel: ObservableObject {
             if profiles.first(where: { $0.id == profile.id })?.credentialID != profile.credentialID {
                 username = ""; password = ""; KeychainVault.remove(id: profile.credentialID)
             }
-            message = "Previous configuration restored. The newer version was archived."
+            message = L10n.text("Previous configuration restored. The newer version was archived.")
             return true
         } catch {
-            message = "Restore refused: \(error.localizedDescription)"
+            message = L10n.format("Restore refused: {0}", [String(describing: error.localizedDescription)])
             return false
         }
     }
@@ -644,14 +645,14 @@ final class AppModel: ObservableObject {
         canEditProfileMetadata(id) && canQuit && activeProfileID == nil && !connecting && !stopping
     }
     func deleteProfile(_ id: UUID) async {
-        guard canDeleteProfile(id) else { message = "请先断开 VPN 并完成其它操作或网络恢复，再删除配置。"; return }
+        guard canDeleteProfile(id) else { message = L10n.text("请先断开 VPN 并完成其它操作或网络恢复，再删除配置。"); return }
         profileMetadataInProgress = true; profileMutations += 1
         defer { profileMetadataInProgress = false; profileMutations -= 1 }
         do {
             let credentialID = profiles.first(where: { $0.id == id })?.credentialID ?? id
             try await store.delete(id: id); KeychainVault.remove(id: credentialID)
             try await loadProfiles()
-        } catch { message = "无法删除配置：" + error.localizedDescription }
+        } catch { message = L10n.text("无法删除配置：") + error.localizedDescription }
     }
 
     private func routingRuleText(_ ipv4: RuleSet? = nil, ipv6: IPv6RuleSet? = nil) -> String {
@@ -666,12 +667,12 @@ final class AppModel: ObservableObject {
             let candidate = try await ipv6Updater.fetchCandidate()
             if connected {
                 let response = await helper.updateRules(routingRuleText(ipv6: candidate))
-                guard response == "Rules applied" || response == "NO_ACTIVE_SPLIT" else { message = "IPv6 更新未确认，旧缓存保留：" + response; return }
+                guard response == "Rules applied" || response == "NO_ACTIVE_SPLIT" else { message = L10n.text("IPv6 更新未确认，旧缓存保留：") + response; return }
                 await refreshConnectionStatus()
             }
             try await ipv6Updater.commit(candidate); ipv6Preview = candidate
-            message = "已校验并保存 \(candidate.routes.count) 条中国 IPv6 注册前缀；活动规则会话已同步核验。"
-        } catch { message = "IPv6 更新失败，原缓存保留：" + error.localizedDescription }
+            message = L10n.format("已校验并保存 {0} 条中国 IPv6 注册前缀；活动规则会话已同步核验。", [String(describing: candidate.routes.count)])
+        } catch { message = L10n.text("IPv6 更新失败，原缓存保留：") + error.localizedDescription }
     }
     func refreshRules() async {
         guard !busy, !routingModeSwitching, !connecting, !stopping else { return }
@@ -682,25 +683,25 @@ final class AppModel: ObservableObject {
             let (v4, v6) = try await (candidate4, candidate6)
             if connected {
                 let response = await helper.updateRules(routingRuleText(v4, ipv6: v6))
-                guard response == "Rules applied" || response == "NO_ACTIVE_SPLIT" else { message = "双栈更新未确认，原缓存保留：" + response; return }
+                guard response == "Rules applied" || response == "NO_ACTIVE_SPLIT" else { message = L10n.text("双栈更新未确认，原缓存保留：") + response; return }
                 await refreshConnectionStatus()
             }
             try await updater.commit(v4); try await ipv6Updater.commit(v6)
             rules = v4; ipv6Preview = v6; ruleSnapshots = try await updater.snapshots(); rulesUpdatedAt = try await updater.lastUpdated()
-            message = "已校验并保存 IPv4 \(v4.routes.count) 条、IPv6 \(v6.routes.count) 条规则。"
-        } catch { message = "双栈规则更新失败；请查看当前实际会话状态：" + error.localizedDescription }
+            message = L10n.format("已校验并保存 IPv4 {0} 条、IPv6 {1} 条规则。", [String(describing: v4.routes.count), String(describing: v6.routes.count)])
+        } catch { message = L10n.text("双栈规则更新失败；请查看当前实际会话状态：") + error.localizedDescription }
     }
 
     func checkForUpdates() async {
         if BuildChannel.isLocal {
-            message = "本地版通过可信来源的同架构 Local.pkg 手动更新；请先打开升级与卸载准备。"
+            message = L10n.text("本地版通过可信来源的同架构 Local.pkg 手动更新；请先打开升级与卸载准备。")
             showingMaintenance = true
             return
         }
         do {
             let release = try await UpdateChecker.latestRelease()
             guard ReleaseAssetPolicy.isApprovedReleasePage(release.html_url) else {
-                message = "Release metadata failed URL verification."
+                message = L10n.text("Release metadata failed URL verification.")
                 return
             }
             availableReleasePage = release.html_url
@@ -708,25 +709,25 @@ final class AppModel: ObservableObject {
                   let installed = ReleaseVersion(
                     Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
                   ) else {
-                message = "Release version could not be verified."
+                message = L10n.text("Release version could not be verified.")
                 return
             }
             if remote <= installed {
                 availableInstaller = nil
-                message = "VPN Navigator \(installed) is up to date."
+                message = L10n.format("VPN Navigator {0} is up to date.", [String(describing: installed)])
                 return
             }
             availableInstaller = release.trustedInstallerURL
-            message = "VPN Navigator \(remote) is available. Downloading requires your approval; installation uses the macOS Installer."
+            message = L10n.format("VPN Navigator {0} is available. Downloading requires your approval; installation uses the macOS Installer.", [String(describing: remote)])
         } catch {
-            message = "Cannot check for application updates: \(error.localizedDescription)"
+            message = L10n.format("Cannot check for application updates: {0}", [String(describing: error.localizedDescription)])
         }
     }
     func downloadVerifiedUpdate() async {
         guard !BuildChannel.isLocal else { return }
         guard !busy, let url = availableInstaller else { return }
         guard !connected && !connecting, helper.installationStatus != .enabled else {
-            message = "请先准备升级：断开 VPN 并停用后台服务。"
+            message = L10n.text("请先准备升级：断开 VPN 并停用后台服务。")
             showingMaintenance = true
             return
         }
@@ -741,7 +742,7 @@ final class AppModel: ObservableObject {
                 "Installer opened. Review and approve the signed update in macOS." :
                 "Verified installer saved at \(local.path); open it in Finder to continue."
         } catch {
-            message = "Update verification failed: \(error.localizedDescription)"
+            message = L10n.format("Update verification failed: {0}", [String(describing: error.localizedDescription)])
         }
     }
     func viewReleasePage() {
@@ -751,7 +752,7 @@ final class AppModel: ObservableObject {
     }
     func retryNetworkRecovery() async {
         guard !connected && !connecting else {
-            message = "Disconnect the VPN before attempting route recovery."
+            message = L10n.text("Disconnect the VPN before attempting route recovery.")
             return
         }
         message = await helper.recoverOrphanedRoutes()
@@ -763,7 +764,7 @@ final class AppModel: ObservableObject {
     }
     func refreshBackgroundServiceStatus() {
         func display(_ status: SMAppService.Status) -> String {
-            status == .requiresApproval ? "需要系统授权或服务配置需修复" : displayHelperStatus(status)
+            status == .requiresApproval ? L10n.text("需要系统授权或服务配置需修复") : displayHelperStatus(status)
         }
         rulesServiceStatus = display(UserServices.rulesStatus)
         loginServiceStatus = display(UserServices.loginStatus)
@@ -804,18 +805,18 @@ final class AppModel: ObservableObject {
             guard matches(UserServices.rulesStatus, enabled: automaticRulesEnabled),
                   matches(UserServices.loginStatus, enabled: launchAtLogin) else { throw LocalInstallError.command }
         } catch {
-            backgroundServicesIssue = "后台服务未完全应用，偏好已保留。请检查安装或系统授权后重试：\(error.localizedDescription)"
+            backgroundServicesIssue = L10n.format("后台服务未完全应用，偏好已保留。请检查安装或系统授权后重试：{0}", [String(describing: error.localizedDescription)])
         }
     }
     private func unregisterNetworkServices() async -> Bool {
         guard !connected && !connecting else {
-            message = "Disconnect VPN before disabling background services."
+            message = L10n.text("Disconnect VPN before disabling background services.")
             return false
         }
         if helper.installationStatus == .enabled {
             let actual = await helper.status()
             guard actual.hasPrefix("disconnected:") else {
-                message = "Background helper reports an active, failed or unresolved session; verify recovery before disabling services: \(actual)"
+                message = L10n.format("Background helper reports an active, failed or unresolved session; verify recovery before disabling services: {0}", [String(describing: actual)])
                 return false
             }
         }
@@ -826,12 +827,12 @@ final class AppModel: ObservableObject {
             await refreshConnectionStatus()
             refreshBackgroundServiceStatus()
             guard [UserServices.rulesStatus, helper.installationStatus].allSatisfy({ $0 == .notRegistered || $0 == .notFound }) else {
-                message = "后台服务尚未完全停用，请检查系统设置。"; return false
+                message = L10n.text("后台服务尚未完全停用，请检查系统设置。"); return false
             }
-            message = "VPN Navigator background services have been unregistered."
+            message = L10n.text("VPN Navigator background services have been unregistered.")
             return true
         } catch {
-            message = "Service removal requires attention: \(error.localizedDescription)"
+            message = L10n.format("Service removal requires attention: {0}", [String(describing: error.localizedDescription)])
             return false
         }
     }
@@ -848,7 +849,7 @@ final class AppModel: ObservableObject {
                 let result = await helper.updateRules(
                     routingRuleText(restored))
                 guard result == "Rules applied" || result == "NO_ACTIVE_SPLIT" else {
-                    message = "Previous rules preserved: \(result)"
+                    message = L10n.format("Previous rules preserved: {0}", [String(describing: result)])
                     return
                 }
             }
@@ -856,20 +857,20 @@ final class AppModel: ObservableObject {
             rules = restored
             ruleSnapshots = try await updater.snapshots()
             rulesUpdatedAt = try await updater.lastUpdated()
-            message = "Previous China IPv4 rules restored."
+            message = L10n.text("Previous China IPv4 rules restored.")
         } catch {
-            message = "Rule rollback refused: \(error.localizedDescription)"
+            message = L10n.format("Rule rollback refused: {0}", [String(describing: error.localizedDescription)])
         }
     }
 
     private func displayHelperStatus(_ status: SMAppService.Status) -> String {
-        if BuildChannel.isLocal, LocalInstallation.isInstallationPending { return "安装未完成" }
+        if BuildChannel.isLocal, LocalInstallation.isInstallationPending { return L10n.text("安装未完成") }
         switch status {
-        case .enabled: return "已启用"
-        case .notRegistered: return "未注册"
-        case .requiresApproval: return BuildChannel.isLocal ? "安装需修复或非安装用户" : "等待系统授权"
-        case .notFound: return "服务未安装"
-        @unknown default: return "状态未知"
+        case .enabled: return L10n.text("已启用")
+        case .notRegistered: return L10n.text("未注册")
+        case .requiresApproval: return BuildChannel.isLocal ? L10n.text("安装需修复或非安装用户") : L10n.text("等待系统授权")
+        case .notFound: return L10n.text("服务未安装")
+        @unknown default: return L10n.text("状态未知")
         }
     }
 
@@ -877,7 +878,7 @@ final class AppModel: ObservableObject {
         guard !maintenanceInProgress, !backgroundServicesBusy else { return }
         if BuildChannel.isLocal {
             if helper.installationStatus == .enabled {
-                Task { await restoreBackgroundServices(); message = backgroundServicesIssue ?? "本地助手已批准，后台服务已按偏好恢复。" }
+                Task { await restoreBackgroundServices(); message = backgroundServicesIssue ?? L10n.text("本地助手已批准，后台服务已按偏好恢复。") }
             } else { openLocalInstaller() }
             return
         }
@@ -885,8 +886,8 @@ final class AppModel: ObservableObject {
             try helper.requestRegistration()
             Task { await restoreBackgroundServices() }
             helperStatus = displayHelperStatus(helper.installationStatus)
-            message = "Enable the background helper in System Settings if requested. A signed .app distribution is required."
-        } catch { message = "Helper registration failed: \(error.localizedDescription)" }
+            message = L10n.text("Enable the background helper in System Settings if requested. A signed .app distribution is required.")
+        } catch { message = L10n.format("Helper registration failed: {0}", [String(describing: error.localizedDescription)]) }
     }
     func applyVerifiedSessionReport(_ report: SessionReport) {
         if !(busy && connectionAttempt != nil && sessionState == .connecting && report.state == .disconnected) {
@@ -931,7 +932,7 @@ final class AppModel: ObservableObject {
                 smartConnection.observe(nil)
                 connectionHistory.observe(.unverified)
                 authenticationChallenge = nil
-                connectionStatus = "failed: 无法核验后台会话，请检查助手与网络恢复状态"
+                connectionStatus = L10n.text("failed: 无法核验后台会话，请检查助手与网络恢复状态")
                 activeProfileID = nil
                 traffic = nil
                 receiveTrend.reset()
@@ -942,7 +943,7 @@ final class AppModel: ObservableObject {
             helperStateVerified = !unresolved
             smartConnection.observe(nil)
             connectionHistory.observe(.unverified)
-            connectionStatus = unresolved ? "failed: 本地安装未通过校验，请先恢复网络并修复安装" : "disconnected: Privileged helper not enabled"
+            connectionStatus = unresolved ? L10n.text("failed: 本地安装未通过校验，请先恢复网络并修复安装") : "disconnected: Privileged helper not enabled"
             activeRoutingMode = nil; routingRevision = nil; activeCustomRuleDigest = nil; activeCustomRuleCount = nil; activeIPStack = nil
             activeProfileID = nil
             authenticationChallenge = nil
@@ -957,7 +958,7 @@ final class AppModel: ObservableObject {
               recoveryRequired: networkRecoveryRequired || firewallRecoveryRequired,
               occupied: nativeDialogPresented || !profileOpenReady || profileIndexIssue != nil || (busy && !preparingAutomatic) || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || profileMutations != 0 ||
                 routingModeSwitching || showingImportReport || showingSetup || showingMaintenance || showingPreferences ||
-                showingKeyboardHelp || showingPublicEgress || showingConnectionHistory || profileHealthTarget != nil || showingProfileBackup || showingSmartConnection || showingDiagnostics || showingRouteExplanation || showingTroubleshooting ||
+                showingLanguageSettings || showingKeyboardHelp || showingPublicEgress || showingConnectionHistory || profileHealthTarget != nil || showingProfileBackup || showingSmartConnection || showingDiagnostics || showingRouteExplanation || showingTroubleshooting ||
                 customRuleEditorProfile != nil || showingProfileIndexRecovery || profilePickerPresented ||
                 profileDropLoading || !incomingProfiles.isEmpty || authenticationChallenge != nil || showingAccountCredentials ||
                 !username.isEmpty || !password.isEmpty || quickAccess.panel?.isVisible == true,
@@ -965,13 +966,13 @@ final class AppModel: ObservableObject {
     }
     var menuStatusTitle: String {
         switch sessionState {
-        case .connected: return "已连接"
-        case .connecting: return "正在连接"
-        case .authenticating: return "等待身份验证"
-        case .reconnecting: return "正在重连"
-        case .stopping: return "正在断开与恢复"
-        case .failed: return "连接异常，请检查"
-        case .disconnected: return "未连接"
+        case .connected: return L10n.text("已连接")
+        case .connecting: return L10n.text("正在连接")
+        case .authenticating: return L10n.text("等待身份验证")
+        case .reconnecting: return L10n.text("正在重连")
+        case .stopping: return L10n.text("正在断开与恢复")
+        case .failed: return L10n.text("连接异常，请检查")
+        case .disconnected: return L10n.text("未连接")
         }
     }
     var menuStatusSymbol: String {
@@ -983,7 +984,7 @@ final class AppModel: ObservableObject {
                   !smartConnectionContext().occupied, helperStateVerified, helper.installationStatus == .enabled,
                   sessionState == .disconnected, activeProfileID == nil, !networkRecoveryRequired, !firewallRecoveryRequired else { return }
         } else { smartConnection.cancelPending() }
-        guard !showingKeyboardHelp && !showingPublicEgress, !showingConnectionHistory, profileHealthTarget == nil, !maintenanceInProgress, !profileTransferInProgress, !showingImportReport else { return }
+        guard !showingLanguageSettings && !showingKeyboardHelp && !showingPublicEgress, !showingConnectionHistory, profileHealthTarget == nil, !maintenanceInProgress, !profileTransferInProgress, !showingImportReport else { return }
         if BuildChannel.isLocal, LocalInstallation.isInstallationPending {
             message = helper.localInstallationIssue; if !automatically { showingSetup = true }; return
         }
@@ -991,7 +992,7 @@ final class AppModel: ObservableObject {
         smartConnection.willStartConnection()
         statusEpoch &+= 1
         let attempt = UUID(); connectionAttempt = attempt
-        connectionStatus = "connecting: 正在准备连接"
+        connectionStatus = L10n.text("connecting: 正在准备连接")
         busy = true
         defer { if connectionAttempt == attempt { busy = false } }
         localEvents.append(.starting)
@@ -1000,12 +1001,12 @@ final class AppModel: ObservableObject {
             let validated = try ProfileSafety.validate(text)
             try ManagedRoutingPolicy.validate(validated, mode: selected.mode)
             if selected.mode == .chinaDirect && rules == nil {
-                message = "请先下载或导入中国 IPv4 规则。"
-                connectionStatus = "failed: 缺少中国 IPv4 规则"
+                message = L10n.text("请先下载或导入中国 IPv4 规则。")
+                connectionStatus = L10n.text("failed: 缺少中国 IPv4 规则")
                 return
             }
             guard connectionAttempt == attempt, selectedID == selected.id else {
-                if connectionAttempt == attempt { connectionStatus = "disconnected: 所选配置已改变" }
+                if connectionAttempt == attempt { connectionStatus = L10n.text("disconnected: 所选配置已改变") }
                 return
             }
             var connectionUsername = username, connectionPassword = password
@@ -1023,7 +1024,7 @@ final class AppModel: ObservableObject {
                     if password.isEmpty && username == secret.username { password = secret.password }
                 }
                 if validated.requestsCredentials && (username.isEmpty || password.isEmpty) {
-                    connectionStatus = "disconnected: 等待输入身份验证信息"
+                    connectionStatus = L10n.text("disconnected: 等待输入身份验证信息")
                     showingAccountCredentials = true
                     return
                 }
@@ -1057,10 +1058,10 @@ final class AppModel: ObservableObject {
             guard connectionAttempt == attempt else { return }
             if !automatically { password = "" }
             if automatically, let smartError = error as? SmartConnectionError, case .cancelled = smartError {
-                connectionStatus = "disconnected: 自动连接条件已改变"
+                connectionStatus = L10n.text("disconnected: 自动连接条件已改变")
             } else {
-                message = automatically ? error.localizedDescription : "配置未通过检查：\(error.localizedDescription)"
-                connectionStatus = "failed: 连接准备未完成"
+                message = automatically ? error.localizedDescription : L10n.format("配置未通过检查：{0}", [String(describing: error.localizedDescription)])
+                connectionStatus = L10n.text("failed: 连接准备未完成")
             }
         }
     }
@@ -1072,7 +1073,7 @@ final class AppModel: ObservableObject {
             guard let report = await helper.sessionReport(), expectedSession.matches(report),
                   selectedID == selected.id, profiles.contains(where: { $0.id == selected.id }) else {
                 busy = false
-                message = "连接状态或所选配置已改变，未执行切换。"
+                message = L10n.text("连接状态或所选配置已改变，未执行切换。")
                 await refreshConnectionStatus()
                 return
             }
@@ -1083,18 +1084,18 @@ final class AppModel: ObservableObject {
         else { response = await helper.disconnect() }
         if response != "Disconnected" {
             busy = false
-            message = "Cannot switch profiles until the old VPN has fully exited: \(response)"
+            message = L10n.format("Cannot switch profiles until the old VPN has fully exited: {0}", [String(describing: response)])
             return
         }
         await refreshConnectionStatus()
         if !connectionStatus.hasPrefix("disconnected:") {
             busy = false
-            message = "The old VPN did not finish disconnecting. Profile switch cancelled."
+            message = L10n.text("The old VPN did not finish disconnecting. Profile switch cancelled.")
             return
         }
         busy = false
         guard selectedID == selected.id, profiles.contains(where: { $0.id == selected.id }) else {
-            message = "所选配置已改变，原 VPN 已安全断开，请重新选择连接。"; return
+            message = L10n.text("所选配置已改变，原 VPN 已安全断开，请重新选择连接。"); return
         }
         await connectSelected()
     }
@@ -1106,7 +1107,7 @@ final class AppModel: ObservableObject {
         guard profiles.contains(where: { $0.id == id }) else { return .blocked }
         if connected && id != activeProfileID && quickAccessSession == nil { return .blocked }
         return QuickAccessAction.resolve(state: sessionState, profileID: id, activeProfileID: activeProfileID,
-            operationInProgress: showingKeyboardHelp || showingPublicEgress || showingConnectionHistory || profileHealthTarget != nil || showingProfileBackup || customRuleEditorProfile != nil || showingRouteExplanation || showingTroubleshooting || showingProfileIndexRecovery || routingModeSwitching || busy || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || showingImportReport ||
+            operationInProgress: showingLanguageSettings || showingKeyboardHelp || showingPublicEgress || showingConnectionHistory || profileHealthTarget != nil || showingProfileBackup || customRuleEditorProfile != nil || showingRouteExplanation || showingTroubleshooting || showingProfileIndexRecovery || routingModeSwitching || busy || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || showingImportReport ||
                 authenticationChallenge != nil || showingAccountCredentials,
             mayStart: canQuit)
     }
@@ -1114,7 +1115,7 @@ final class AppModel: ObservableObject {
         let action = quickAccessAction(for: id)
         guard (action == .connect && expectedSession == nil) ||
               (action == .requestSwitch && expectedSession != nil && quickAccessSession == expectedSession) else {
-            message = "连接状态已改变，请在主窗口确认后重试。"; return
+            message = L10n.text("连接状态已改变，请在主窗口确认后重试。"); return
         }
         guard helper.installationStatus == .enabled else { showingSetup = true; return }
         selectedID = id
@@ -1129,7 +1130,7 @@ final class AppModel: ObservableObject {
         let cancelledAttempt = connectionAttempt ?? helperAttemptID
         connectionAttempt = nil
         if connecting { localEvents.append(.cancelled) }
-        connectionStatus = "stopping: 正在停止连接并恢复网络"
+        connectionStatus = L10n.text("stopping: 正在停止连接并恢复网络")
         busy = true
         let response = await helper.disconnect(attemptID: cancelledAttempt)
         busy = maintenanceInProgress
@@ -1156,13 +1157,13 @@ final class AppModel: ObservableObject {
             "\(ISO8601DateFormatter().string(from: $0.date)) [\($0.code.rawValue)] \($0.code.summary)"
         }.joined(separator: "\n")
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
-        let report = "VPN Navigator \(version)\nmacOS \(ProcessInfo.processInfo.operatingSystemVersionString)\n状态：\(sessionState.rawValue)\n配置数：\(profiles.count)\nIPv4规则数：\(rules?.routes.count ?? 0)\n\n本报告不包含地址、域名、配置、证书或凭据。\n\n\(events)\n"
+        let report = L10n.format("VPN Navigator {0}\nmacOS {1}\n状态：{2}\n配置数：{3}\nIPv4规则数：{4}\n\n本报告不包含地址、域名、配置、证书或凭据。\n\n{5}\n", [String(describing: version), String(describing: ProcessInfo.processInfo.operatingSystemVersionString), String(describing: sessionState.rawValue), String(describing: profiles.count), String(describing: rules?.routes.count ?? 0), String(describing: events)])
         let panel = NSSavePanel(); panel.nameFieldStringValue = "VPNNavigator-diagnostics.txt"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try report.write(to: url, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-        } catch { message = "诊断报告保存失败：\(error.localizedDescription)" }
+        } catch { message = L10n.format("诊断报告保存失败：{0}", [String(describing: error.localizedDescription)]) }
     }
     func importRules(_ url: URL) async {
         guard !busy, !routingModeSwitching, !connecting, !stopping else { return }
@@ -1180,24 +1181,24 @@ final class AppModel: ObservableObject {
             try await updater.commit(candidate)
             rules = candidate; ruleSnapshots = try await updater.snapshots()
             rulesUpdatedAt = try await updater.lastUpdated()
-            message = "已校验并导入 \(candidate.routes.count) 条 IPv4 规则。"
-        } catch { message = "规则导入失败，原规则已保留：\(error.localizedDescription)" }
+            message = L10n.format("已校验并导入 {0} 条 IPv4 规则。", [String(describing: candidate.routes.count)])
+        } catch { message = L10n.format("规则导入失败，原规则已保留：{0}", [String(describing: error.localizedDescription)]) }
     }
 
     func prepareMaintenance(removeProfiles: Bool) async -> Bool {
         guard !maintenanceInProgress, !backgroundServicesBusy, profileMutations == 0, !busy || connecting else {
-            message = "请等待当前操作结束后再准备维护。"; return false
+            message = L10n.text("请等待当前操作结束后再准备维护。"); return false
         }
         maintenanceInProgress = true; busy = true
         defer { maintenanceInProgress = false; busy = false }
         if helper.installationStatus == .enabled || !canQuit { await disconnect() }
-        guard canQuit else { message = "会话或网络恢复尚未完成，不能准备升级或卸载。"; return false }
+        guard canQuit else { message = L10n.text("会话或网络恢复尚未完成，不能准备升级或卸载。"); return false }
         guard await unregisterNetworkServices() else { return false }
         do {
             try UserServices.setLogin(false)
             let statuses = [helper.installationStatus, UserServices.rulesStatus, UserServices.loginStatus]
             guard statuses.allSatisfy({ $0 == .notRegistered || $0 == .notFound }) else {
-                message = "后台助手、规则更新或登录启动仍未完全停用。"; return false
+                message = L10n.text("后台助手、规则更新或登录启动仍未完全停用。"); return false
             }
             if removeProfiles {
                 // Delete only this application's Keychain service, including
@@ -1209,9 +1210,9 @@ final class AppModel: ObservableObject {
                 await load()
             }
         } catch {
-            message = "维护准备尚未完成：\(error.localizedDescription)"; return false
+            message = L10n.format("维护准备尚未完成：{0}", [String(describing: error.localizedDescription)]); return false
         }
-        message = BuildChannel.isLocal ? "后台服务已停用。可选择可信本地安装包升级，或运行管理员卸载包移除系统组件。默认保留配置。" : "后台助手、规则更新与登录启动均已停用，可以升级或在 Finder 中移除应用。"
+        message = BuildChannel.isLocal ? L10n.text("后台服务已停用。可选择可信本地安装包升级，或运行管理员卸载包移除系统组件。默认保留配置。") : L10n.text("后台助手、规则更新与登录启动均已停用，可以升级或在 Finder 中移除应用。")
         return true
     }
     /// Local packages have no publisher certificate. Selection is an explicit
@@ -1220,15 +1221,15 @@ final class AppModel: ObservableObject {
         let repairing = canRepairInterruptedInstallation
         guard BuildChannel.isLocal, !maintenanceInProgress, canQuit || repairing,
               helper.installationStatus != .enabled else {
-            message = "请先完成升级与卸载准备。"; showingMaintenance = true; return
+            message = L10n.text("请先完成升级与卸载准备。"); showingMaintenance = true; return
         }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.init(filenameExtension: "pkg")!]
-        panel.message = "选择可信来源、与本机架构一致的 Local.pkg。此通道不验证发布者证书，请先核对来源及 SHA-256。系统安装器将请求管理员授权。"
+        panel.message = L10n.text("选择可信来源、与本机架构一致的 Local.pkg。此通道不验证发布者证书，请先核对来源及 SHA-256。系统安装器将请求管理员授权。")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard url.lastPathComponent.hasSuffix("-Local.pkg"),
               url.lastPathComponent.contains("-" + LocalInstallation.nativeArchitecture + "-") else {
-            message = "请选择与本机架构一致的本地版安装包（-Local.pkg）。"; return
+            message = L10n.text("请选择与本机架构一致的本地版安装包（-Local.pkg）。"); return
         }
         if repairing {
             Task {
@@ -1243,13 +1244,13 @@ final class AppModel: ObservableObject {
                     guard NSWorkspace.shared.open(url) else { throw LocalInstallError.command }
                     repairExitAuthorized = true
                     NSApplication.shared.terminate(nil)
-                } catch { message = "无法交接安装修复：\(error.localizedDescription)" }
+                } catch { message = L10n.format("无法交接安装修复：{0}", [String(describing: error.localizedDescription)]) }
             }
         } else if NSWorkspace.shared.open(url) { NSApplication.shared.terminate(nil) }
-        else { message = "无法打开安装包，请在 Finder 中打开。" }
+        else { message = L10n.text("无法打开安装包，请在 Finder 中打开。") }
     }
     func openLocalUninstaller() {
-        guard !LocalInstallation.isInstallationPending else { message = "请先修复未完成的安装，再准备卸载。"; return }
+        guard !LocalInstallation.isInstallationPending else { message = L10n.text("请先修复未完成的安装，再准备卸载。"); return }
         guard BuildChannel.isLocal, !maintenanceInProgress, canQuit,
               helper.installationStatus != .enabled else { return }
         do {
@@ -1257,7 +1258,7 @@ final class AppModel: ObservableObject {
             guard approval.ownerUID == getuid() else { throw LocalInstallError.unsafe }
             if NSWorkspace.shared.open(LocalInstallation.uninstaller) { NSApplication.shared.terminate(nil) }
             else { throw LocalInstallError.command }
-        } catch { message = "无法打开卸载包：\(error.localizedDescription)" }
+        } catch { message = L10n.format("无法打开卸载包：{0}", [String(describing: error.localizedDescription)]) }
     }
     var canUseProfileBackup: Bool {
         !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot") &&
@@ -1352,13 +1353,13 @@ final class AppModel: ObservableObject {
             let panel = NSSavePanel()
             panel.allowedContentTypes = [.init(filenameExtension: "ovpn")!]
             panel.nameFieldStringValue = ProfileExport.filename(name: profile.name, kind: kind)
-            panel.message = kind == .portable ? "文件可能包含证书和私钥，请妥善保存。应用内选定的分流策略在连接时生效。" : "这是静态路由预览，可能包含证书和私钥，不代表当前系统路由。"
+            panel.message = kind == .portable ? L10n.text("文件可能包含证书和私钥，请妥善保存。应用内选定的分流策略在连接时生效。") : L10n.text("这是静态路由预览，可能包含证书和私钥，不代表当前系统路由。")
             guard panel.runModal() == .OK, let url = panel.url else { return }
             let granted = url.startAccessingSecurityScopedResource()
             defer { if granted { url.stopAccessingSecurityScopedResource() } }
             try await Task.detached(priority: .userInitiated) { try ProfileFileIO.write(generated, to: url) }.value
-            message = kind == .portable ? "已导出可迁移的配置，文件仅限当前用户读写。" : "已导出静态路由预览，文件仅限当前用户读写。"
-        } catch { message = "导出失败：\(error.localizedDescription)" }
+            message = kind == .portable ? L10n.text("已导出可迁移的配置，文件仅限当前用户读写。") : L10n.text("已导出静态路由预览，文件仅限当前用户读写。")
+        } catch { message = L10n.format("导出失败：{0}", [String(describing: error.localizedDescription)]) }
     }
 }
 
@@ -1368,6 +1369,12 @@ struct VPNNavigatorApp: App {
     @StateObject private var model = WorkspaceAccessibilitySelfTest.applicationModel()
     @StateObject private var workspaceCommands = WorkspaceCommandRouter()
     init() {
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-localization-self-test") {
+            Task {
+                do { try LocalizationSelfTest.run(); Darwin.exit(0) }
+                catch { print("Localization self-test failed: \(error)"); Darwin.exit(1) }
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-public-egress-self-test") {
             Task {
                 do { try await PublicEgressSelfTest.run(); print("Public egress checks passed."); Darwin.exit(0) }
@@ -1485,7 +1492,7 @@ struct VPNNavigatorApp: App {
         .defaultSize(width: 1100, height: 700)
         .commands {
             CommandGroup(after: .newItem) {
-                Button("快速打开…") { model.quickAccess.toggle() }
+                Button(L10n.text("快速打开…")) { model.quickAccess.toggle() }
                     .keyboardShortcut("p", modifiers: [.command, .shift])
             }
         }

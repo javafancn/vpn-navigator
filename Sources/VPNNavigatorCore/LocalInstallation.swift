@@ -17,9 +17,9 @@ public enum BuildChannel {
     public static var isLocal: Bool { kind == .localTest }
     public static var label: String {
         switch kind {
-        case .preview: return "开发预览版（特权连接不可用）"
-        case .localTest: return "本地测试版（未公证）"
-        case .signedRelease: return "Developer ID 发布构建"
+        case .preview: return L10n.text("开发预览版（特权连接不可用）")
+        case .localTest: return L10n.text("本地测试版（未公证）")
+        case .signedRelease: return L10n.text("Developer ID 发布构建")
         }
     }
 }
@@ -90,14 +90,14 @@ public enum LocalInstallError: Error, LocalizedError {
     case invalid, unsafe, altered, notInstalled, rootRequired, recoveryRequired, command, incomplete
     public var errorDescription: String? {
         switch self {
-        case .invalid: return "本地安装批准记录无效。"
-        case .unsafe: return "本地程序目录或权限不符合要求，请重新安装本地测试包。"
-        case .altered: return "本地程序与批准版本不一致，请重新运行可信安装包修复。"
-        case .notInstalled: return "请先安装包含引擎的本地测试 PKG。"
-        case .rootRequired: return "此安装操作需要系统安装器授予管理员权限。"
-        case .recoveryRequired: return "VPN 会话或网络恢复尚未完成，请先断开并执行安全恢复。"
-        case .command: return "后台服务操作未完成，请检查安装状态。"
-        case .incomplete: return "安装事务尚未完成，VPN 连接已暂停。请等待系统安装器完成，或用可信安装包修复。"
+        case .invalid: return L10n.text("本地安装批准记录无效。")
+        case .unsafe: return L10n.text("本地程序目录或权限不符合要求，请重新安装本地测试包。")
+        case .altered: return L10n.text("本地程序与批准版本不一致，请重新运行可信安装包修复。")
+        case .notInstalled: return L10n.text("请先安装包含引擎的本地测试 PKG。")
+        case .rootRequired: return L10n.text("此安装操作需要系统安装器授予管理员权限。")
+        case .recoveryRequired: return L10n.text("VPN 会话或网络恢复尚未完成，请先断开并执行安全恢复。")
+        case .command: return L10n.text("后台服务操作未完成，请检查安装状态。")
+        case .incomplete: return L10n.text("安装事务尚未完成，VPN 连接已暂停。请等待系统安装器完成，或用可信安装包修复。")
         }
     }
 }

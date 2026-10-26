@@ -102,8 +102,12 @@ enum WorkspaceAccessibilitySelfTest {
         // Reproduce a complete SwiftUI menu replacement without item-change
         // notifications on the newly installed root. Normal AppKit updates
         // must restore the actual menu; never call the router's refresh here.
-        guard let rebuilt = NSApp.mainMenu?.copy() as? NSMenu else { throw Failure.check("copy native menu root") }
-        if let item = rebuilt.items.first(where: { $0.identifier == workspaceID }) { rebuilt.removeItem(item) }
+        // SwiftUI's private NSMenuItem subclass cannot be copied through
+        // NSCopying. Construct ordinary native items instead of cloning it.
+        let rebuilt = NSMenu(title: "CI rebuilt main menu")
+        let applicationItem = NSMenuItem(title: "VPN Navigator", action: nil, keyEquivalent: "")
+        applicationItem.submenu = NSMenu(title: "VPN Navigator")
+        rebuilt.addItem(applicationItem)
         try await settle() // Drain notifications from constructing the detached root before installing it.
         NSApp.mainMenu = rebuilt
         NSApp.updateWindows()

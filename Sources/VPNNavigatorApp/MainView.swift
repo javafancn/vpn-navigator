@@ -1243,7 +1243,7 @@ struct ProfileDetail: View {
                 }
                 .buttonStyle(.plain)
             }
-            editorRow(L10n.text("配置文件")) {
+            editorRow(L10n.text("源文件")) {
                 Label(profile.sourceFilename, systemImage: "doc.text.fill")
                     .font(.system(size: 14))
                     .foregroundStyle(GlassPalette.blue)
@@ -1401,7 +1401,7 @@ struct ProfileDetail: View {
             Text(title)
                 .font(.system(size: 16))
                 .foregroundStyle(.secondary)
-                .frame(width: 66, alignment: .leading)
+                .frame(width: L10n.language == .english ? 88 : 66, alignment: .leading)
             content()
         }
     }

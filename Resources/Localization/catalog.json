@@ -1402,7 +1402,7 @@
   {
     "key": "名称最多 100 字、类别最多 48 字、备注最多 4000 字，名称与类别不能为空。",
     "zh": "名称最多 100 字、类别最多 48 字、备注最多 4000 字，名称与类别不能为空。",
-    "en": "Name: up to 100 characters; category: 48; notes: 4000. Name and category cannot be empty."
+    "en": "Name: up to 100 characters; group: 48; notes: 4000. Name and group cannot be empty."
   },
   {
     "key": "后台助手",
@@ -4002,12 +4002,12 @@
   {
     "key": "类别",
     "zh": "类别",
-    "en": "Category"
+    "en": "Group"
   },
   {
     "key": "类别名称",
     "zh": "类别名称",
-    "en": "Category name"
+    "en": "Group name"
   },
   {
     "key": "系统 DNS 查询有结果",
@@ -4257,12 +4257,12 @@
   {
     "key": "自定义类别",
     "zh": "自定义类别",
-    "en": "Custom category"
+    "en": "Custom group"
   },
   {
     "key": "自定义类别…",
     "zh": "自定义类别…",
-    "en": "Custom category…"
+    "en": "Custom group…"
   },
   {
     "key": "自定义规则 ({0})",
@@ -4697,7 +4697,7 @@
   {
     "key": "输入最多 48 字的类别名称。保存配置后，可在其它配置中复用。",
     "zh": "输入最多 48 字的类别名称。保存配置后，可在其它配置中复用。",
-    "en": "Use up to 48 characters. Save the profile to reuse this category elsewhere."
+    "en": "Use up to 48 characters. Save the profile to reuse this group elsewhere."
   },
   {
     "key": "输入此配置私钥的解锁密码",
@@ -4782,7 +4782,7 @@
   {
     "key": "连接后显示趋势",
     "zh": "连接后显示趋势",
-    "en": "Trend available after connecting"
+    "en": "Connect to see trend"
   },
   {
     "key": "连接在检查期间发生变化，请重新检查",
@@ -4837,7 +4837,7 @@
   {
     "key": "连接测试",
     "zh": "连接测试",
-    "en": "Connection test"
+    "en": "Connectivity"
   },
   {
     "key": "连接状态变化中，路由待核验",
@@ -4937,7 +4937,7 @@
   {
     "key": "选择类别",
     "zh": "选择类别",
-    "en": "Choose a category"
+    "en": "Choose a group"
   },
   {
     "key": "选择语言…",

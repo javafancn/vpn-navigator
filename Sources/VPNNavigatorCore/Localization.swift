@@ -45,8 +45,9 @@ public enum L10n {
             if override == "en" { return .english }
             if override == "zh-Hans" { return .chinese }
         }
-        guard ProcessInfo.processInfo.processName == "VPNNavigatorApp" || Bundle.main.bundleIdentifier == "com.javafancn.vpn-navigator" else { return .chinese }
-        if arguments.contains(where: { $0.hasSuffix("-self-test") || $0.contains("-snapshot") }) { return .chinese }
+        guard ProcessInfo.processInfo.processName == "VPNNavigatorApp" else { return .chinese }
+        if ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
+           arguments.contains(where: { $0.hasPrefix("--vpnnav-") && ($0.hasSuffix("-self-test") || $0.hasSuffix("-snapshot")) }) { return .chinese }
         let preference = AppLanguage(rawValue: UserDefaults.standard.string(forKey: AppLanguage.preferenceKey) ?? "") ?? .system
         return AppLanguage.resolve(preference, preferredLanguages: Locale.preferredLanguages)
     }()

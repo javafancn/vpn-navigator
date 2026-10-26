@@ -32,16 +32,22 @@ def main():
     assert GENERATED.read_text() == expected, 'Run scripts/check-localization.py --generate'
     exemptions = {(e['path'], e['key']) for e in json.loads((CATALOG.parent / 'exemptions.json').read_text())}
     exemptions.add(('Sources/VPNNavigatorCore/Localization.swift', '简体中文'))
+    def recursive_strings(source):
+        for item in strings(source):
+            yield source, item
+            for kind, value in item['parts']:
+                if kind == 'expression':
+                    yield from recursive_strings(value)
     missing = []
     for folder in ['Sources/VPNNavigatorApp', 'Sources/VPNNavigatorCore']:
         for path in (ROOT / folder).glob('*.swift'):
             if 'SelfTest' in path.name or path == GENERATED:
                 continue
             source = path.read_text()
-            for item in strings(source):
+            for context, item in recursive_strings(source):
                 if not any(CJK.search(t) for kind, t in item['parts'] if kind == 'literal'):
                     continue
-                before = source[max(0, item['start'] - 35):item['start']]
+                before = context[max(0, item['start'] - 35):item['start']]
                 if re.search(r'L10n\.(text|format)\(\s*$', before):
                     key = json.loads(item['source'])
                     assert key in keys, ('Missing catalog entry', str(path), key)

@@ -31,15 +31,15 @@ struct ReferenceInputChrome: ViewModifier {
             .frame(height: height)
             .background {
                 RoundedRectangle(cornerRadius: ReferenceMetrics.corner, style: .continuous)
-                    .fill(contrast == .increased ? Color(nsColor: .textBackgroundColor) : appearance == .dark ?
+                    .fill(GlassAccessibility.increasedContrast(contrast) ? Color(nsColor: .textBackgroundColor) : appearance == .dark ?
                           Color.white.opacity(0.13) :
                           Color.white.opacity(focused ? 0.40 : 0.28))
             }
             .overlay {
                 RoundedRectangle(cornerRadius: ReferenceMetrics.corner, style: .continuous)
                     .strokeBorder(focused ? GlassPalette.blue.opacity(0.65) :
-                        contrast == .increased ? Color.primary.opacity(0.65) : Color.white.opacity(appearance == .dark ? 0.25 : 0.48),
-                        lineWidth: focused || contrast == .increased ? 1.5 : 0.75)
+                        GlassAccessibility.increasedContrast(contrast) ? Color.primary.opacity(0.65) : Color.white.opacity(appearance == .dark ? 0.25 : 0.48),
+                        lineWidth: focused || GlassAccessibility.increasedContrast(contrast) ? 1.5 : 0.75)
                     .allowsHitTesting(false)
             }
             .tint(GlassPalette.blue)
@@ -83,10 +83,10 @@ struct ReferenceSegmentChrome: ViewModifier {
             .padding(3)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(contrast == .increased ? Color(nsColor: .controlBackgroundColor) : Color.white.opacity(0.16)))
+                    .fill(GlassAccessibility.increasedContrast(contrast) ? Color(nsColor: .controlBackgroundColor) : Color.white.opacity(0.16)))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(contrast == .increased ? Color.primary.opacity(0.55) : Color.white.opacity(0.42), lineWidth: contrast == .increased ? 1.5 : 0.75)
+                    .strokeBorder(GlassAccessibility.increasedContrast(contrast) ? Color.primary.opacity(0.55) : Color.white.opacity(0.42), lineWidth: GlassAccessibility.increasedContrast(contrast) ? 1.5 : 0.75)
             }
     }
 }
@@ -167,14 +167,14 @@ private struct ReferenceButtonBody<Label: View>: View {
                         Color(red: 0.08, green: 0.55, blue: 1), GlassPalette.blue
                     ], startPoint: .top, endPoint: .bottom))
                 } else {
-                    shape.fill(contrast == .increased ? Color(nsColor: .controlBackgroundColor) : Color.white.opacity(pressed ? 0.22 : hovered && enabled ? 0.46 : 0.30))
+                    shape.fill(GlassAccessibility.increasedContrast(contrast) ? Color(nsColor: .controlBackgroundColor) : Color.white.opacity(pressed ? 0.22 : hovered && enabled ? 0.46 : 0.30))
                 }
             }
-            .overlay(shape.strokeBorder(keyboardFocused ? GlassPalette.blue : contrast == .increased ? Color.primary.opacity(0.65) : Color.white.opacity(primary ? 0.40 : 0.55), lineWidth: keyboardFocused ? 2 : contrast == .increased ? 1.5 : 0.75)
+            .overlay(shape.strokeBorder(keyboardFocused ? GlassPalette.blue : GlassAccessibility.increasedContrast(contrast) ? Color.primary.opacity(0.65) : Color.white.opacity(primary ? 0.40 : 0.55), lineWidth: keyboardFocused ? 2 : GlassAccessibility.increasedContrast(contrast) ? 1.5 : 0.75)
                 .allowsHitTesting(false))
             .shadow(color: Color.black.opacity(primary && enabled ? 0.07 : 0.015), radius: 4, y: 2)
             .brightness(primary && hovered && enabled ? 0.035 : 0)
-            .opacity(enabled ? pressed ? 0.88 : 1 : contrast == .increased ? 0.65 : 0.45)
+            .opacity(enabled ? pressed ? 0.88 : 1 : GlassAccessibility.increasedContrast(contrast) ? 0.65 : 0.45)
             .scaleEffect(pressed && !reduceMotion ? 0.985 : 1)
             .contentShape(shape)
             .onHover { hovered = $0 }

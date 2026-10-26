@@ -40,7 +40,6 @@ struct MainView: View {
     @State private var dropTargeted = false
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorSchemeContrast) private var contrast
     @Namespace private var sidebarSelection
 
     /// The UI snapshot argument selects a real application page for macOS
@@ -112,7 +111,6 @@ struct MainView: View {
             select: { if !model.workspaceNavigationBlocked { navigation.select($0) } },
             search: { if !model.workspaceNavigationBlocked { navigation.searchProfiles() } },
             help: { if !model.workspaceNavigationBlocked { model.showingKeyboardHelp = true } }))
-        .environment(\.colorSchemeContrast, ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" && ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-high-contrast-snapshot") ? .increased : contrast)
         .preferredColorScheme(.light)
         .environment(\.locale, Locale(identifier: "zh_CN"))
         .onAppear {

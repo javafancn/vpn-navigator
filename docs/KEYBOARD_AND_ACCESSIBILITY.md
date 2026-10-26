@@ -24,6 +24,6 @@
 
 Native development package 工作流运行 `--vpnnav-workspace-accessibility-self-test`。测试从真实 SwiftUI 主窗口启动，通过生成的 AppKit 菜单分发 ⌘1／⌘2／⌘F，读取应用自身的辅助功能树，发送 Return／方向键并检查实际第一响应者、列表边界、空结果、辅助选择操作和对话框占用。使用内存配置；不保存配置、不调用 VPN、不请求公网、不申请控制其它应用的辅助功能权限。CI 启用键盘导航仅作用于临时 runner。
 
-同一发布 UI 二进制捕获普通五工作区、帮助窗口及增强对比度配置页。`--vpnnav-ui-high-contrast-snapshot` 仅在 GITHUB_ACTIONS=true 时覆盖该主视图的对比度环境，用于稳定截图；运行中的系统偏好仍由 SwiftUI 环境驱动。
+同一发布 UI 二进制捕获普通五工作区、帮助窗口及增强对比度配置页。`--vpnnav-ui-high-contrast-snapshot` 仅在 GITHUB_ACTIONS=true 时将共享组件的对比度条件设为增强，不写入系统偏好，用于稳定截图；运行中的系统偏好仍由 SwiftUI 环境驱动。
 
 仍需实际 Mac 验收：完整 VoiceOver 连续朗读与焦点顺序、中文输入法候选与 Return 提交、键盘导航开关、通知／认证／文件面板交接、系统显示偏好实时切换、第三方辅助技术及 macOS 13。自动化只验证覆盖的入口，不证明所有弹窗和第三方技术无障碍。全量中英文切换及完整本地化尚未实现。

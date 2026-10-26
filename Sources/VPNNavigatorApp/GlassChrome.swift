@@ -22,6 +22,15 @@ enum GlassLayout {
 
 /// Neutral optical layers. Wallpaper colour belongs to WindowServer, not to
 /// application gradients. Keep these shared fills achromatic on every page.
+/// A CI-only composition fixture, without mutating the read-only system
+/// contrast environment or changing the user's accessibility preferences.
+enum GlassAccessibility {
+    static func increasedContrast(_ system: ColorSchemeContrast) -> Bool {
+        system == .increased || (ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" &&
+            ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-high-contrast-snapshot"))
+    }
+}
+
 enum GlassSurface {
     static let mist = Color.white
     static let sidebar = Color.white
@@ -37,7 +46,7 @@ struct GlassAtmosphere: View {
     var body: some View {
         ZStack {
             DesktopVisualEffect()
-            if contrast == .increased || (reduceTransparency &&
+            if GlassAccessibility.increasedContrast(contrast) || (reduceTransparency &&
                 !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot")) {
                 Color(nsColor: .windowBackgroundColor)
             } else {
@@ -100,7 +109,7 @@ struct ReferenceWorkspaceSurface: ViewModifier {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         content
             .background(shape.fill(Color.white.opacity(0.035)))
-            .overlay(shape.strokeBorder(contrast == .increased ? Color.primary.opacity(0.55) : Color.white.opacity(0.30), lineWidth: contrast == .increased ? 1.5 : 0.75)
+            .overlay(shape.strokeBorder(GlassAccessibility.increasedContrast(contrast) ? Color.primary.opacity(0.55) : Color.white.opacity(0.30), lineWidth: GlassAccessibility.increasedContrast(contrast) ? 1.5 : 0.75)
                 .allowsHitTesting(false))
     }
 }
@@ -120,13 +129,13 @@ private struct GlassCardModifier: ViewModifier {
     var active: Bool
 
     func body(content: Content) -> some View {
-        let opaqueFallback = contrast == .increased || (reduceTransparency &&
+        let opaqueFallback = GlassAccessibility.increasedContrast(contrast) || (reduceTransparency &&
             !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot"))
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
             .background(shape.fill(opaqueFallback ? Color(nsColor: .windowBackgroundColor) :
                 Color.white.opacity(GlassSurface.cardOpacity)))
-            .overlay(shape.strokeBorder(contrast == .increased ? Color.primary.opacity(0.55) : Color.white.opacity(active ? 0.65 : 0.50), lineWidth: contrast == .increased ? 1.5 : 0.75)
+            .overlay(shape.strokeBorder(GlassAccessibility.increasedContrast(contrast) ? Color.primary.opacity(0.55) : Color.white.opacity(active ? 0.65 : 0.50), lineWidth: GlassAccessibility.increasedContrast(contrast) ? 1.5 : 0.75)
                 .allowsHitTesting(false))
             .shadow(color: Color.black.opacity(active ? 0.04 : 0.025), radius: 8, y: 3)
     }

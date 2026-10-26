@@ -41,7 +41,7 @@ enum WorkspaceAccessibilitySelfTest {
         }
         func command(_ text: String, code: UInt16) throws {
             NSApp.mainMenu?.update()
-            guard NSApp.mainMenu?.performKeyEquivalent(try event(code, text: text, modifiers: .command)) == true else { throw Failure.check("menu shortcut: " + text) }
+            guard NSApp.mainMenu?.performKeyEquivalent(with: try event(code, text: text, modifiers: .command)) == true else { throw Failure.check("menu shortcut: " + text) }
         }
         try command("2", code: 19); try await settle()
         guard navigation.tab == .profiles else { throw Failure.check("command-2 navigation") }

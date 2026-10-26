@@ -76,6 +76,9 @@ final class AppModel: ObservableObject {
     @Published var showingSetup = false
     @Published var showingPreferences = false
     @Published var showingDiagnostics = false
+    @Published var showingConnectionHistory = false
+    private let connectionHistoryDirectory: URL
+    lazy var connectionHistory = ConnectionHistoryController(model: self, directory: connectionHistoryDirectory)
     @Published var showingRouteExplanation = false
     @Published var showingTroubleshooting = false
     @Published var customRuleEditorProfile: VPNProfile?
@@ -151,6 +154,7 @@ final class AppModel: ObservableObject {
             existingLoginEnabled: UserServices.loginStatus == .enabled)
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("VPNNavigator", isDirectory: true)
+        connectionHistoryDirectory = (profileStoreRoot?.deletingLastPathComponent() ?? root).appendingPathComponent("ConnectionHistory")
         store = ProfileStore(root: profileStoreRoot ?? root.appendingPathComponent("Profiles"))
         updater = RuleUpdater(folder: root.appendingPathComponent("Rules"))
         ipv6Updater = APNICIPv6PreviewStore(root: root.appendingPathComponent("Rules"))
@@ -158,7 +162,7 @@ final class AppModel: ObservableObject {
         launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-health-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-connection-history-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-health-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -186,6 +190,7 @@ final class AppModel: ObservableObject {
             await load()
             if helper.installationStatus == .enabled { await restoreBackgroundServices() }
             eventHistory = localEvents.events()
+            await connectionHistory.start()
             smartConnection.start()
             profileHealth.start()
             if installationIssue != nil || !UserDefaults.standard.bool(forKey: "setupAssistantDismissed") {
@@ -336,7 +341,7 @@ final class AppModel: ObservableObject {
     var incomingPresentationReady: Bool {
         profileOpenReady && profileIndexIssue == nil && !incomingProfiles.isEmpty && !profileDropLoading && !profilePickerPresented &&
         !routingModeSwitching && !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress && !busy &&
-        !connecting && !stopping && profileHealthTarget == nil && !showingImportReport && !showingSetup && !showingMaintenance &&
+        !connecting && !stopping && !showingConnectionHistory && profileHealthTarget == nil && !showingImportReport && !showingSetup && !showingMaintenance &&
         !showingPreferences && !showingDiagnostics && !showingRouteExplanation && !showingTroubleshooting && customRuleEditorProfile == nil && !showingProfileIndexRecovery && !showingAccountCredentials &&
         authenticationChallenge == nil && message == nil
     }
@@ -864,6 +869,9 @@ final class AppModel: ObservableObject {
         } catch { message = "Helper registration failed: \(error.localizedDescription)" }
     }
     func applyVerifiedSessionReport(_ report: SessionReport) {
+        if !(busy && connectionAttempt != nil && sessionState == .connecting && report.state == .disconnected) {
+            connectionHistory.observe(.report(.init(report)))
+        }
         activeIPStack = report.ipStack; activeCustomRuleDigest = report.customRuleDigest; activeCustomRuleCount = report.customRuleCount
         helperStateVerified = true
         if !(busy && connectionAttempt != nil && sessionState == .connecting && report.state == .disconnected) {
@@ -901,6 +909,7 @@ final class AppModel: ObservableObject {
                 activeRoutingMode = nil; routingRevision = nil; activeCustomRuleDigest = nil; activeCustomRuleCount = nil; activeIPStack = nil
                 helperStateVerified = false
                 smartConnection.observe(nil)
+                connectionHistory.observe(.unverified)
                 authenticationChallenge = nil
                 connectionStatus = "failed: 无法核验后台会话，请检查助手与网络恢复状态"
                 activeProfileID = nil
@@ -912,6 +921,7 @@ final class AppModel: ObservableObject {
             let unresolved = BuildChannel.isLocal && (helper.installationStatus == .requiresApproval || LocalInstallation.hasRecoveryEvidence)
             helperStateVerified = !unresolved
             smartConnection.observe(nil)
+            connectionHistory.observe(.unverified)
             connectionStatus = unresolved ? "failed: 本地安装未通过校验，请先恢复网络并修复安装" : "disconnected: Privileged helper not enabled"
             activeRoutingMode = nil; routingRevision = nil; activeCustomRuleDigest = nil; activeCustomRuleCount = nil; activeIPStack = nil
             activeProfileID = nil
@@ -927,7 +937,7 @@ final class AppModel: ObservableObject {
               recoveryRequired: networkRecoveryRequired || firewallRecoveryRequired,
               occupied: !profileOpenReady || profileIndexIssue != nil || (busy && !preparingAutomatic) || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || profileMutations != 0 ||
                 routingModeSwitching || showingImportReport || showingSetup || showingMaintenance || showingPreferences ||
-                profileHealthTarget != nil || showingProfileBackup || showingSmartConnection || showingDiagnostics || showingRouteExplanation || showingTroubleshooting ||
+                showingConnectionHistory || profileHealthTarget != nil || showingProfileBackup || showingSmartConnection || showingDiagnostics || showingRouteExplanation || showingTroubleshooting ||
                 customRuleEditorProfile != nil || showingProfileIndexRecovery || profilePickerPresented ||
                 profileDropLoading || !incomingProfiles.isEmpty || authenticationChallenge != nil || showingAccountCredentials ||
                 !username.isEmpty || !password.isEmpty || quickAccess.panel?.isVisible == true,
@@ -953,7 +963,7 @@ final class AppModel: ObservableObject {
                   !smartConnectionContext().occupied, helperStateVerified, helper.installationStatus == .enabled,
                   sessionState == .disconnected, activeProfileID == nil, !networkRecoveryRequired, !firewallRecoveryRequired else { return }
         } else { smartConnection.cancelPending() }
-        guard profileHealthTarget == nil, !maintenanceInProgress, !profileTransferInProgress, !showingImportReport else { return }
+        guard !showingConnectionHistory, profileHealthTarget == nil, !maintenanceInProgress, !profileTransferInProgress, !showingImportReport else { return }
         if BuildChannel.isLocal, LocalInstallation.isInstallationPending {
             message = helper.localInstallationIssue; if !automatically { showingSetup = true }; return
         }
@@ -1012,12 +1022,14 @@ final class AppModel: ObservableObject {
             }
             var connectionPreferences = sessionPreferences
             connectionPreferences.customRules = selected.mode == .original ? nil : try CustomRuleSet(selected.customRules).rules
+            connectionHistory.observe(.begin(profileID: selected.id, attemptID: attempt))
             let result = await helper.connect(profile: text, profileID: selected.id,
                                               mode: selected.mode, rules: rulesText,
                                               username: connectionUsername, password: connectionPassword, preferences: connectionPreferences, attemptID: attempt)
             guard connectionAttempt == attempt else { return }
             if !automatically { password = "" } // Automatic attempts never mutate credential drafts.
             if result.hasPrefix("ERROR:") {
+                connectionHistory.observe(.requestFailed(attemptID: attempt))
                 message = result
                 connectionStatus = "failed: \(result)"
             } else { await refreshConnectionStatus() }
@@ -1074,7 +1086,7 @@ final class AppModel: ObservableObject {
         guard profiles.contains(where: { $0.id == id }) else { return .blocked }
         if connected && id != activeProfileID && quickAccessSession == nil { return .blocked }
         return QuickAccessAction.resolve(state: sessionState, profileID: id, activeProfileID: activeProfileID,
-            operationInProgress: profileHealthTarget != nil || showingProfileBackup || customRuleEditorProfile != nil || showingRouteExplanation || showingTroubleshooting || showingProfileIndexRecovery || routingModeSwitching || busy || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || showingImportReport ||
+            operationInProgress: showingConnectionHistory || profileHealthTarget != nil || showingProfileBackup || customRuleEditorProfile != nil || showingRouteExplanation || showingTroubleshooting || showingProfileIndexRecovery || routingModeSwitching || busy || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || showingImportReport ||
                 authenticationChallenge != nil || showingAccountCredentials,
             mayStart: canQuit)
     }
@@ -1091,6 +1103,7 @@ final class AppModel: ObservableObject {
     }
     func disconnect() async {
         smartConnection.pauseForManualDisconnect()
+        connectionHistory.observe(.userStop)
         statusEpoch &+= 1
         guard !stopping else { return }
         let cancelledAttempt = connectionAttempt ?? helperAttemptID
@@ -1170,6 +1183,7 @@ final class AppModel: ObservableObject {
                 // Delete only this application's Keychain service, including
                 // orphan entries. A Keychain error must never report success.
                 try KeychainVault.removeAll()
+                try await connectionHistory.clearForMaintenance()
                 for profile in profiles { try await store.delete(id: profile.id) }
                 selectedID = nil; username = ""; password = ""
                 await load()
@@ -1333,6 +1347,12 @@ struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
     @StateObject private var model = AppModel()
     init() {
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-connection-history-self-test") {
+            Task {
+                do { try await ConnectionHistorySelfTest.run(); print("Connection history and quality checks passed."); Darwin.exit(0) }
+                catch { print("Connection history self-test failed: \(error.localizedDescription)"); Darwin.exit(1) }
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-health-self-test") {
             Task {
                 do { try await ProfileHealthSelfTest.run(); print("Profile health and update wizard checks passed."); Darwin.exit(0) }

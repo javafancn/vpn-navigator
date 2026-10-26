@@ -127,6 +127,9 @@ struct MainView: View {
                     model.selectedID = model.profiles[0].id
                     if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-custom-routes-snapshot") { model.customRuleEditorProfile = model.profiles[0] }
                     else { model.showingRouteExplanation = true }
+                } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-connection-history-snapshot") {
+                    model.connectionHistory.showSnapshot(profiles: model.profiles)
+                    model.showingConnectionHistory = true
                 } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-profile-health-snapshot") {
                     model.showProfileHealth(model.profiles[0].id)
                 } else if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-profile-update-snapshot") {
@@ -186,6 +189,7 @@ struct MainView: View {
         .sheet(isPresented: $model.showingRouteExplanation) { RouteExplanationView().environmentObject(model) }
         .sheet(isPresented: $model.showingTroubleshooting) { OneClickTroubleshootingView().environmentObject(model) }
         .sheet(isPresented: $model.showingDiagnostics) { DiagnosticHistoryView().environmentObject(model) }
+        .sheet(isPresented: $model.showingConnectionHistory) { ConnectionHistoryView().environmentObject(model) }
         .sheet(isPresented: $model.showingImportReport) {
             if model.reviewingIncomingProfiles { ProfileOpenReviewView().environmentObject(model) }
             else { ProfileImportReportView().environmentObject(model) }
@@ -362,8 +366,11 @@ private struct ConnectionOverview: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            WorkspaceHeading(title: "连接总览", subtitle: "清晰掌控当前 VPN 状态与网络策略", symbol: "globe.americas.fill")
-                .padding(.bottom, 4)
+            HStack {
+                WorkspaceHeading(title: "连接总览", subtitle: "清晰掌控当前 VPN 状态与网络策略", symbol: "globe.americas.fill")
+                Spacer()
+                Button("会话质量与历史…") { model.showingConnectionHistory = true }.buttonStyle(ReferenceSecondaryButton())
+            }.padding(.bottom, 4)
             HStack(spacing: 12) {
                 VStack(spacing: 6) {
                     Spacer(minLength: 0)
@@ -480,9 +487,9 @@ private struct ConnectionOverview: View {
                 .frame(height: 310)
             }
             HStack(spacing: 12) {
-                statistic("累计接收", symbol: "arrow.down.circle", value: bytes(model.traffic?.receivedBytes), samples: model.receiveTrend.samples)
+                statistic("累计接收", symbol: "arrow.down.circle", value: bytes(model.traffic?.receivedBytes), samples: model.receiveTrend.samples, rate: model.connected && model.connectionHistory.state.quality.verified ? model.connectionHistory.state.quality.receivedPerSecond : nil)
                     .frame(width: 188)
-                statistic("累计发送", symbol: "arrow.up.circle", value: bytes(model.traffic?.sentBytes), samples: model.sendTrend.samples)
+                statistic("累计发送", symbol: "arrow.up.circle", value: bytes(model.traffic?.sentBytes), samples: model.sendTrend.samples, rate: model.connected && model.connectionHistory.state.quality.verified ? model.connectionHistory.state.quality.sentPerSecond : nil)
                     .frame(width: 188)
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "checkmark.shield.fill")
@@ -534,14 +541,15 @@ private struct ConnectionOverview: View {
                 .background(stepper ? GlassPalette.blue : .clear, in: RoundedRectangle(cornerRadius: 6))
         }.referenceInput().contentShape(Rectangle())
     }
-    private func statistic(_ title: String, symbol: String, value: String, samples: [Double]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func statistic(_ title: String, symbol: String, value: String, samples: [Double], rate: Double?) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 9) {
                 Image(systemName: symbol).font(.system(size: 24)).foregroundStyle(GlassPalette.blue)
                 Text(title).font(.system(size: 16)).foregroundStyle(.secondary)
             }
             Text(value).font(.system(size: 30, weight: .medium)).lineLimit(1).minimumScaleFactor(0.75)
-            TrafficSparkline(samples: samples).frame(height: 33)
+            Text(ConnectionHistoryDisplay.rate(rate)).font(.system(size: 12)).foregroundStyle(.secondary)
+            TrafficSparkline(samples: samples).frame(height: 24)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1082,6 +1090,9 @@ struct SystemSettingsPane: View {
                     }
                     settingsRow("诊断报告", subtitle: "查看脱敏会话事件并导出支持报告", symbol: "doc.text.magnifyingglass") {
                         Button("查看…") { model.showingDiagnostics = true }.buttonStyle(ReferenceSecondaryButton())
+                    }
+                    settingsRow("连接历史", subtitle: "采集速率、会话时间线及本机记录保留期限", symbol: "clock.arrow.circlepath") {
+                        Button("查看…") { model.showingConnectionHistory = true }.buttonStyle(ReferenceSecondaryButton())
                     }
                     settingsRow("升级与卸载", subtitle: "准备安装更新或安全移除应用", symbol: "shippingbox") {
                         Button("准备…") { model.showingMaintenance = true }.buttonStyle(ReferenceSecondaryButton())

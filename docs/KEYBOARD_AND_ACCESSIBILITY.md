@@ -22,7 +22,7 @@
 
 ## 验收与边界
 
-Native development package 工作流运行 `--vpnnav-workspace-accessibility-self-test`。测试从真实 SwiftUI 主窗口启动，通过生成的 AppKit 菜单分发 ⌘1／⌘2／⌘F，读取应用自身的辅助功能树，发送 Return／方向键并检查实际第一响应者、列表边界、空结果、辅助选择操作和对话框占用。使用隔离的临时配置与偏好；仅在临时目录导入配置 fixture 并在退出时清理，不读写用户配置、不调用 VPN、不请求公网、不申请控制其它应用的辅助功能权限。CI 启用键盘导航仅作用于临时 runner。
+Native development package 工作流运行 `--vpnnav-workspace-accessibility-self-test`。测试从真实 SwiftUI 主窗口启动，通过生成的 AppKit 菜单分发 ⌘1／⌘2／⌘F，读取应用自身的辅助功能树，发送 Return／方向键并检查实际第一响应者、列表边界、空结果、选择操作和对话框占用。进程内辅助功能树可用时还验证标签与辅助按下操作；若应用和独立标准 SwiftUI 按钮都不暴露节点，明确记录 AX 检查跳过，保留 VoiceOver 实机验收，不将该项计为自动通过。使用隔离的临时配置与偏好；仅在临时目录导入配置 fixture 并在退出时清理，不读写用户配置、不调用 VPN、不请求公网、不申请控制其它应用的辅助功能权限。CI 启用键盘导航仅作用于临时 runner。
 
 同一发布 UI 二进制捕获普通五工作区、帮助窗口及增强对比度配置页。`--vpnnav-ui-high-contrast-snapshot` 仅在 GITHUB_ACTIONS=true 时将共享组件的对比度条件设为增强，不写入系统偏好，用于稳定截图；运行中的系统偏好仍由 SwiftUI 环境驱动。
 

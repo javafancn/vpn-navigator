@@ -81,13 +81,38 @@ enum WorkspaceAccessibilitySelfTest {
             // on SwiftUI-owned NSMenus invokes a different validation path.
             NSApp.sendEvent(try event(code, text: text, modifiers: .command))
         }
+        let workspaceID = NSUserInterfaceItemIdentifier("com.javafancn.vpnnav.workspace")
+        func waitForNativeMenu() async throws {
+            for _ in 0..<20 {
+                if let menu = NSApp.mainMenu?.items.first(where: { $0.identifier == workspaceID })?.submenu,
+                   let item = menu.items.first(where: { $0.keyEquivalent == "2" }),
+                   item.target === router, item.isEnabled { return }
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
+            throw Failure.check("native workspace menu readiness: " + router.selfTestState())
+        }
+        try await waitForNativeMenu()
         print("Workspace router readiness:", router.selfTestState(), "nativeDialog=", model.nativeDialogPresented,
               "message=", model.message != nil, "setup=", model.showingSetup, "maintenance=", model.showingMaintenance)
-        if let menu = NSApp.mainMenu?.items.first(where: { $0.title == "工作区" })?.submenu {
+        if let menu = NSApp.mainMenu?.items.first(where: { $0.identifier == workspaceID })?.submenu {
             print("Workspace command readiness:", menu.items.filter { !$0.isSeparatorItem }.map { "\($0.title):\($0.keyEquivalent):\($0.isEnabled)" })
         }
         try command("2", code: 19); try await settle()
         guard navigation.tab == .profiles else { throw Failure.check("command-2 navigation") }
+        // Reproduce a complete SwiftUI menu replacement without item-change
+        // notifications on the newly installed root. Normal AppKit updates
+        // must restore the actual menu; never call the router's refresh here.
+        guard let rebuilt = NSApp.mainMenu?.copy() as? NSMenu else { throw Failure.check("copy native menu root") }
+        if let item = rebuilt.items.first(where: { $0.identifier == workspaceID }) { rebuilt.removeItem(item) }
+        try await settle() // Drain notifications from constructing the detached root before installing it.
+        NSApp.mainMenu = rebuilt
+        NSApp.updateWindows()
+        try await waitForNativeMenu()
+        guard NSApp.mainMenu?.items.filter({ $0.identifier == workspaceID }).count == 1 else { throw Failure.check("rebuilt workspace menu ownership") }
+        try command("1", code: 18); try await settle()
+        guard navigation.tab == .overview else { throw Failure.check("command after menu root replacement") }
+        try command("2", code: 19); try await settle()
+        guard navigation.tab == .profiles else { throw Failure.check("profiles after menu root replacement") }
         // A standard, independent SwiftUI control distinguishes an unavailable
         // in-process AX tree from an accidentally hidden application tree.
         let reference = NSHostingView(rootView: Button("AX Reference") { }.accessibilityIdentifier("ax-reference"))
@@ -173,7 +198,7 @@ enum WorkspaceAccessibilitySelfTest {
         model.showingAccountCredentials = true
         guard model.workspaceNavigationBlocked else { throw Failure.check("authentication modal exclusion") }
         model.showingAccountCredentials = false
-        print("PASS workspace accessibility: actual native command-1/2/F, repeated/cross-page search focus, Return and list arrows/bounds, empty results, profile selection without VPN change and native/model modal exclusion; AX available=\(axAvailable); temporary profile fixtures cleaned; no network requests")
+        print("PASS workspace accessibility: actual native command-1/2/F, menu root replacement, repeated/cross-page search focus, Return and list arrows/bounds, empty results, profile selection without VPN change and native/model modal exclusion; AX available=\(axAvailable); temporary profile fixtures cleaned; no network requests")
     }
     /// SwiftUI virtual nodes adopt role-specific accessibility protocols,
     /// rather than the full NSAccessibilityProtocol. Query documented public

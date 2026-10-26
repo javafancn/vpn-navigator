@@ -37,6 +37,14 @@ final class WorkspaceCommandRouter: NSObject, ObservableObject {
                      NSMenu.didAddItemNotification, NSMenu.didRemoveItemNotification] {
             subscriptions.append(NotificationCenter.default.publisher(for: name).sink { [weak self] _ in self?.scheduleRefresh() })
         }
+        // SwiftUI can replace the complete main menu after constructing its
+        // items. Item notifications alone may run before that root is installed.
+        // Reconcile after AppKit updates, only when ownership actually changed.
+        subscriptions.append(NotificationCenter.default.publisher(for: NSApplication.didUpdateNotification).sink { [weak self] _ in
+            guard let self, self.model != nil, let root = NSApp.mainMenu, root.numberOfItems > 0,
+                  self.menuRoot !== root || !root.items.contains(where: { $0.identifier == self.menuID }) else { return }
+            self.scheduleRefresh()
+        })
     }
     private func scheduleRefresh() {
         guard !refreshScheduled else { return }; refreshScheduled = true
@@ -58,7 +66,7 @@ final class WorkspaceCommandRouter: NSObject, ObservableObject {
     }
     func selfTestState() -> String {
         guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" else { return "disabled" }
-        return "attached=\(window != nil), model=\(model != nil), navigation=\(navigation != nil), active=\(NSApp.isActive), keyMatches=\(window === NSApp.keyWindow), blocked=\(model?.workspaceNavigationBlocked ?? true), available=\(available)"
+        return "attached=\(window != nil), model=\(model != nil), navigation=\(navigation != nil), active=\(NSApp.isActive), keyMatches=\(window === NSApp.keyWindow), blocked=\(model?.workspaceNavigationBlocked ?? true), available=\(available), menuRootMatches=\(menuRoot === NSApp.mainMenu), menuTitles=\(NSApp.mainMenu?.items.map(\.title) ?? []), language=\(L10n.language.rawValue)"
     }
     func refresh() {
         installMenusIfNeeded()
@@ -70,7 +78,11 @@ final class WorkspaceCommandRouter: NSObject, ObservableObject {
     }
     private func installMenusIfNeeded() {
         guard model != nil, let root = NSApp.mainMenu, root.numberOfItems > 0 else { return }
-        if menuRoot !== root { menuRoot = root; workspaceMenu = nil; helpItem = nil }
+        if menuRoot !== root {
+            menuRoot = root
+            workspaceMenu = root.items.first(where: { $0.identifier == menuID })?.submenu
+            helpItem = nil
+        }
         if workspaceMenu == nil {
             let menu = NSMenu(title: L10n.text("工作区")); menu.autoenablesItems = false
             for (index, tab) in WorkspaceTab.allCases.enumerated() {
@@ -83,7 +95,9 @@ final class WorkspaceCommandRouter: NSObject, ObservableObject {
             search.target = self; search.keyEquivalentModifierMask = .command; menu.addItem(search)
             workspaceMenu = menu
         }
-        if !root.items.contains(where: { $0.identifier == menuID }) {
+        if let existing = root.items.first(where: { $0.identifier == menuID }) {
+            if existing.submenu !== workspaceMenu { existing.submenu = workspaceMenu }
+        } else {
             let item = NSMenuItem(title: L10n.text("工作区"), action: nil, keyEquivalent: "")
             item.identifier = menuID; item.submenu = workspaceMenu
             let index = root.items.firstIndex(where: { $0.submenu != nil && $0.submenu === NSApp.windowsMenu }) ?? max(1, root.numberOfItems - 1)

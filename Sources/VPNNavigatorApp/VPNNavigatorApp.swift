@@ -85,8 +85,11 @@ final class AppModel: ObservableObject {
     @Published var showingKeyboardHelp = false
     /// Prevent main-window menu shortcuts from navigating behind sheets or a
     /// native file/authorization panel. The action closures also recheck this.
+    var nativeDialogPresented: Bool {
+        NSApp.modalWindow != nil || NSApp.keyWindow?.sheetParent != nil || NSApp.mainWindow?.attachedSheet != nil
+    }
     var workspaceNavigationBlocked: Bool {
-        NSApp.modalWindow != nil || showingKeyboardHelp || message != nil ||
+        nativeDialogPresented || showingKeyboardHelp || message != nil ||
         profilePickerPresented || showingAccountCredentials || authenticationChallenge != nil ||
         showingMaintenance || showingSetup || showingPreferences || showingProfileBackup ||
         profileHealthTarget != nil || showingSmartConnection || showingProfileIndexRecovery ||
@@ -952,7 +955,7 @@ final class AppModel: ObservableObject {
         .init(state: sessionState, activeProfileID: activeProfileID,
               helperReady: helperStateVerified && helper.installationStatus == .enabled,
               recoveryRequired: networkRecoveryRequired || firewallRecoveryRequired,
-              occupied: !profileOpenReady || profileIndexIssue != nil || (busy && !preparingAutomatic) || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || profileMutations != 0 ||
+              occupied: nativeDialogPresented || !profileOpenReady || profileIndexIssue != nil || (busy && !preparingAutomatic) || maintenanceInProgress || backgroundServicesBusy || profileTransferInProgress || profileMutations != 0 ||
                 routingModeSwitching || showingImportReport || showingSetup || showingMaintenance || showingPreferences ||
                 showingKeyboardHelp || showingPublicEgress || showingConnectionHistory || profileHealthTarget != nil || showingProfileBackup || showingSmartConnection || showingDiagnostics || showingRouteExplanation || showingTroubleshooting ||
                 customRuleEditorProfile != nil || showingProfileIndexRecovery || profilePickerPresented ||

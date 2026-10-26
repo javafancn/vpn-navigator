@@ -38,6 +38,7 @@ struct MainView: View {
         nonmutating set { navigation.select(newValue) }
     }
     @State private var dropTargeted = false
+    @State private var nativeSheetPresented = false
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var sidebarSelection
@@ -107,10 +108,12 @@ struct MainView: View {
                     }.allowsHitTesting(false)
             }
         }
-        .focusedSceneValue(\.workspaceCommands, model.workspaceNavigationBlocked ? nil : WorkspaceCommandActions(
+        .focusedSceneValue(\.workspaceCommands, nativeSheetPresented || model.workspaceNavigationBlocked ? nil : WorkspaceCommandActions(
             select: { if !model.workspaceNavigationBlocked { navigation.select($0) } },
             search: { if !model.workspaceNavigationBlocked { navigation.searchProfiles() } },
             help: { if !model.workspaceNavigationBlocked { model.showingKeyboardHelp = true } }))
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willBeginSheetNotification)) { _ in nativeSheetPresented = true }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEndSheetNotification)) { _ in nativeSheetPresented = false }
         .preferredColorScheme(.light)
         .environment(\.locale, Locale(identifier: "zh_CN"))
         .onAppear {

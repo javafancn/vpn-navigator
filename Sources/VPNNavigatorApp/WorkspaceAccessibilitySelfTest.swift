@@ -14,7 +14,15 @@ enum WorkspaceAccessibilitySelfTest {
         NSApp.activate(ignoringOtherApps: true)
         try await settle()
         guard let window = NSApp.windows.first(where: { $0.title == "VPN Navigator" && !($0 is NSPanel) }) else { throw Failure.check("main window") }
-        window.makeKeyAndOrderFront(nil); try await settle()
+        NSApp.setActivationPolicy(.regular)
+        window.makeMain(); window.makeKeyAndOrderFront(nil)
+        for _ in 0..<15 {
+            if NSApp.isActive && window.isKeyWindow && window.isMainWindow { break }
+            NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
+            try await Task.sleep(nanoseconds: 150_000_000)
+        }
+        try await settle()
+        guard NSApp.isActive, window.isKeyWindow, window.isMainWindow else { throw Failure.check("active main scene") }
         func element(_ identifier: String) throws -> NSAccessibilityProtocol {
             var visited = Set<ObjectIdentifier>()
             func find(_ item: Any, depth: Int) -> NSAccessibilityProtocol? {
@@ -40,8 +48,16 @@ enum WorkspaceAccessibilitySelfTest {
             return result
         }
         func command(_ text: String, code: UInt16) throws {
-            NSApp.mainMenu?.update()
+            func validate(_ menu: NSMenu) {
+                menu.update()
+                for item in menu.items { if let child = item.submenu { validate(child) } }
+            }
+            if let menu = NSApp.mainMenu { validate(menu) }
             guard NSApp.mainMenu?.performKeyEquivalent(with: try event(code, text: text, modifiers: .command)) == true else { throw Failure.check("menu shortcut: " + text) }
+        }
+        if let menu = NSApp.mainMenu?.items.first(where: { $0.title == "工作区" })?.submenu {
+            menu.update()
+            print("Workspace command readiness:", menu.items.filter { !$0.isSeparatorItem }.map { "\($0.title):\($0.keyEquivalent):\($0.isEnabled)" })
         }
         try command("2", code: 19); try await settle()
         guard navigation.tab == .profiles else { throw Failure.check("command-2 navigation") }
@@ -79,6 +95,20 @@ enum WorkspaceAccessibilitySelfTest {
         window.sendEvent(try event(36, text: "\r")); try await settle()
         guard model.selectedID == b.id, window.firstResponder is NSTextView else { throw Failure.check("empty search keeps selection and text focus") }
         model.profileLibrary.clearFilters()
+        // Also cover locally owned editor/delete sheets that have no flag in
+        // AppModel. Native sheet ownership must block background navigation.
+        let localSheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 260, height: 120), styleMask: [.titled], backing: .buffered, defer: false)
+        localSheet.isReleasedWhenClosed = false
+        window.beginSheet(localSheet); try await settle()
+        guard model.nativeDialogPresented, model.workspaceNavigationBlocked, model.smartConnectionContext().occupied else { throw Failure.check("native sheet exclusion") }
+        NSApp.mainMenu?.update()
+        _ = NSApp.mainMenu?.performKeyEquivalent(with: try event(18, text: "1", modifiers: .command))
+        try await settle()
+        guard navigation.tab == .profiles else { throw Failure.check("native sheet navigated background") }
+        window.endSheet(localSheet); localSheet.orderOut(nil); try await settle()
+        guard !model.nativeDialogPresented else { throw Failure.check("native sheet dismissal") }
+        try command("1", code: 18); try await settle()
+        guard navigation.tab == .overview else { throw Failure.check("commands resume after native sheet") }
         model.showingKeyboardHelp = true; try await settle()
         guard model.workspaceNavigationBlocked, model.smartConnectionContext().occupied,
               model.quickAccessAction(for: b.id) == .blocked else { throw Failure.check("help modal exclusion") }
@@ -88,8 +118,8 @@ enum WorkspaceAccessibilitySelfTest {
         model.showingAccountCredentials = true
         guard model.workspaceNavigationBlocked else { throw Failure.check("authentication modal exclusion") }
         model.showingAccountCredentials = false
-        print("PASS workspace accessibility: actual native command-1/2/F, repeated/cross-page search focus, Return and list arrows/bounds, empty results, accessible profile press without VPN change, selected/favorite/power labels and modal exclusion; no network requests")
+        print("PASS workspace accessibility: actual native command-1/2/F, repeated/cross-page search focus, Return and list arrows/bounds, empty results, accessible profile press without VPN change, selected/favorite/power labels and native/model modal exclusion; no network requests")
     }
-    private static func settle() async throws { try await Task.sleep(nanoseconds: 250_000_000) }
+    private static func settle() async throws { try await Task.sleep(nanoseconds: 400_000_000) }
     enum Failure: Error { case check(String) }
 }

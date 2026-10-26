@@ -6,7 +6,7 @@ struct ProfileLibrary: View {
     let searchRequest: UUID?
     let onImport: () -> Void
     @FocusState private var searchFocused: Bool
-    @FocusState private var listFocused: Bool
+    @StateObject private var keyboard = ProfileListKeyboard()
 
     private var filtered: [VPNProfile] { model.libraryProfiles }
     private var visibleSelection: VPNProfile? { filtered.first { $0.id == model.selectedID } }
@@ -34,19 +34,14 @@ struct ProfileLibrary: View {
         .padding(.top, GlassLayout.pageTop)
         .padding(.bottom, 18)
         .onAppear { if searchRequest != nil { searchFocused = true } }
-        .onChange(of: searchRequest) { request in if request != nil { searchFocused = true; listFocused = false } }
+        .onChange(of: searchRequest) { request in if request != nil { searchFocused = true } }
         .onChange(of: filtered.map(\.id)) { ids in
-            if listFocused, model.selectedID.map({ !ids.contains($0) }) ?? true { listFocused = false; searchFocused = true }
+            if keyboard.focused, model.selectedID.map({ !ids.contains($0) }) ?? true { searchFocused = true }
         }
     }
     private func focusResult() {
         guard let id = visibleSelection?.id ?? filtered.first?.id else { return }
-        searchFocused = false; model.selectedID = id; listFocused = true
-    }
-    private func moveFocus(from id: UUID, forward: Bool) {
-        guard let index = filtered.firstIndex(where: { $0.id == id }) else { return }
-        let next = min(max(index + (forward ? 1 : -1), 0), filtered.count - 1)
-        model.selectedID = filtered[next].id
+        searchFocused = false; model.selectedID = id; keyboard.focus()
     }
     private func scopeButton(_ title: String, scope: ProfileLibraryScope, count: Int) -> some View {
         Button { model.profileLibrary.scope = scope; searchFocused = false } label: {
@@ -55,7 +50,7 @@ struct ProfileLibrary: View {
     }
 
     private func profileRow(_ profile: VPNProfile) -> some View {
-        Button { searchFocused = false; model.selectedID = profile.id; listFocused = true } label: {
+        Button { searchFocused = false; model.selectedID = profile.id; keyboard.focus() } label: {
             HStack(spacing: 9) {
                 GlassIcon(symbol: "globe",
                           color: profile.isFavorite ?
@@ -110,7 +105,7 @@ struct ProfileLibrary: View {
         .id(profile.id)
         .focusable(false)
         .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(
-            listFocused && model.selectedID == profile.id ? GlassPalette.blue : .clear, lineWidth: 2).allowsHitTesting(false))
+            keyboard.focused && model.selectedID == profile.id ? GlassPalette.blue : .clear, lineWidth: 2).allowsHitTesting(false))
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("library-profile-" + profile.id.uuidString)
         .accessibilityLabel(profile.name)
@@ -204,29 +199,10 @@ struct ProfileLibrary: View {
     }
 
     private var profileList: some View {
-        ScrollViewReader { proxy in
-        ScrollView {
-            LazyVStack(spacing: 5) {
-                ForEach(filtered) { profile in profileRow(profile) }
-            }
+        NativeProfileList(profiles: filtered, selection: $model.selectedID, keyboard: keyboard) { profile in
+            AnyView(profileRow(profile))
         }
-        .onChange(of: model.selectedID) { id in
-            if listFocused, let id { proxy.scrollTo(id, anchor: .center) }
-        }
-        }
-        .focusable()
-        .focused($listFocused)
-        .onMoveCommand { direction in
-            guard listFocused, let id = visibleSelection?.id else { return }
-            if direction == .down { moveFocus(from: id, forward: true) }
-            else if direction == .up { moveFocus(from: id, forward: false) }
-        }
-        .onChange(of: listFocused) { focused in
-            if focused, visibleSelection == nil, let first = filtered.first { model.selectedID = first.id }
-        }
-        .accessibilityLabel("配置列表")
     }
-
     private var libraryColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
             filterMenuBar

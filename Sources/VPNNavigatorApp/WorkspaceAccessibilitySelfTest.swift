@@ -48,17 +48,13 @@ enum WorkspaceAccessibilitySelfTest {
             return result
         }
         func command(_ text: String, code: UInt16) throws {
-            func validate(_ menu: NSMenu) {
-                menu.update()
-                for item in menu.items { if let child = item.submenu { validate(child) } }
-            }
-            if let menu = NSApp.mainMenu { validate(menu) }
-            guard NSApp.mainMenu?.performKeyEquivalent(with: try event(code, text: text, modifiers: .command)) == true else { throw Failure.check("menu shortcut: " + text) }
+            // Use AppKit's normal event dispatcher. Manually calling update()
+            // on SwiftUI-owned NSMenus invokes a different validation path.
+            NSApp.sendEvent(try event(code, text: text, modifiers: .command))
         }
         print("Workspace router readiness:", router.selfTestState(), "nativeDialog=", model.nativeDialogPresented,
               "message=", model.message != nil, "setup=", model.showingSetup, "maintenance=", model.showingMaintenance)
         if let menu = NSApp.mainMenu?.items.first(where: { $0.title == "工作区" })?.submenu {
-            menu.update()
             print("Workspace command readiness:", menu.items.filter { !$0.isSeparatorItem }.map { "\($0.title):\($0.keyEquivalent):\($0.isEnabled)" })
         }
         try command("2", code: 19); try await settle()
@@ -103,8 +99,7 @@ enum WorkspaceAccessibilitySelfTest {
         localSheet.isReleasedWhenClosed = false
         window.beginSheet(localSheet, completionHandler: nil); try await settle()
         guard model.nativeDialogPresented, !model.canChooseProfileFiles, model.workspaceNavigationBlocked, model.smartConnectionContext().occupied else { throw Failure.check("native sheet exclusion") }
-        NSApp.mainMenu?.update()
-        _ = NSApp.mainMenu?.performKeyEquivalent(with: try event(18, text: "1", modifiers: .command))
+        try command("1", code: 18)
         try await settle()
         guard navigation.tab == .profiles else { throw Failure.check("native sheet navigated background") }
         window.endSheet(localSheet); localSheet.orderOut(nil); try await settle()

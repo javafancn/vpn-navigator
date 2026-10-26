@@ -17,7 +17,7 @@ jobs:
       - name: Build
         run: swift build
       - name: Verify workspace keyboard and accessibility in the debug build
-        if: matrix.runner == 'macos-15'
+        if: matrix.runner != 'macos-15-intel'
         run: |
           defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
           python3 - <<'PYTEST'

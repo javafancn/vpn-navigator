@@ -20,6 +20,8 @@ PR #17 扩展真实隔离服务器认证：账号密码、加密私钥、静态 
 
 ## 任务对应
 
+0.8.1 / Build 21 修复常见跨平台配置中的 `ignore-unknown-option block-outside-dns` 和 `setenv opt block-outside-dns` 被连接预检误拦的问题。只接受目标为该 Windows DNS 选项的两种精确可选写法，保留原文与导出；任意环境变量、其它忽略列表及脚本／插件仍受原校验约束。修正不支持指令的双语错误文案，隔离 TLS/MFA 用例加入相同兼容提示。该 Windows WFP 选项不代表已启用 macOS DNS 防泄漏。
+
 0.8.0 / Build 20 增加中文／English／跟随系统的启动语言、双语界面、菜单、通知、错误与权限说明，采用显式模板占位符且保留原始配置数据与协议值；语言切换下次启动生效。详见 [本地化](LOCALIZATION.md)，真实系统权限面板及完整 VoiceOver 仍需真机验收。
 
 0.7.1 / Build 19 补齐主窗口工作区与配置搜索快捷键、列表键盘选择、VoiceOver 配置／状态标签、焦点提示和增强对比度适配，并增加实际 AppKit 菜单／响应链／辅助功能树验收。详见 [键盘与辅助功能](KEYBOARD_AND_ACCESSIBILITY.md)；完整朗读顺序、第三方辅助技术和 macOS 13 真机仍需手动验收，全量双语本地化仍未完成。

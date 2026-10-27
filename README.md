@@ -4,7 +4,7 @@
 
 支持受管 IPv4／IPv6 双栈路由、IPv6 服务器端点、双栈中国规则与自定义 IPv6 分流。详见 [双栈支持](docs/DUAL_STACK.md)。
 
-当前开发版本：**0.8.0**。提供开发预览、本地测试及 Developer ID 发布构建三种通道。本地测试通道无需付费开发者证书，包含引擎并经管理员批准固定程序身份；尚待真实网络及用户 Mac 安装验收。正式分发仍须签名、公证及发布验收。
+当前开发版本：**0.8.1**。提供开发预览、本地测试及 Developer ID 发布构建三种通道。本地测试通道无需付费开发者证书，包含引擎并经管理员批准固定程序身份；尚待真实网络及用户 Mac 安装验收。正式分发仍须签名、公证及发布验收。
 
 ## 已实现
 
@@ -33,6 +33,8 @@
 - 从校验后的 OpenVPN/OpenSSL 源码构建 macOS 13 目标引擎；双架构安装器、版本自动读取、更新包架构筛选、最低系统版本审计、签名/公证与可选 Draft Release 流程。
 
 界面支持简体中文／English，默认跟随系统。在「设置与维护 → 界面语言」保存后，下次启动生效，不中断当前 VPN。详见 [语言与本地化](docs/LOCALIZATION.md)。
+
+支持常见跨平台配置中的两种 Windows DNS 可选提示：`ignore-unknown-option block-outside-dns` 与 `setenv opt block-outside-dns`。仅接受这两种精确目标，不开放通用环境变量或忽略列表；在 macOS 上由 OpenVPN 按可选指令语义处理，不能据此宣称已启用 DNS 防泄漏。参见 [OpenVPN 2.7 手册的 Windows 专用选项](https://openvpn.net/community-docs/community-articles/openvpn-2-7-manual/)。
 
 ## 构建
 

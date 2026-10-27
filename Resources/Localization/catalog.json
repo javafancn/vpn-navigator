@@ -370,9 +370,9 @@
     "zh": "当前引擎要求内联 <ca> 证书。"
   },
   {
-    "key": "Unsupported OpenVPN directive on line {0}. Script/plugin directives are blocked.",
-    "en": "Unsupported OpenVPN directive on line {0}. Script/plugin directives are blocked.",
-    "zh": "第 {0} 行 OpenVPN 指令不受支持，脚本与插件指令已阻止。"
+    "key": "Unsupported OpenVPN directive on line {0}.",
+    "en": "Unsupported OpenVPN directive on line {0}.",
+    "zh": "第 {0} 行 OpenVPN 指令暂不支持，请检查配置兼容性。"
   },
   {
     "key": "Unterminated inline certificate/key block.",

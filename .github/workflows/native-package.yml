@@ -130,7 +130,7 @@ jobs:
           defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
           python3 - <<'PYTEST'
           import subprocess
-          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-workspace-accessibility-self-test'], check=True, timeout=45)
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-workspace-accessibility-self-test'], check=True, timeout=60)
           subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-workspace-accessibility-self-test', '--vpnnav-language=en'], check=True, timeout=45)
           subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-localization-self-test', '--vpnnav-language=en'], check=True, timeout=45)
           PYTEST

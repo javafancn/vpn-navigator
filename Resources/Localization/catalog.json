@@ -415,6 +415,11 @@
     "en": "VPN Navigator notification test"
   },
   {
+    "key": "VPN Navigator，{0}。隧道下载 {1}，上传 {2}。",
+    "zh": "VPN Navigator，{0}。隧道下载 {1}，上传 {2}。",
+    "en": "VPN Navigator, {0}. Tunnel download {1}, upload {2}."
+  },
+  {
     "key": "VPN 会话或网络恢复尚未完成，请先断开并执行安全恢复。",
     "zh": "VPN 会话或网络恢复尚未完成，请先断开并执行安全恢复。",
     "en": "VPN session or network recovery is unfinished. Disconnect and perform safe recovery first."

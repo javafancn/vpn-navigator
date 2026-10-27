@@ -49,7 +49,7 @@ final class ManagementSocket {
         guard rc == 0 else { Darwin.close(fd); throw ManagementError.unavailable }
         descriptor = fd
         do {
-            try send("state on"); try send("bytecount 3"); try send("hold release")
+            try send("state on"); try send("bytecount 1"); try send("hold release")
         } catch { close(); throw error }
         readerRunning = true
         queue.async { self.readLoop(fd: fd) }
@@ -64,7 +64,7 @@ final class ManagementSocket {
         do {
             guard withUnsafePointer(to: &noSigPipe, { Darwin.setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, $0, socklen_t(MemoryLayout<Int32>.size)) }) == 0,
                   withUnsafePointer(to: &writeTimeout, { Darwin.setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, $0, socklen_t(MemoryLayout<timeval>.size)) }) == 0 else { throw ManagementError.socket }
-            try send("state on"); try send("bytecount 3"); try send("hold release")
+            try send("state on"); try send("bytecount 1"); try send("hold release")
             readerRunning = true
             queue.async { self.readLoop(fd: fd) }
             return true

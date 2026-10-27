@@ -10,7 +10,8 @@ import VPNNavigatorCore
 enum WorkspaceAccessibilitySelfTest {
     private static let fixtureRoot: URL? = {
         guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
-              ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") else { return nil }
+              (ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") ||
+               ProcessInfo.processInfo.arguments.contains("--vpnnav-status-bar-self-test")) else { return nil }
         return FileManager.default.temporaryDirectory.appendingPathComponent("VPNNavWorkspaceCI-" + UUID().uuidString)
     }()
     static func applicationModel() -> AppModel {

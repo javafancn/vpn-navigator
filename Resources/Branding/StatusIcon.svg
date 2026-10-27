@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="180 210 595 595">
+<!-- Monochrome navigation mark derived from AppIcon.svg for the macOS menu bar. -->
+<path d="M 684 319 A 257 257 0 1 0 704 672" fill="none" stroke="black" stroke-linecap="round" stroke-width="40"/>
+<path d="M 715 279 L 628 722 Q 623 738 611 723 L 510 577 L 347 669 Q 326 680 337 658 Z" fill="black"/>
+</svg>

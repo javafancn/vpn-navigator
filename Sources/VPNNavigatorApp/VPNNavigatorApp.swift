@@ -70,8 +70,16 @@ final class AppModel: ObservableObject {
     @Published var killSwitch = UserDefaults.standard.bool(forKey: "killSwitch") {
         didSet { UserDefaults.standard.set(killSwitch, forKey: "killSwitch") }
     }
-    @Published var authenticationChallenge: AuthenticationChallenge?
-    @Published var showingAccountCredentials = false
+    @Published var authenticationChallenge: AuthenticationChallenge? {
+        didSet {
+            if let challenge = authenticationChallenge, challenge.id != oldValue?.id {
+                quickAccess.openMainWindow()
+            }
+        }
+    }
+    @Published var showingAccountCredentials = false {
+        didSet { if showingAccountCredentials && !oldValue { quickAccess.openMainWindow() } }
+    }
     @Published var showingMaintenance = false
     @Published var showingSetup = false
     @Published var showingPreferences = false
@@ -150,6 +158,7 @@ final class AppModel: ObservableObject {
     private let routingModeService: RoutingModeService
     @Published var activeProfileID: UUID?
     @Published var traffic: TunnelTraffic?
+    @Published private(set) var menuTraffic = TunnelSpeedTracker()
     @Published var receiveTrend = TrafficTrend()
     @Published var sendTrend = TrafficTrend()
     @Published var username = ""
@@ -183,7 +192,7 @@ final class AppModel: ObservableObject {
         launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-localization-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-public-egress-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-connection-history-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-health-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-status-bar-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-localization-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-public-egress-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-connection-history-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-health-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN and never marks the session as connected.
@@ -221,7 +230,7 @@ final class AppModel: ObservableObject {
         Task {
             while !Task.isCancelled {
                 await refreshConnectionStatus()
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                try? await Task.sleep(nanoseconds: connected || connecting ? 1_000_000_000 : 3_000_000_000)
             }
         }
     }
@@ -890,6 +899,7 @@ final class AppModel: ObservableObject {
         } catch { message = L10n.format("Helper registration failed: {0}", [String(describing: error.localizedDescription)]) }
     }
     func applyVerifiedSessionReport(_ report: SessionReport) {
+        menuTraffic.observe(report)
         if !(busy && connectionAttempt != nil && sessionState == .connecting && report.state == .disconnected) {
             connectionHistory.observe(.report(.init(report)))
         }
@@ -929,6 +939,7 @@ final class AppModel: ObservableObject {
                 guard capturedEpoch == statusEpoch, !routingModeSwitching else { return }
                 activeRoutingMode = nil; routingRevision = nil; activeCustomRuleDigest = nil; activeCustomRuleCount = nil; activeIPStack = nil
                 helperStateVerified = false
+                menuTraffic.reset()
                 smartConnection.observe(nil)
                 connectionHistory.observe(.unverified)
                 authenticationChallenge = nil
@@ -941,6 +952,7 @@ final class AppModel: ObservableObject {
         } else {
             let unresolved = BuildChannel.isLocal && (helper.installationStatus == .requiresApproval || LocalInstallation.hasRecoveryEvidence)
             helperStateVerified = !unresolved
+            menuTraffic.reset()
             smartConnection.observe(nil)
             connectionHistory.observe(.unverified)
             connectionStatus = unresolved ? L10n.text("failed: 本地安装未通过校验，请先恢复网络并修复安装") : "disconnected: Privileged helper not enabled"
@@ -1366,9 +1378,16 @@ final class AppModel: ObservableObject {
 @main
 struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
-    @StateObject private var model = WorkspaceAccessibilitySelfTest.applicationModel()
+    @StateObject private var model: AppModel
     @StateObject private var workspaceCommands = WorkspaceCommandRouter()
     init() {
+        let initialModel = WorkspaceAccessibilitySelfTest.applicationModel()
+        _model = StateObject(wrappedValue: initialModel)
+        appDelegate.model = initialModel
+        if ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true", ProcessInfo.processInfo.arguments.contains(where: { $0.hasSuffix("self-test") }) {
+            FileHandle.standardError.write(Data("UI application init reached\n".utf8))
+        }
+
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-localization-self-test") {
             Task {
                 do { try LocalizationSelfTest.run(); Darwin.exit(0) }
@@ -1483,21 +1502,26 @@ struct VPNNavigatorApp: App {
         }
     }
     var body: some Scene {
-        Window("VPN Navigator", id: "main") {
+        WindowGroup("VPN Navigator", id: "main") {
             MainView().environmentObject(model).environmentObject(workspaceCommands)
-                .onAppear { appDelegate.model = model }
                 .frame(minWidth: 1100, minHeight: 700)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 700)
         .commands {
+            // The primary scene participates in launch/restoration, while
+            // every explicit open reuses its tracked window. No duplicate
+            // main workspace is created by File > New Window / Command-N.
+            CommandGroup(replacing: .newItem) { }
             CommandGroup(after: .newItem) {
                 Button(L10n.text("快速打开…")) { model.quickAccess.toggle() }
                     .keyboardShortcut("p", modifiers: [.command, .shift])
             }
         }
-        MenuBarExtra("VPN Navigator — " + model.menuStatusTitle, systemImage: model.menuStatusSymbol) {
+        MenuBarExtra {
             GlassMenuBarView().environmentObject(model)
+        } label: {
+            StatusBarLabel().environmentObject(model)
         }
         .menuBarExtraStyle(.window)
         Settings {

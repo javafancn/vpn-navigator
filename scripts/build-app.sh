@@ -38,6 +38,9 @@ if [[ "$CHANNEL" == local-test ]]; then
   cp "$BIN/VPNNavigatorLocalSetup" "$APP/Contents/Resources/"
 fi
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+cp Resources/Branding/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+mkdir -p "$APP/Contents/Resources/Branding"
+cp Resources/Branding/AppIcon.png Resources/Branding/StatusIcon.pdf "$APP/Contents/Resources/Branding/"
 cp -R Resources/en.lproj Resources/zh-Hans.lproj "$APP/Contents/Resources/"
 /usr/libexec/PlistBuddy -c "Add :VPNNavigatorBuildChannel string $CHANNEL" "$APP/Contents/Info.plist"
 cp Resources/Engine/macos-dns-updown.sh "$APP/Contents/Resources/macos-dns-updown.sh"

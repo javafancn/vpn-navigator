@@ -26,7 +26,7 @@ jobs:
           # Python timeout is available on the runner and does not depend on brew.
           python3 - <<'PYTEST'
           import subprocess
-          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-network-self-test'], check=True, timeout=40)
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-network-self-test'], check=True, timeout=60)
           PYTEST
       - name: Verify development bundle
         # The same release UI binary exercises panel and Carbon registration.
@@ -51,17 +51,23 @@ jobs:
             echo "$entry: $archs"
             [[ " $archs " == *" arm64 "* && " $archs " == *" x86_64 "* ]] || exit 1
           done
+      - name: Verify branded bundle and background-window lifecycle
+        run: |
+          python3 - <<'PYTEST'
+          import subprocess
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-status-bar-self-test'], check=True, timeout=60)
+          PYTEST
       - name: Verify native quick panel and actual global shortcut registration
         run: |
           python3 - <<'PYTEST'
           import subprocess
-          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-quick-access-self-test'], check=True, timeout=40)
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-quick-access-self-test'], check=True, timeout=60)
           PYTEST
       - name: Verify profile import, native file requests and drop providers
         run: |
           python3 - <<'PYTEST'
           import subprocess
-          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-profile-transfer-self-test'], check=True, timeout=40)
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-profile-transfer-self-test'], check=True, timeout=60)
           PYTEST
       - name: Verify live routing mode model and persistence failures
         # Routing tests call the same AppModel with an injected helper. They
@@ -69,64 +75,64 @@ jobs:
         run: |
           python3 - <<'PYTEST'
           import subprocess
-          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-routing-mode-self-test'], check=True, timeout=40)
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-routing-mode-self-test'], check=True, timeout=60)
           PYTEST
       - name: Verify profile index recovery and stale confirmation
         run: |
           python3 - <<'PYTEST'
           import subprocess
-          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-profile-recovery-self-test'], check=True, timeout=40)
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-profile-recovery-self-test'], check=True, timeout=60)
           PYTEST
       - name: Verify profile library filters and pinned metadata actions
         run: |
           python3 - <<'PYTEST'
           import subprocess
-          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-profile-library-self-test'], check=True, timeout=40)
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-profile-library-self-test'], check=True, timeout=60)
           PYTEST
       - name: Verify custom routing tools and one-click loopback diagnostics
         run: |
           python3 - <<'PYTEST'
           import subprocess
-          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-routing-tools-self-test'], check=True, timeout=40)
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-routing-tools-self-test'], check=True, timeout=60)
           PYTEST
       - name: Verify smart connection cancellation and opt-in status notifications
         run: |
           python3 - <<'PYTEST'
           import subprocess
-          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-smart-connection-self-test'], check=True, timeout=40)
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-smart-connection-self-test'], check=True, timeout=60)
           PYTEST
       - name: Verify encrypted backup restore, cancellation and active-session exclusion
         run: |
           python3 - <<'PYTEST'
           import subprocess
-          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-profile-backup-self-test'], check=True, timeout=60)
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-profile-backup-self-test'], check=True, timeout=60)
           PYTEST
       - name: Verify offline profile health and confirmed configuration updates
         run: |
           python3 - <<'PYTEST'
           import subprocess
-          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-profile-health-self-test'], check=True, timeout=45)
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-profile-health-self-test'], check=True, timeout=60)
           PYTEST
       - name: Verify ordered connection history and live-rate model
         run: |
           python3 - <<'PYTEST'
           import subprocess
-          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-connection-history-self-test'], check=True, timeout=45)
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-connection-history-self-test'], check=True, timeout=60)
           PYTEST
       - name: Verify bounded public-egress client against loopback HTTP only
         run: |
           python3 - <<'PYTEST'
           import subprocess
-          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-public-egress-self-test'], check=True, timeout=60)
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-public-egress-self-test'], check=True, timeout=60)
           PYTEST
       - name: Verify actual workspace shortcuts, keyboard focus and accessibility tree
         run: |
           defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
           python3 - <<'PYTEST'
           import subprocess
-          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-workspace-accessibility-self-test'], check=True, timeout=45)
-          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-workspace-accessibility-self-test', '--vpnnav-language=en'], check=True, timeout=45)
-          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-localization-self-test', '--vpnnav-language=en'], check=True, timeout=45)
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-workspace-accessibility-self-test'], check=True, timeout=60)
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-workspace-accessibility-self-test', '--vpnnav-language=en'], check=True, timeout=60)
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-localization-self-test', '--vpnnav-language=en'], check=True, timeout=60)
           PYTEST
       - name: Ad-hoc sign development UI for local integrity checks
         run: |
@@ -138,6 +144,7 @@ jobs:
           echo 'This ad-hoc signature is NOT an Apple Developer ID signature and is NOT notarized.'
       - name: Capture all five native workspaces
         run: |
+          trap 'screencapture -x "$RUNNER_TEMP/VPNNavigator-capture-failure.png" || true' ERR
           # Ephemeral CI machine only: native AppKit materials also respect
           # accessibility defaults, independently of the SwiftUI snapshot flag.
           defaults write com.apple.universalaccess reduceTransparency -bool false || true
@@ -300,6 +307,7 @@ jobs:
             killall VPNNavigatorApp 2>/dev/null || true
           done
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: VPNNavigator-visual-smoke
           path: |
@@ -317,6 +325,7 @@ jobs:
             ${{ runner.temp }}/VPNNavigator-library-*.png
             ${{ runner.temp }}/VPNNavigator-tool-*.png
             ${{ runner.temp }}/VPNNavigator-Desktop-Before.png
+            ${{ runner.temp }}/VPNNavigator-capture-failure.png
             ${{ runner.temp }}/*-bounds.txt
             ${{ runner.temp }}/VPNNavigator-glass-*.png
             ${{ runner.temp }}/VPNNavigator-wallpaper-*.png

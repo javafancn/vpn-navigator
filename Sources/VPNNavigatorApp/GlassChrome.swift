@@ -213,26 +213,9 @@ struct TrafficSparkline: View {
 struct BrandMark: View {
     var size: CGFloat = 40
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
-                .fill(LinearGradient(colors: [
-                    Color.white.opacity(0.98), Color(red: 0.80, green: 0.90, blue: 1)
-                ], startPoint: .topLeading, endPoint: .bottomTrailing))
-            Image(systemName: "globe")
-                .font(.system(size: size * 0.62, weight: .semibold))
-                .foregroundStyle(GlassPalette.blue)
-                .shadow(color: GlassPalette.cyan.opacity(0.25), radius: 2)
-            Image(systemName: "shield.fill")
-                .font(.system(size: size * 0.25, weight: .semibold))
-                .foregroundStyle(GlassPalette.blue)
-                .padding(2)
-                .background(Color.white, in: Circle())
-                .offset(x: size * 0.24, y: size * 0.22)
-        }
-        .frame(width: size, height: size)
-        .overlay(RoundedRectangle(cornerRadius: size * 0.27)
-            .strokeBorder(Color.white.opacity(0.92), lineWidth: 1))
-        .shadow(color: Color.black.opacity(0.06), radius: 5, y: 2)
+        Image(nsImage: AppBranding.icon)
+            .resizable().interpolation(.high).scaledToFit()
+            .frame(width: size, height: size)
         .accessibilityLabel("VPN Navigator")
     }
 }

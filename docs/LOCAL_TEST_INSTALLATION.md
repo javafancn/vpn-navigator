@@ -4,12 +4,22 @@
 
 ## 选择安装包
 
-从本仓库通过检查的 `Local test installer and XPC trust` Actions 运行下载对应架构 artifact：Apple Silicon 使用 ARM64，Intel 使用 X64；名称同时标明验收所用 macOS。压缩包包含：
+推荐使用专门的 [Build macOS installers (Intel + Apple Silicon)](https://github.com/javafancn/vpn-navigator/actions/workflows/package-installers.yml) 工作流：
 
-- `VPN-Navigator-0.5.0-arm64-Local.pkg` 或 `…-x86_64-Local.pkg`：完整安装包。
+1. 打开仓库的 Actions，选择该工作流。
+2. 点击 **Run workflow**，分支选择 **main**，再确认运行。
+3. 等待两个架构任务成功，从运行页摘要链接或 Artifacts 区下载对应芯片的文件：`VPN-Navigator-版本-Intel-x86_64-Local-Test` 或 `VPN-Navigator-版本-Apple-Silicon-arm64-Local-Test`。
+
+main 的程序、资源或构建文件变化也会触发打包。版本及 Build 自动读取应用元数据；每个架构使用原生 runner 和校验过的源码引擎，无需配置 Developer ID secrets。产物保留 30 天，过期可重新运行。此流程不在 runner 安装系统服务；真实安装、升级、TLS/MFA、XPC、修复和卸载继续由独立的 `Local test installer and XPC trust` 工作流验证，不能把构建成功当作这些场景已通过。
+
+也可从通过检查的 `Local test installer and XPC trust` 运行取得安装测试产物：Apple Silicon 使用 ARM64，Intel 使用 X64；名称同时标明验收所用 macOS。专用打包 artifact 包含：
+
+- `VPN-Navigator-0.8.0-arm64-Local.pkg` 或 `…-x86_64-Local.pkg`：完整安装包，版本随应用变化。
 - `…-Local-Uninstall.pkg`：系统组件卸载包；先在应用中完成维护准备。
 - `…-Local-SHA256.txt`：两个 PKG 的完整性校验。
 - `…-Local-manifest.json`：构建时生成的程序身份及文件哈希，安装后由管理员批准。
+- `…-Local-audit.json`：实际二进制架构、最低系统版本及源码哈希审计。
+- `README-安装说明.txt` 与 `BUILD-INFO.json`：安装/升级/卸载说明及当前源提交、构建记录和 PKG 校验值。
 
 仅使用自己构建或确认来源的包。SHA-256 不是发布者身份证明。不要将来源不明的包提交给管理员授权。此通道不要求关闭 SIP，也不提供关闭 Gatekeeper 的脚本。浏览器下载后的实际系统提示和首次授权步骤仍需在用户 Mac 上验收；CI 的命令行安装成功不代表 Gatekeeper 已认可它。
 

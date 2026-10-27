@@ -45,6 +45,8 @@ zsh scripts/build-app.sh
 
 未提供 `OPENVPN_BIN` 的构建是 UI-only。本地连接请使用[本地测试安装包](docs/LOCAL_TEST_INSTALLATION.md)，由管理员批准并核验固定代码身份；正式分发使用 Developer ID 签名安装包。两种通道均需受保护程序及后台助手。应用不会要求最终用户安装 Homebrew。
 
+可直接打开 [Actions 双架构安装包构建](https://github.com/javafancn/vpn-navigator/actions/workflows/package-installers.yml)，选择 **Run workflow → main**。工作流分别在 Intel / Apple Silicon runner 编译完整引擎和应用，生成两份含安装包、卸载包、SHA-256 与安装说明的 artifact；运行摘要也提供下载链接。main 的程序或构建文件变化会自动触发，产物保留 30 天。该流程使用本地测试通道，无需付费签名证书；正式公证流程仍独立运行。
+
 源码引擎与签名分发步骤见 [安装与发布](docs/INSTALL_AND_RELEASE.md) 和 [手动签名工作流](docs/SIGNED_RELEASE_WORKFLOW.md)。
 
 ## 安全范围

@@ -1381,6 +1381,10 @@ struct VPNNavigatorApp: App {
     @StateObject private var model = WorkspaceAccessibilitySelfTest.applicationModel()
     @StateObject private var workspaceCommands = WorkspaceCommandRouter()
     init() {
+        if ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true", ProcessInfo.processInfo.arguments.contains(where: { $0.hasSuffix("self-test") }) {
+            FileHandle.standardError.write(Data("UI application init reached\n".utf8))
+        }
+
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-localization-self-test") {
             Task {
                 do { try LocalizationSelfTest.run(); Darwin.exit(0) }

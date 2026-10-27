@@ -6,7 +6,6 @@ import VPNNavigatorCore
 /// AppModel; no reference throughput or geographic names are substituted.
 struct GlassMenuBarView: View {
     @EnvironmentObject private var model: AppModel
-    @Environment(\.openWindow) private var openWindow
 
     private func bytes(_ value: UInt64?) -> String {
         guard let value else { return "—" }
@@ -74,14 +73,13 @@ struct GlassMenuBarView: View {
                     }.buttonStyle(ReferenceQuietButton())
                 }
                 Text(model.smartConnection.status).font(.system(size: 11)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
-                Button { openWindow(id: "main"); model.showingSmartConnection = true; NSApp.activate(ignoringOtherApps: true) } label: { menuRow(L10n.text("智能连接设置…"), symbol: "bell.badge") }
+                Button { model.quickAccess.openMainWindow(); model.showingSmartConnection = true } label: { menuRow(L10n.text("智能连接设置…"), symbol: "bell.badge") }
                     .buttonStyle(ReferenceQuietButton())
                 Button { model.quickAccess.toggle() } label: { menuRow(L10n.text("快速打开…"), symbol: "magnifyingglass") }
                     .buttonStyle(ReferenceQuietButton())
                 Divider().opacity(0.2)
                 Button {
-                    openWindow(id: "main")
-                    NSApp.activate(ignoringOtherApps: true)
+                    model.quickAccess.openMainWindow()
                 } label: { menuRow(L10n.text("打开主窗口"), symbol: "macwindow") }
                 .buttonStyle(ReferenceQuietButton())
                 Divider().opacity(0.2)

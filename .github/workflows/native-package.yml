@@ -51,6 +51,12 @@ jobs:
             echo "$entry: $archs"
             [[ " $archs " == *" arm64 "* && " $archs " == *" x86_64 "* ]] || exit 1
           done
+      - name: Verify branded bundle and background-window lifecycle
+        run: |
+          python3 - <<'PYTEST'
+          import subprocess
+          subprocess.run(['dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-status-bar-self-test'], check=True, timeout=30)
+          PYTEST
       - name: Verify native quick panel and actual global shortcut registration
         run: |
           python3 - <<'PYTEST'

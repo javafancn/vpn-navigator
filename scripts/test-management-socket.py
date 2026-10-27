@@ -39,7 +39,7 @@ def exercise(helper, scenario):
                                 actual = [line() for _ in expected]
                                 assert actual == list(expected), "Unexpected fixture response"
 
-                            commands("state on", "bytecount 3", "hold release")
+                            commands("state on", "bytecount 1", "hold release")
                             if scenario == "idle-cancel":
                                 assert line() == "", "Idle cancellation did not close socket"
                                 return

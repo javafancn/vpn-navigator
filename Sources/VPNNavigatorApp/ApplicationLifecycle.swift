@@ -14,6 +14,10 @@ final class ApplicationLifecycle: NSObject, NSApplicationDelegate {
     }
     private var pendingProfiles = ProfileOpenQueue()
     private var quitting = false
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { model?.quickAccess.openMainWindow() }
+        return true
+    }
     func application(_ application: NSApplication, open urls: [URL]) {
         var request = ProfileOpenQueue(); request.append(urls)
         if let model { model.receiveProfileOpenRequest(request) }

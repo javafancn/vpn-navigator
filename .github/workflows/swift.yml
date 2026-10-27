@@ -30,6 +30,14 @@ jobs:
           subprocess.run([str(Path(folder) / 'VPNNavigatorApp'), '--vpnnav-workspace-accessibility-self-test', '--vpnnav-language=en'], check=True, timeout=45)
           subprocess.run([str(Path(folder) / 'VPNNavigatorApp'), '--vpnnav-localization-self-test', '--vpnnav-language=en'], check=True, timeout=45)
           PYTEST
+      - name: Verify status throughput and actual background-window lifecycle
+        run: |
+          python3 - <<'PYTEST'
+          import subprocess
+          from pathlib import Path
+          folder = subprocess.check_output(['swift', 'build', '--show-bin-path'], text=True).strip()
+          subprocess.run([str(Path(folder) / 'VPNNavigatorApp'), '--vpnnav-status-bar-self-test'], check=True, timeout=30)
+          PYTEST
       - name: Unit tests
         run: swift test
       - name: Verify route rollback ordering without system mutations

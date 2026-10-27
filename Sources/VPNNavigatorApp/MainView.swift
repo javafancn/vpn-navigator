@@ -58,7 +58,10 @@ struct MainView: View {
 
     var body: some View {
         ZStack {
-            GlassAtmosphere(onWindow: { workspaceCommands.attach($0) })
+            GlassAtmosphere(onWindow: {
+                workspaceCommands.attach($0)
+                MainWindowPresentation.shared.attach($0)
+            })
             HStack(spacing: 0) {
                 sidebar.frame(width: 228)
                 Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
@@ -120,8 +123,13 @@ struct MainView: View {
                 }
             }
             model.quickAccess.openMainWindow = {
-                openWindow(id: "main")
-                NSApp.activate(ignoringOtherApps: true)
+                MainWindowPresentation.shared.show { openWindow(id: "main") }
+            }
+            if ProcessInfo.processInfo.arguments.contains("--vpnnav-status-bar-self-test"), StatusBarSelfTest.begin() {
+                Task {
+                    do { try await StatusBarSelfTest.run(model: model); Darwin.exit(0) }
+                    catch { print("Status bar and window lifecycle self-test failed: \(error)"); Darwin.exit(1) }
+                }
             }
             if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-quick-access-snapshot") {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.quickAccess.show() }

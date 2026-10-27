@@ -38,6 +38,14 @@ jobs:
           folder = subprocess.check_output(['swift', 'build', '--show-bin-path'], text=True).strip()
           subprocess.run(['python3', 'scripts/run-ui-self-test.py', str(Path(folder) / 'VPNNavigatorApp'), '--vpnnav-status-bar-self-test'], check=True, timeout=60)
           PYTEST
+      - name: Verify overview live graph and connection protection presentation
+        run: |
+          python3 - <<'PYTEST'
+          import subprocess
+          from pathlib import Path
+          folder = subprocess.check_output(['swift', 'build', '--show-bin-path'], text=True).strip()
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', str(Path(folder) / 'VPNNavigatorApp'), '--vpnnav-overview-self-test'], check=True, timeout=60)
+          PYTEST
       - name: Unit tests
         run: swift test
       - name: Verify route rollback ordering without system mutations

@@ -192,10 +192,10 @@ final class AppModel: ObservableObject {
         launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-status-bar-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-localization-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-public-egress-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-connection-history-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-health-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-overview-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-status-bar-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-localization-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-public-egress-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-connection-history-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-health-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
-        // launches OpenVPN and never marks the session as connected.
+        // launches OpenVPN. Additional labelled overview artwork is CI-only.
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot") {
             let names = [
                 ("dy", "dy.ovpn", true),
@@ -243,6 +243,54 @@ final class AppModel: ObservableObject {
     var connected: Bool { sessionState == .connected }
     var connecting: Bool { [.connecting, .authenticating, .reconnecting].contains(sessionState) }
     var stopping: Bool { sessionState == .stopping }
+    func overviewConnectionVerified(at date: Date = Date(), uptime: Double = ProcessInfo.processInfo.systemUptime) -> Bool {
+        connected && helperStateVerified && !routingModeSwitching && !networkRecoveryRequired && !firewallRecoveryRequired && menuTraffic.isFresh(at: date, uptime: uptime)
+    }
+    var overviewRecoveryNeeded: Bool {
+        networkRecoveryRequired || firewallRecoveryRequired || (firewallActive && !connected && !connecting && !stopping)
+    }
+    var canEditOverviewProtection: Bool {
+        sessionState == .disconnected && helperStateVerified && !overviewRecoveryNeeded && !busy &&
+            !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress && !routingModeSwitching
+    }
+    func setOverviewProtection(_ enabled: Bool) {
+        guard canEditOverviewProtection else { return }
+        killSwitch = enabled
+    }
+    var overviewIsFixture: Bool {
+        ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" &&
+        ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot") &&
+        (ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-traffic-snapshot") ||
+         ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-recovery-snapshot"))
+    }
+    /// Visibly labelled, in-memory CI artwork fixture. It never calls the
+    /// helper, writes profiles/history/preferences or opens a network socket.
+    func showOverviewSnapshot() {
+        guard overviewIsFixture, let profile = profiles.first else { return }
+        helperStateVerified = true
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-recovery-snapshot") {
+            connectionStatus = "failed: CI artwork fixture, no VPN"
+            firewallActive = true; firewallRecoveryRequired = true; networkRecoveryRequired = true
+            menuTraffic.reset(); return
+        }
+        let attempt = UUID(), revision = UUID(), start = Date(), startUptime = ProcessInfo.processInfo.systemUptime
+        Task {
+            var received: UInt64 = 0, sent: UInt64 = 0
+            for i in 0...90 {
+                if i > 60 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
+                received += UInt64(45_000 + (i % 7) * 22_000)
+                sent += UInt64(5_000 + (i % 5) * 3_000)
+                let report = SessionReport(state: .connected, message: "CI artwork fixture, no VPN", activeProfileID: profile.id,
+                    receivedBytes: received, sentBytes: sent, firewallActive: true, attemptID: attempt,
+                    networkRecoveryRequired: false, routingMode: .chinaDirect, routingRevision: revision, ipStack: .dual)
+                menuTraffic.observe(report, at: i <= 60 ? start.addingTimeInterval(Double(i - 60)) : Date(),
+                    uptime: i <= 60 ? startUptime + Double(i - 60) : ProcessInfo.processInfo.systemUptime)
+                connectionStatus = report.statusText; activeProfileID = profile.id
+                activeRoutingMode = .chinaDirect; routingRevision = revision; activeIPStack = .dual
+                firewallActive = true; traffic = report.traffic
+            }
+        }
+    }
     var canQuit: Bool { !routingModeSwitching && !profileTransferInProgress && !backgroundServicesBusy && ((repairExitAuthorized && canRepairInterruptedInstallation) || SessionExitPolicy.mayExit(state: sessionState, activeProfileID: activeProfileID, helperVerified: helperStateVerified, recoveryRequired: firewallRecoveryRequired || networkRecoveryRequired)) }
     var canRepairInterruptedInstallation: Bool {
         guard BuildChannel.isLocal, !maintenanceInProgress, !backgroundServicesBusy, !busy, !connected, !connecting, !stopping,
@@ -898,10 +946,10 @@ final class AppModel: ObservableObject {
             message = L10n.text("Enable the background helper in System Settings if requested. A signed .app distribution is required.")
         } catch { message = L10n.format("Helper registration failed: {0}", [String(describing: error.localizedDescription)]) }
     }
-    func applyVerifiedSessionReport(_ report: SessionReport) {
-        menuTraffic.observe(report)
+    func applyVerifiedSessionReport(_ report: SessionReport, at date: Date = Date(), uptime: Double = ProcessInfo.processInfo.systemUptime) {
+        menuTraffic.observe(report, at: date, uptime: uptime)
         if !(busy && connectionAttempt != nil && sessionState == .connecting && report.state == .disconnected) {
-            connectionHistory.observe(.report(.init(report)))
+            connectionHistory.observe(.report(.init(report)), at: date, uptime: uptime)
         }
         activeIPStack = report.ipStack; activeCustomRuleDigest = report.customRuleDigest; activeCustomRuleCount = report.customRuleCount
         helperStateVerified = true

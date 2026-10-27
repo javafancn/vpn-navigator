@@ -57,6 +57,12 @@ jobs:
           import subprocess
           subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-status-bar-self-test'], check=True, timeout=60)
           PYTEST
+      - name: Verify overview throughput and recovery cards
+        run: |
+          python3 - <<'PYTEST'
+          import subprocess
+          subprocess.run(['python3', 'scripts/run-ui-self-test.py', 'dist/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp', '--vpnnav-overview-self-test'], check=True, timeout=60)
+          PYTEST
       - name: Verify native quick panel and actual global shortcut registration
         run: |
           python3 - <<'PYTEST'
@@ -201,6 +207,14 @@ jobs:
             screencapture -x "$RUNNER_TEMP/VPNNavigator-display-$PAGE.png"
             test -s "$RUNNER_TEMP/VPNNavigator-$PAGE.png"
           done
+          for STATE in traffic recovery; do
+            killall VPNNavigatorApp 2>/dev/null || true
+            sleep 1
+            open -n "$APP" --args --vpnnav-ui-tab=overview --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot "--vpnnav-ui-$STATE-snapshot"
+            sleep 7
+            WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift")"
+            screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-overview-$STATE.png"
+          done
           killall VPNNavigatorApp 2>/dev/null || true
           # The exact same binary/UI, with two external desktop colours.
           open -n "$APP" --args --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot --vpnnav-ui-quick-access-snapshot
@@ -314,6 +328,7 @@ jobs:
             ${{ runner.temp }}/VPNNavigator-English-*.png
             ${{ runner.temp }}/VPNNavigator-high-contrast.png
             ${{ runner.temp }}/VPNNavigator-overview.png
+            ${{ runner.temp }}/VPNNavigator-overview-*.png
             ${{ runner.temp }}/VPNNavigator-profiles.png
             ${{ runner.temp }}/VPNNavigator-routing.png
             ${{ runner.temp }}/VPNNavigator-diagnostics.png

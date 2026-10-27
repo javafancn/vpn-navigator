@@ -25,6 +25,11 @@
     "en": "30 days"
   },
   {
+    "key": "60 秒前",
+    "zh": "60 秒前",
+    "en": "60s ago"
+  },
+  {
     "key": "7 天",
     "zh": "7 天",
     "en": "7 days"
@@ -250,6 +255,11 @@
     "en": "Auto-reconnect in Original mode"
   },
   {
+    "key": "PF 已生效",
+    "zh": "PF 已生效",
+    "en": "PF active"
+  },
+  {
     "key": "PF 断线保护为实验性功能",
     "zh": "PF 断线保护为实验性功能",
     "en": "PF connection protection is experimental"
@@ -258,6 +268,16 @@
     "key": "PF 断线保护已接入",
     "zh": "PF 断线保护已接入",
     "en": "PF connection protection integrated"
+  },
+  {
+    "key": "PF 状态已核验；DNS 防泄漏需单独检测。",
+    "zh": "PF 状态已核验；DNS 防泄漏需单独检测。",
+    "en": "PF state verified; DNS leak testing is separate."
+  },
+  {
+    "key": "PF 等待核验",
+    "zh": "PF 等待核验",
+    "en": "PF unverified"
   },
   {
     "key": "PKCS#12 材料可能加密，本地健康检查不解锁；其证书有效期尚未检查。",
@@ -480,6 +500,11 @@
     "en": "VPN connection interrupted"
   },
   {
+    "key": "VPN 连接已建立",
+    "zh": "VPN 连接已建立",
+    "en": "VPN connection established"
+  },
+  {
     "key": "VPN 连接未成功",
     "zh": "VPN 连接未成功",
     "en": "VPN connection unsuccessful"
@@ -670,6 +695,11 @@
     "en": "Troubleshoot…"
   },
   {
+    "key": "上传",
+    "zh": "上传",
+    "en": "Upload"
+  },
+  {
     "key": "上传速率",
     "zh": "上传速率",
     "en": "Upload rate"
@@ -683,6 +713,16 @@
     "key": "上次安装未能完成健康检查，请通过可信安装包重新修复。",
     "zh": "上次安装未能完成健康检查，请通过可信安装包重新修复。",
     "en": "Previous installation failed its health check. Repair using a trusted package."
+  },
+  {
+    "key": "下次连接保护",
+    "zh": "下次连接保护",
+    "en": "Protect next connection"
+  },
+  {
+    "key": "下载",
+    "zh": "下载",
+    "en": "Download"
   },
   {
     "key": "下载已验证的更新…",
@@ -778,6 +818,11 @@
     "key": "仅统计已采集区间，不补算退出、休眠或失联期间的数据；采集流量不作为计费依据。",
     "zh": "仅统计已采集区间，不补算退出、休眠或失联期间的数据；采集流量不作为计费依据。",
     "en": "Only observed intervals are counted. Time while the app is closed, asleep or unreachable is excluded. Traffic samples are not billing records."
+  },
+  {
+    "key": "仅统计应用已核验的连接时间，不计休眠及采样中断。",
+    "zh": "仅统计应用已核验的连接时间，不计休眠及采样中断。",
+    "en": "Counts only verified connection observation; sleep and sampling gaps are excluded."
   },
   {
     "key": "仅记录故障类别与时间，不保存原始引擎日志、地址、域名、证书或凭据。",
@@ -918,6 +963,16 @@
     "key": "保护启用、重建、收紧规则或解除时会重置现有网络连接（含其它 VPN），按策略限制 IPv4／IPv6 物理出口。异常时保护保留，手动断开或恢复网络可解除。完整真机验收尚待完成。",
     "zh": "保护启用、重建、收紧规则或解除时会重置现有网络连接（含其它 VPN），按策略限制 IPv4／IPv6 物理出口。异常时保护保留，手动断开或恢复网络可解除。完整真机验收尚待完成。",
     "en": "Enabling, rebuilding, tightening or releasing protection resets network connections, including other VPNs. IPv4/IPv6 physical egress is restricted by policy. Protection stays active after failures; disconnect or recover the network to release it. Full device acceptance is pending."
+  },
+  {
+    "key": "保护待恢复",
+    "zh": "保护待恢复",
+    "en": "Recovery needed"
+  },
+  {
+    "key": "保护未启用",
+    "zh": "保护未启用",
+    "en": "Protection inactive"
   },
   {
     "key": "保留",
@@ -1710,6 +1765,11 @@
     "en": "Backs up profiles, originals, self-contained certificate materials, groups, favorites, routing rules and revision history. Restore adds profiles without overwriting existing ones."
   },
   {
+    "key": "实时流量",
+    "zh": "实时流量",
+    "en": "Live traffic"
+  },
+  {
     "key": "实际接口：",
     "zh": "实际接口：",
     "en": "Actual interface: "
@@ -1723,6 +1783,11 @@
     "key": "实际路径与预期不一致，请排查其它路由或 VPN",
     "zh": "实际路径与预期不一致，请排查其它路由或 VPN",
     "en": "Actual path differs. Check other routes or VPNs"
+  },
+  {
+    "key": "实际路由",
+    "zh": "实际路由",
+    "en": "Actual routing"
   },
   {
     "key": "实际路由与本次策略不符",
@@ -1743,6 +1808,11 @@
     "key": "实际路由：",
     "zh": "实际路由：",
     "en": "Actual routing: "
+  },
+  {
+    "key": "实验性保护，作用于全局／规则模式；断开后可修改。",
+    "zh": "实验性保护，作用于全局／规则模式；断开后可修改。",
+    "en": "Experimental protection for global/rule routing. Disconnect to change."
   },
   {
     "key": "实验性保护，完整真机防泄漏验收待完成。",
@@ -2100,6 +2170,11 @@
     "en": "Dual-stack is required, but the server did not assign both IPv4 and IPv6 tunnel addresses."
   },
   {
+    "key": "已观察连接",
+    "zh": "已观察连接",
+    "en": "Connection observed"
+  },
+  {
     "key": "已连接",
     "zh": "已连接",
     "en": "Connected"
@@ -2383,6 +2458,11 @@
     "key": "恢复界面预览未能生成。",
     "zh": "恢复界面预览未能生成。",
     "en": "Could not generate recovery preview."
+  },
+  {
+    "key": "恢复网络",
+    "zh": "恢复网络",
+    "en": "Restore network"
   },
   {
     "key": "恢复自动连接",
@@ -2850,6 +2930,16 @@
     "en": "Save up to 32 unique Wi-Fi names, each at most 32 bytes and without control characters."
   },
   {
+    "key": "最近 60 秒",
+    "zh": "最近 60 秒",
+    "en": "Last 60 seconds"
+  },
+  {
+    "key": "最近 60 秒的 VPN 流量趋势",
+    "zh": "最近 60 秒的 VPN 流量趋势",
+    "en": "VPN traffic over the last 60 seconds"
+  },
+  {
     "key": "最近 {0} 个采样点；当前 {1} 字节增量",
     "zh": "最近 {0} 个采样点；当前 {1} 字节增量",
     "en": "Last {0} samples; latest increase: {1} bytes"
@@ -2873,6 +2963,11 @@
     "key": "最近成功配置依据助手确认的连接记录选择。尚无记录时，请先手动连接一次或指定固定配置。",
     "zh": "最近成功配置依据助手确认的连接记录选择。尚无记录时，请先手动连接一次或指定固定配置。",
     "en": "Uses a connection confirmed by the helper. With no history, connect manually first or choose a fixed profile."
+  },
+  {
+    "key": "有效采样 {0} 个，下载 {1}，上传 {2}",
+    "zh": "有效采样 {0} 个，下载 {1}，上传 {2}",
+    "en": "{0} valid samples, download {1}, upload {2}"
   },
   {
     "key": "有配置的证书即将到期或已过期，请打开应用检查并按需更新。",
@@ -3695,6 +3790,11 @@
     "en": "Status notifications are off"
   },
   {
+    "key": "现在",
+    "zh": "现在",
+    "en": "Now"
+  },
+  {
     "key": "现有 {0} 个配置保留；同名配置也会作为新条目添加。不会自动连接或开启系统服务。",
     "zh": "现有 {0} 个配置保留；同名配置也会作为新条目添加。不会自动连接或开启系统服务。",
     "en": "Keeps {0} existing profiles. Matching names are added separately. No automatic connection or service activation."
@@ -3733,6 +3833,11 @@
     "key": "界面预览，未发出网络请求",
     "zh": "界面预览，未发出网络请求",
     "en": "UI preview; no network requests sent"
+  },
+  {
+    "key": "界面预览：合成数据，未建立 VPN",
+    "zh": "界面预览：合成数据，未建立 VPN",
+    "en": "UI preview: synthetic data, no VPN connection"
   },
   {
     "key": "登录后自动连接还需在连接偏好中开启“登录时启动”。自动连接只在应用运行时生效。",
@@ -3925,6 +4030,11 @@
     "en": "Waiting for manual check"
   },
   {
+    "key": "等待有效采样",
+    "zh": "等待有效采样",
+    "en": "Waiting for valid samples"
+  },
+  {
     "key": "等待有线网络。",
     "zh": "等待有线网络。",
     "en": "Waiting for a wired network."
@@ -3963,6 +4073,11 @@
     "key": "等待身份验证",
     "zh": "等待身份验证",
     "en": "Waiting for authentication"
+  },
+  {
+    "key": "等待连接",
+    "zh": "等待连接",
+    "en": "Waiting for connection"
   },
   {
     "key": "等待连接探测",
@@ -4650,6 +4765,11 @@
     "en": "Routing & rules"
   },
   {
+    "key": "路由切换中",
+    "zh": "路由切换中",
+    "en": "Switching routes"
+  },
+  {
     "key": "路由切换未确认：",
     "zh": "路由切换未确认：",
     "en": "Routing switch not confirmed: "
@@ -4785,6 +4905,11 @@
     "en": "Connection changes & failures"
   },
   {
+    "key": "连接后开始采样",
+    "zh": "连接后开始采样",
+    "en": "Sampling starts after connection"
+  },
+  {
     "key": "连接后显示趋势",
     "zh": "连接后显示趋势",
     "en": "Connect to see trend"
@@ -4805,9 +4930,19 @@
     "en": "Connection error; auto-connect paused. Review the problem, then resume manually."
   },
   {
+    "key": "连接异常，请先检查并恢复网络。",
+    "zh": "连接异常，请先检查并恢复网络。",
+    "en": "Check the connection and recover the network."
+  },
+  {
     "key": "连接异常，请检查",
     "zh": "连接异常，请检查",
     "en": "Connection error; review required"
+  },
+  {
+    "key": "连接待核验",
+    "zh": "连接待核验",
+    "en": "Connection unverified"
   },
   {
     "key": "连接总览",
@@ -4843,6 +4978,11 @@
     "key": "连接测试",
     "zh": "连接测试",
     "en": "Connectivity"
+  },
+  {
+    "key": "连接状态与保护",
+    "zh": "连接状态与保护",
+    "en": "Connection and protection"
   },
   {
     "key": "连接状态变化中，路由待核验",
@@ -5210,6 +5350,11 @@
     "en": "Tunnel and routing verified"
   },
   {
+    "key": "隧道协议栈",
+    "zh": "隧道协议栈",
+    "en": "Tunnel IP stack"
+  },
+  {
     "key": "隧道已建立并通过所选路由策略检查",
     "zh": "隧道已建立并通过所选路由策略检查",
     "en": "Tunnel established and selected routing policy verified"
@@ -5233,6 +5378,11 @@
     "key": "需要处理",
     "zh": "需要处理",
     "en": "Action required"
+  },
+  {
+    "key": "需要恢复网络",
+    "zh": "需要恢复网络",
+    "en": "Network recovery needed"
   },
   {
     "key": "需要系统授权或服务配置需修复",

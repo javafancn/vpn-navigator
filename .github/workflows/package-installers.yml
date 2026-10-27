@@ -1,0 +1,103 @@
+name: Build macOS installers (Intel + Apple Silicon)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'Sources/**'
+      - 'Resources/**'
+      - 'Package.swift'
+      - 'scripts/**'
+      - '.github/workflows/package-installers.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/package-installers.yml'
+      - 'scripts/package-local-artifacts.py'
+      - 'scripts/tests/test_package_local_artifacts.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installers-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  package:
+    name: Package ${{ matrix.label }} (${{ matrix.architecture }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            architecture: x86_64
+            label: Intel
+          - runner: macos-15
+            architecture: arm64
+            label: Apple-Silicon
+    env:
+      EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify inputs and artifact validation tests
+        run: |
+          test "$(uname -m)" = "$EXPECTED_ARCHITECTURE"
+          plutil -lint Resources/Info.plist
+          python3 scripts/check-localization.py
+          python3 -m unittest discover -s scripts/tests -p 'test_package_local_artifacts.py'
+      - name: Fetch checksum-verified OpenVPN and OpenSSL sources
+        run: python3 scripts/fetch-engine-sources.py "$RUNNER_TEMP/installer-engine-sources"
+      - uses: actions/cache@v4
+        id: engine-cache
+        with:
+          path: ${{ runner.temp }}/engine-prefix
+          key: source-engine-${{ runner.arch }}-${{ env.OPENVPN_SOURCE_SHA256 }}-${{ env.OPENSSL_SOURCE_SHA256 }}-${{ hashFiles('scripts/build-openvpn-engine.sh') }}
+      - name: Build native engine and complete local application
+        env:
+          ENGINE_CACHE_HIT: ${{ steps.engine-cache.outputs.cache-hit }}
+        run: |
+          if [[ "$ENGINE_CACHE_HIT" != true ]]; then
+            ENGINE_OUTPUT_DIR="$RUNNER_TEMP/engine-prefix" bash scripts/build-openvpn-engine.sh
+          fi
+          export OPENVPN_BIN="$RUNNER_TEMP/engine-prefix/sbin/openvpn"
+          export THIRD_PARTY_NOTICES="$RUNNER_TEMP/engine-prefix/share/vpn-navigator/THIRD_PARTY_NOTICES.txt"
+          VPNNAV_CHANNEL=local-test zsh scripts/build-app.sh
+          'dist/VPN Navigator.app/Contents/Resources/openvpn' --version
+          python3 scripts/release-manifest.py 'dist/VPN Navigator.app' "dist/VPN-Navigator-$EXPECTED_ARCHITECTURE-Local-audit.json"
+      - name: Build installer and uninstaller
+        run: zsh scripts/build-local-pkg.sh
+      - name: Validate and stage architecture-specific download
+        id: artifact
+        run: |
+          python3 scripts/package-local-artifacts.py \
+            --dist dist --architecture "$EXPECTED_ARCHITECTURE" \
+            --output "dist/installer-artifacts/$EXPECTED_ARCHITECTURE" \
+            --source-sha "$GITHUB_SHA" \
+            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+      - uses: actions/upload-artifact@v4
+        id: upload
+        with:
+          name: VPN-Navigator-${{ steps.artifact.outputs.version }}-${{ matrix.label }}-${{ matrix.architecture }}-Local-Test
+          path: dist/installer-artifacts/${{ matrix.architecture }}/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+      - name: Add download link to run summary
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          PACKAGE_VERSION: ${{ steps.artifact.outputs.version }}
+          PACKAGE_BUILD: ${{ steps.artifact.outputs.build }}
+          PACKAGE_MINIMUM: ${{ steps.artifact.outputs.minimum_macos }}
+          PACKAGE_LABEL: ${{ matrix.label }}
+        run: |
+          python3 - <<'PY'
+          import os
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write(f"## {os.environ['PACKAGE_LABEL']} ({os.environ['EXPECTED_ARCHITECTURE']})\n\n")
+              summary.write(f"Version {os.environ['PACKAGE_VERSION']} / Build {os.environ['PACKAGE_BUILD']}; macOS {os.environ['PACKAGE_MINIMUM']}+.\n\n")
+              summary.write(f"[Download installer, uninstaller, SHA-256 and instructions]({os.environ['ARTIFACT_URL']})\n\n")
+              summary.write('Complete local-test build with OpenVPN; ad-hoc signed, not Apple notarized. Packaging does not replace the separate installed-system integration tests.\n')
+          PY

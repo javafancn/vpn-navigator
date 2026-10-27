@@ -3,7 +3,12 @@
 import subprocess
 import sys
 
-process = subprocess.Popen(sys.argv[1:])
+# AppKit's documented automated-test option redirects restorable state into a
+# temporary directory. A previous close/reopen fixture must not decide whether
+# the next process gets a main window. The application's normal launch settings
+# are not modified: this applies only to this test process's argument domain.
+command = [sys.argv[1], '-ApplePersistenceIgnoreState', 'YES', *sys.argv[2:]]
+process = subprocess.Popen(command)
 try:
     raise SystemExit(process.wait(timeout=40))
 except subprocess.TimeoutExpired:

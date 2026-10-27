@@ -27,6 +27,19 @@ enum StatusBarSelfTest {
                   let icon = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"), NSImage(contentsOf: icon) != nil,
                   AppBranding.icon.representations.contains(where: { $0.pixelsWide == 1024 }),
                   Bundle.main.url(forResource: "StatusIcon", withExtension: "pdf", subdirectory: "Branding") != nil else { throw Failure.check("bundled branding") }
+            guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 180, pixelsHigh: 180,
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                bytesPerRow: 0, bitsPerPixel: 0), let context = NSGraphicsContext(bitmapImageRep: bitmap) else { throw Failure.check("brand raster context") }
+            NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = context
+            context.cgContext.clear(NSRect(x: 0, y: 0, width: 180, height: 180))
+            AppBranding.statusIcon.draw(in: NSRect(x: 0, y: 0, width: 180, height: 180))
+            NSGraphicsContext.restoreGraphicsState()
+            for pixel in 0..<180 {
+                for (x, y) in [(pixel, 0), (pixel, 179), (0, pixel), (179, pixel)] {
+                    guard (bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 1) < 0.01 else { throw Failure.check("status mark clipped or opaque at edge") }
+                }
+            }
+            guard (bitmap.colorAt(x: 120, y: 70)?.alphaComponent ?? 0) > 0.5 else { throw Failure.check("status mark is empty") }
         }
         for _ in 0..<2 {
             model.quickAccess.openMainWindow()

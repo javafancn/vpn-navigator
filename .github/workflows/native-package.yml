@@ -144,6 +144,7 @@ jobs:
           echo 'This ad-hoc signature is NOT an Apple Developer ID signature and is NOT notarized.'
       - name: Capture all five native workspaces
         run: |
+          trap 'screencapture -x "$RUNNER_TEMP/VPNNavigator-capture-failure.png" || true' ERR
           # Ephemeral CI machine only: native AppKit materials also respect
           # accessibility defaults, independently of the SwiftUI snapshot flag.
           defaults write com.apple.universalaccess reduceTransparency -bool false || true
@@ -192,7 +193,7 @@ jobs:
           for PAGE in overview profiles routing diagnostics settings; do
             killall VPNNavigatorApp 2>/dev/null || true
             sleep 1
-            open -n "$APP" --args "--vpnnav-ui-tab=$PAGE" "--vpnnav-ui-glass-snapshot" "--vpnnav-ui-demo-snapshot" -ApplePersistenceIgnoreState YES
+            open -n "$APP" --args "--vpnnav-ui-tab=$PAGE" "--vpnnav-ui-glass-snapshot" "--vpnnav-ui-demo-snapshot"
             sleep 7
             WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift" 2> "$RUNNER_TEMP/$PAGE-bounds.txt")"
             cat "$RUNNER_TEMP/$PAGE-bounds.txt"
@@ -202,7 +203,7 @@ jobs:
           done
           killall VPNNavigatorApp 2>/dev/null || true
           # The exact same binary/UI, with two external desktop colours.
-          open -n "$APP" --args --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot --vpnnav-ui-quick-access-snapshot -ApplePersistenceIgnoreState YES
+          open -n "$APP" --args --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot --vpnnav-ui-quick-access-snapshot
           sleep 7
           cat > "$RUNNER_TEMP/quick-window-id.swift" <<'SWIFT'
           import AppKit
@@ -223,7 +224,7 @@ jobs:
           screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-quick-access.png"
           test -s "$RUNNER_TEMP/VPNNavigator-quick-access.png"
           killall VPNNavigatorApp 2>/dev/null || true
-          open -n "$APP" --args --vpnnav-ui-tab=profiles --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot --vpnnav-ui-import-report-snapshot -ApplePersistenceIgnoreState YES
+          open -n "$APP" --args --vpnnav-ui-tab=profiles --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot --vpnnav-ui-import-report-snapshot
           sleep 7
           WINDOW_ID="$(swift "$RUNNER_TEMP/quick-window-id.swift" 620)"
           screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-import-report.png"
@@ -244,20 +245,20 @@ jobs:
           print("PASS: Launch Services lists the installed bundle for .ovpn documents.")
           SWIFT
           swift "$RUNNER_TEMP/check-document-app.swift" "$APP" "$RUNNER_TEMP/工作网络.ovpn"
-          open -n -a "$APP" "$RUNNER_TEMP/工作网络.ovpn" "$RUNNER_TEMP/家庭网络.ovpn" "$RUNNER_TEMP/说明.txt" --args --vpnnav-ui-tab=profiles --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot -ApplePersistenceIgnoreState YES
+          open -n -a "$APP" "$RUNNER_TEMP/工作网络.ovpn" "$RUNNER_TEMP/家庭网络.ovpn" "$RUNNER_TEMP/说明.txt" --args --vpnnav-ui-tab=profiles --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot
           sleep 7
           WINDOW_ID="$(swift "$RUNNER_TEMP/quick-window-id.swift" 620)"
           screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-import-review.png"
           test -s "$RUNNER_TEMP/VPNNavigator-import-review.png"
           killall VPNNavigatorApp 2>/dev/null || true
-          open -n "$APP" --args --vpnnav-ui-tab=settings --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot --vpnnav-ui-profile-recovery-snapshot -ApplePersistenceIgnoreState YES
+          open -n "$APP" --args --vpnnav-ui-tab=settings --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot --vpnnav-ui-profile-recovery-snapshot
           sleep 7
           WINDOW_ID="$(swift "$RUNNER_TEMP/quick-window-id.swift" 580)"
           screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-profile-recovery.png"
           test -s "$RUNNER_TEMP/VPNNavigator-profile-recovery.png"
           killall VPNNavigatorApp 2>/dev/null || true
           for STATE in filter empty; do
-            open -n "$APP" --args --vpnnav-ui-tab=profiles --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot "--vpnnav-ui-library-$STATE-snapshot" -ApplePersistenceIgnoreState YES
+            open -n "$APP" --args --vpnnav-ui-tab=profiles --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot "--vpnnav-ui-library-$STATE-snapshot"
             sleep 7
             WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift")"
             screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-library-$STATE.png"
@@ -265,21 +266,21 @@ jobs:
             killall VPNNavigatorApp 2>/dev/null || true
           done
           for TOOL in custom-routes route-explanation troubleshooting smart-connection profile-backup profile-health profile-update connection-history public-egress keyboard-help; do
-            open -n "$APP" --args --vpnnav-ui-tab=routing --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot "--vpnnav-ui-$TOOL-snapshot" -ApplePersistenceIgnoreState YES
+            open -n "$APP" --args --vpnnav-ui-tab=routing --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot "--vpnnav-ui-$TOOL-snapshot"
             sleep 7
             WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift")"
             screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-tool-$TOOL.png"
             test -s "$RUNNER_TEMP/VPNNavigator-tool-$TOOL.png"
             killall VPNNavigatorApp 2>/dev/null || true
           done
-          open -n "$APP" --args --vpnnav-ui-tab=profiles --vpnnav-ui-demo-snapshot --vpnnav-ui-high-contrast-snapshot -ApplePersistenceIgnoreState YES
+          open -n "$APP" --args --vpnnav-ui-tab=profiles --vpnnav-ui-demo-snapshot --vpnnav-ui-high-contrast-snapshot
           sleep 7
           WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift")"
           screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-high-contrast.png"
           test -s "$RUNNER_TEMP/VPNNavigator-high-contrast.png"
           killall VPNNavigatorApp 2>/dev/null || true
           for PAGE in overview profiles routing diagnostics settings; do
-            open -n "$APP" --args "--vpnnav-ui-tab=$PAGE" --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot --vpnnav-language=en -ApplePersistenceIgnoreState YES
+            open -n "$APP" --args "--vpnnav-ui-tab=$PAGE" --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot --vpnnav-language=en
             sleep 7
             WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift")"
             screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-English-$PAGE.png"
@@ -287,7 +288,7 @@ jobs:
             killall VPNNavigatorApp 2>/dev/null || true
           done
           for TOOL in language-settings keyboard-help profile-health profile-backup public-egress; do
-            open -n "$APP" --args --vpnnav-ui-tab=settings --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot --vpnnav-language=en "--vpnnav-ui-$TOOL-snapshot" -ApplePersistenceIgnoreState YES
+            open -n "$APP" --args --vpnnav-ui-tab=settings --vpnnav-ui-glass-snapshot --vpnnav-ui-demo-snapshot --vpnnav-language=en "--vpnnav-ui-$TOOL-snapshot"
             sleep 7
             WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift")"
             screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-English-$TOOL.png"
@@ -297,7 +298,7 @@ jobs:
           for SCENE in cool warm; do
             swift scripts/capture-glass-calibration.swift "$SCENE" "$RUNNER_TEMP"
             sleep 3
-            open -n "$APP" --args "--vpnnav-ui-tab=overview" "--vpnnav-ui-glass-snapshot" "--vpnnav-ui-demo-snapshot" -ApplePersistenceIgnoreState YES
+            open -n "$APP" --args "--vpnnav-ui-tab=overview" "--vpnnav-ui-glass-snapshot" "--vpnnav-ui-demo-snapshot"
             sleep 7
             WINDOW_ID="$(swift "$RUNNER_TEMP/window-id.swift" 2> "$RUNNER_TEMP/$SCENE-bounds.txt")"
             screencapture -x -o -l "$WINDOW_ID" "$RUNNER_TEMP/VPNNavigator-glass-$SCENE.png"
@@ -306,6 +307,7 @@ jobs:
             killall VPNNavigatorApp 2>/dev/null || true
           done
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: VPNNavigator-visual-smoke
           path: |
@@ -323,6 +325,7 @@ jobs:
             ${{ runner.temp }}/VPNNavigator-library-*.png
             ${{ runner.temp }}/VPNNavigator-tool-*.png
             ${{ runner.temp }}/VPNNavigator-Desktop-Before.png
+            ${{ runner.temp }}/VPNNavigator-capture-failure.png
             ${{ runner.temp }}/*-bounds.txt
             ${{ runner.temp }}/VPNNavigator-glass-*.png
             ${{ runner.temp }}/VPNNavigator-wallpaper-*.png

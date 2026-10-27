@@ -1378,9 +1378,12 @@ final class AppModel: ObservableObject {
 @main
 struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
-    @StateObject private var model = WorkspaceAccessibilitySelfTest.applicationModel()
+    @StateObject private var model: AppModel
     @StateObject private var workspaceCommands = WorkspaceCommandRouter()
     init() {
+        let initialModel = WorkspaceAccessibilitySelfTest.applicationModel()
+        _model = StateObject(wrappedValue: initialModel)
+        appDelegate.model = initialModel
         if ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true", ProcessInfo.processInfo.arguments.contains(where: { $0.hasSuffix("self-test") }) {
             FileHandle.standardError.write(Data("UI application init reached\n".utf8))
         }
@@ -1499,14 +1502,17 @@ struct VPNNavigatorApp: App {
         }
     }
     var body: some Scene {
-        Window("VPN Navigator", id: "main") {
+        WindowGroup("VPN Navigator", id: "main") {
             MainView().environmentObject(model).environmentObject(workspaceCommands)
-                .onAppear { appDelegate.model = model }
                 .frame(minWidth: 1100, minHeight: 700)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 700)
         .commands {
+            // The primary scene participates in launch/restoration, while
+            // every explicit open reuses its tracked window. No duplicate
+            // main workspace is created by File > New Window / Command-N.
+            CommandGroup(replacing: .newItem) { }
             CommandGroup(after: .newItem) {
                 Button(L10n.text("快速打开…")) { model.quickAccess.toggle() }
                     .keyboardShortcut("p", modifiers: [.command, .shift])

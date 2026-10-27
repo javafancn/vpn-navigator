@@ -6,6 +6,11 @@ import VPNNavigatorCore
 /// AppModel; no reference throughput or geographic names are substituted.
 struct GlassMenuBarView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.openWindow) private var openWindow
+
+    private func showMainWindow() {
+        MainWindowPresentation.shared.show { openWindow(id: "main") }
+    }
 
     private func bytes(_ value: UInt64?) -> String {
         guard let value else { return "—" }
@@ -73,13 +78,13 @@ struct GlassMenuBarView: View {
                     }.buttonStyle(ReferenceQuietButton())
                 }
                 Text(model.smartConnection.status).font(.system(size: 11)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
-                Button { model.quickAccess.openMainWindow(); model.showingSmartConnection = true } label: { menuRow(L10n.text("智能连接设置…"), symbol: "bell.badge") }
+                Button { showMainWindow(); model.showingSmartConnection = true } label: { menuRow(L10n.text("智能连接设置…"), symbol: "bell.badge") }
                     .buttonStyle(ReferenceQuietButton())
                 Button { model.quickAccess.toggle() } label: { menuRow(L10n.text("快速打开…"), symbol: "magnifyingglass") }
                     .buttonStyle(ReferenceQuietButton())
                 Divider().opacity(0.2)
                 Button {
-                    model.quickAccess.openMainWindow()
+                    showMainWindow()
                 } label: { menuRow(L10n.text("打开主窗口"), symbol: "macwindow") }
                 .buttonStyle(ReferenceQuietButton())
                 Divider().opacity(0.2)
@@ -92,6 +97,7 @@ struct GlassMenuBarView: View {
         }
         .padding(12).frame(width: 360)
         .background(GlassAtmosphere()).preferredColorScheme(.light)
+        .onAppear { model.quickAccess.openMainWindow = showMainWindow }
     }
     private func menuRow(_ title: String, symbol: String) -> some View {
         HStack(spacing: 13) {

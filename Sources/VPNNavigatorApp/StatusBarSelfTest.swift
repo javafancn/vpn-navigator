@@ -62,9 +62,12 @@ enum StatusBarSelfTest {
         }
         model.quickAccess.openMainWindow(); try await settle()
         guard NSApp.activationPolicy() == .regular, mainWindow()?.isVisible == true else { throw Failure.check("final scene reopen") }
+        model.quickAccess.openMainWindow(); model.quickAccess.openMainWindow(); try await settle()
+        guard NSApp.windows.filter({ $0.title == "VPN Navigator" && !($0 is NSPanel) && $0.isVisible }).count == 1 else { throw Failure.check("open reuses the single main workspace") }
         // Reopen in the same event turn must cancel a queued background switch.
-        mainWindow()?.performClose(nil); model.quickAccess.openMainWindow(); try await settle()
-        guard NSApp.activationPolicy() == .regular, mainWindow()?.isVisible == true else { throw Failure.check("close/reopen race") }
+        mainWindow()?.performClose(nil); model.quickAccess.openMainWindow(); model.quickAccess.openMainWindow(); try await settle()
+        guard NSApp.activationPolicy() == .regular, mainWindow()?.isVisible == true,
+              NSApp.windows.filter({ $0.title == "VPN Navigator" && !($0 is NSPanel) && $0.isVisible }).count == 1 else { throw Failure.check("close/reopen race") }
         print("PASS: template throughput label, bundled logo, actual SwiftUI close/reopen, Dock activation policy, unrelated-window ownership and synthetic session preservation; no VPN requests.")
     }
     private static func mainWindow() -> NSWindow? {

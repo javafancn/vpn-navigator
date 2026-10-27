@@ -163,6 +163,8 @@ verify-x509-name vpnnav-ci-server name
 tls-version-min 1.2
 data-ciphers AES-256-GCM:AES-128-GCM
 connect-retry 1 1
+ignore-unknown-option block-outside-dns
+setenv opt block-outside-dns # Windows-only compatibility hint
 verb 3
 """
         for tag in ['ca', 'cert', 'key']:

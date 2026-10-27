@@ -54,6 +54,15 @@ public enum ProfileSafety {
             let tokens: [String]
             do { tokens = try OpenVPNOptionLexer.tokens(line) }
             catch { throw ProfileValidationError.invalidLine(offset + 1) }
+            // Common cross-platform exports mark this Windows WFP option as
+            // optional. Accept only these exact targets, preserving the text
+            // for OpenVPN's own optional-option semantics and portable export.
+            // Never enable general setenv/ignore-unknown-option passthrough.
+            if tokens == ["ignore-unknown-option", "block-outside-dns"] ||
+               tokens == ["setenv", "opt", "block-outside-dns"] {
+                sanitized.append(raw)
+                continue
+            }
             guard let cmd = tokens.first, !cmd.hasPrefix("--"), allowed.contains(cmd) else {
                 throw ProfileValidationError.unsupported(offset + 1, line)
             }
@@ -133,7 +142,7 @@ public enum ProfileValidationError: Error, Equatable, LocalizedError {
     case unsupported(Int, String), invalidLine(Int), missingRemote, missingInlineCA, unterminatedBlock, tooLarge
     public var errorDescription: String? {
         switch self {
-        case .unsupported(let line, _): return L10n.format("Unsupported OpenVPN directive on line {0}. Script/plugin directives are blocked.", [String(describing: line)])
+        case .unsupported(let line, _): return L10n.format("Unsupported OpenVPN directive on line {0}.", [String(describing: line)])
         case .invalidLine(let line): return L10n.format("Invalid OpenVPN option on line {0}.", [String(describing: line)])
         case .missingRemote: return L10n.text("No remote VPN server configured.")
         case .missingInlineCA: return L10n.text("This engine currently requires an inline <ca> certificate.")

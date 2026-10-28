@@ -85,6 +85,15 @@ enum RouteCommandPressureSelfTest {
             task.standardOutput = pipe
             task.standardError = pipe
             try task.run()
+            // Legacy behavior is observational only and may itself stall after
+            // exhausting descriptors. Keep that isolated child time-bounded.
+            let timeout = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+            timeout.schedule(deadline: .now() + .seconds(15))
+            timeout.setEventHandler { [weak task] in
+                if let task, task.isRunning { task.terminate() }
+            }
+            timeout.resume()
+            defer { timeout.cancel() }
             let bytes = pipe.fileHandleForReading.readDataToEndOfFile()
             task.waitUntilExit()
             print("Legacy command resource observation (isolated child, exit \(task.terminationStatus)): " +

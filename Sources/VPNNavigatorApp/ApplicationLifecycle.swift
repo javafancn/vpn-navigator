@@ -1,4 +1,5 @@
 import AppKit
+import CoreFoundation
 import VPNNavigatorCore
 
 /// Cmd-Q and menu-bar Quit share one asynchronous shutdown path. A failed
@@ -52,6 +53,7 @@ final class ApplicationLifecycle: NSObject, NSApplicationDelegate {
                     sender.reply(toApplicationShouldTerminate: result.succeeded)
                 }
             }
+            CFRunLoopWakeUp(CFRunLoopGetMain())
         }
         return .terminateLater
     }

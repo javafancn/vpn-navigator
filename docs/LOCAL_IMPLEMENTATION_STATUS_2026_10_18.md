@@ -133,3 +133,7 @@ PR #17 扩展真实隔离服务器认证：账号密码、加密私钥、静态 
 - Connect the home recovery button to authenticated recovery and attempt safe idle recovery during application Quit before applying the existing strict helper exit policy.
 - Cover real installed application Quit with both recoverable pending-add evidence and malformed evidence that must remain protected.
 - Bump local package version to 0.8.7 / Build 27. Physical-network and user-Mac acceptance remain required.
+
+## 0.8.8 / Build 28：真实应用连接链路验收
+
+增加真实应用导入、选择原始／全局／规则模式、TCP／UDP TLS 连接、4096 条非连续路由、实际内核查询、跨看门狗持续连接、在线往返切换及明确退出的安装验收，见 [受管连接验收](MANAGED_CONNECTION_ACCEPTANCE.md)。调整连接和恢复 IPC 等待期限，避免大量路由执行／回滚期间误报助手不可用或过早取消退出。侧栏品牌改为 Logo 上方、标题和副标题下方。最终检查结果以本轮 PR / Actions 为准。

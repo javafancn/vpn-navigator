@@ -140,8 +140,8 @@ final class HelperClient {
     func ping() async -> String {
         await ask { helper, reply in helper.health(reply: reply) }
     }
-    func sessionReport() async -> SessionReport? {
-        let raw = await ask { helper, reply in helper.sessionSnapshot(reply: reply) }
+    func sessionReport(timeout: TimeInterval = 12) async -> SessionReport? {
+        let raw = await ask(timeout: timeout) { helper, reply in helper.sessionSnapshot(reply: reply) }
         guard let data = raw.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(SessionReport.self, from: data)
     }
@@ -153,7 +153,7 @@ final class HelperClient {
     }
     func connect(profile: String, profileID: UUID, mode: RoutingMode, rules: String,
                  username: String, password: String, preferences: SessionPreferences, attemptID: UUID) async -> String {
-        await ask { helper, reply in
+        await ask(timeout: TimeInterval(preferences.connectionTimeout + 15)) { helper, reply in
             helper.connect(profile: profile, profileID: profileID.uuidString,
                            mode: mode.rawValue, rules: rules,
                            username: username, password: password, preferences: preferences.json, attemptID: attemptID.uuidString, reply: reply)
@@ -168,19 +168,19 @@ final class HelperClient {
         return (try? JSONDecoder().decode([DiagnosticEvent].self, from: data)) ?? []
     }
     func disconnect(attemptID: UUID? = nil) async -> String {
-        await ask(timeout: 30) { helper, reply in helper.disconnect(cancelAttemptID: attemptID?.uuidString ?? "", reply: reply) }
+        await ask(timeout: 180) { helper, reply in helper.disconnect(cancelAttemptID: attemptID?.uuidString ?? "", reply: reply) }
     }
     func trafficStatus() async -> String {
         await ask { helper, reply in helper.trafficStatus(reply: reply) }
     }
     func disconnectSession(_ expected: QuickAccessSession) async -> String {
-        await ask(timeout: 30) { helper, reply in
+        await ask(timeout: 180) { helper, reply in
             helper.disconnectSession(expectedProfileID: expected.profileID.uuidString,
                 expectedAttemptID: expected.attemptID.uuidString, reply: reply)
         }
     }
     func recoverOrphanedRoutes() async -> String {
-        await ask(timeout: 60) { helper, reply in helper.recoverOrphanedRoutes(reply: reply) }
+        await ask(timeout: 180) { helper, reply in helper.recoverOrphanedRoutes(reply: reply) }
     }
     func lookupRoute(_ request: RouteLookupRequest) async throws -> RouteLookupResult {
         let raw = await ask(timeout: 15) { helper, reply in helper.explainRoute(request.json, reply: reply) }

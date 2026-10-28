@@ -23,7 +23,7 @@ final class Reply: @unchecked Sendable {
     init(_ finish: @escaping (String) -> Void) { self.finish = finish }
     func send(_ value: String) { lock.lock(); let first = !done; done = true; lock.unlock(); if first { finish(value) } }
 }
-func ask(_ block: @escaping (TLSHelper, @escaping (String) -> Void) -> Void) async -> String {
+func ask(timeout: TimeInterval = 15, _ block: @escaping (TLSHelper, @escaping (String) -> Void) -> Void) async -> String {
     await withCheckedContinuation { continuation in
         let connection = NSXPCConnection(machServiceName: "com.javafancn.vpn-navigator.helper", options: .privileged)
         let once = Reply { value in connection.invalidate(); continuation.resume(returning: value) }
@@ -39,7 +39,7 @@ func ask(_ block: @escaping (TLSHelper, @escaping (String) -> Void) -> Void) asy
         connection.invalidationHandler = { once.send("ERROR: unavailable") }
         connection.interruptionHandler = { once.send("ERROR: interrupted") }
         connection.resume()
-        DispatchQueue.global().asyncAfter(deadline: .now() + 15) { once.send("ERROR: timeout") }
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { once.send("ERROR: timeout") }
         guard let api = connection.remoteObjectProxyWithErrorHandler({ _ in once.send("ERROR: rejected") }) as? TLSHelper else {
             once.send("ERROR: proxy"); return
         }
@@ -47,7 +47,7 @@ func ask(_ block: @escaping (TLSHelper, @escaping (String) -> Void) -> Void) asy
     }
 }
 func disconnect() async -> Bool {
-    await ask { $0.disconnect(cancelAttemptID: "", reply: $1) } == "Disconnected"
+    await ask(timeout: 180) { $0.disconnect(cancelAttemptID: "", reply: $1) } == "Disconnected"
 }
 struct Factor: Decodable {
     let kind: String

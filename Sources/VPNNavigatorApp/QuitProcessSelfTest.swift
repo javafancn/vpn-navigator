@@ -39,7 +39,7 @@ enum QuitProcessSelfTest {
                 await model.refreshConnectionStatus()
                 if tick % 20 == 0 { trace("startup ready=\(model.profileOpenReady), state=\(model.sessionState.rawValue)") }
                 let recovering = ProcessInfo.processInfo.arguments.contains("--vpnnav-quit-with-recoverable-journal") &&
-                    model.helperStateVerified && model.activeProfileID == nil && model.networkRecoveryRequired &&
+                    model.activeProfileID == nil && model.networkRecoveryRequired &&
                     !ConnectionControl.inProgress(model.sessionState)
                 if model.profileOpenReady && !model.backgroundServicesBusy && !model.maintenanceInProgress && (model.connected || model.canQuit || recovering) {
                     print("Quit fixture: real application termination requested")

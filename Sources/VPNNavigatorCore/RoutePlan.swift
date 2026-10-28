@@ -32,9 +32,11 @@ public struct RoutePlan: Sendable {
 }
 
 public enum RoutePlanningError: Error, Equatable, LocalizedError {
-    case invalidGateway, invalidInterface, badServerAddress, blockedServerAddress, routeCollision
+    case invalidGateway, invalidInterface, badServerAddress, blockedServerAddress, routeCollision, competingTunnel
     public var errorDescription: String? {
         switch self {
+        case .competingTunnel:
+            return L10n.text("检测到其它 VPN／TUN 正在接管外网路由。请先关闭 FLClash／Clash 等客户端的 TUN 或断开其它 VPN，再连接规则／全局模式。")
         case .invalidGateway:
             return L10n.text("无法核验物理出口；请检查本地网络，并断开其它 VPN／TUN 后重试。")
         case .invalidInterface:

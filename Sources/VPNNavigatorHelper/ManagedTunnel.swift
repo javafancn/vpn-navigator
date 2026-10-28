@@ -141,6 +141,15 @@ final class ManagedTunnel {
         attemptExpiresAt = expiresAt
         var validated = try ProfileSafety.validate(text)
         try ManagedRoutingPolicy.validate(validated, mode: mode)
+        if mode != .original {
+            // Read-only route lookup: sends no packets and runs before root
+            // markers, DNS/PF changes or authentication. A successful lookup
+            // is only a conflict screen; later route verification still runs.
+            if let route = try? RouteExecutor.command("/sbin/route", ["-n", "get", "1.1.1.1"]),
+               let interface = Self.parseValue("interface:", in: route), DNSRecoveryPolicy.validTunnel(interface) {
+                throw RoutePlanningError.competingTunnel
+            }
+        }
         // Negotiate tunnel families before evaluating unsupported-family fallback.
         // Address-family fallback is checked after the server has assigned its tunnel addresses.
         if mode != .chinaDirect { rules = nil; rules6 = nil }

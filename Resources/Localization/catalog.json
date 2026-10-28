@@ -3445,6 +3445,11 @@
     "en": "Review the editor, external materials and overlapping rules. Keep the original file before correcting it."
   },
   {
+    "key": "检测到其它 VPN／TUN 正在接管外网路由。请先关闭 FLClash／Clash 等客户端的 TUN 或断开其它 VPN，再连接规则／全局模式。",
+    "zh": "检测到其它 VPN／TUN 正在接管外网路由。请先关闭 FLClash／Clash 等客户端的 TUN 或断开其它 VPN，再连接规则／全局模式。",
+    "en": "Another VPN/TUN is handling internet routes. Turn off TUN in FLClash/Clash or disconnect the other VPN before using rule/global mode."
+  },
+  {
     "key": "检测响应不是支持核验的公网地址。",
     "zh": "检测响应不是支持核验的公网地址。",
     "en": "Response is not a supported verifiable public address."

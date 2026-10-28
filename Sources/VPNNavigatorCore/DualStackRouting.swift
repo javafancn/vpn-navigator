@@ -79,6 +79,7 @@ public struct PhysicalIPPath: Equatable, Sendable {
     public let gateway: String
     public let interface: String
     public init(gateway: String, interface: String) throws {
+        if DNSRecoveryPolicy.validTunnel(interface) { throw RoutePlanningError.competingTunnel }
         guard LeakGuardPolicy.validPhysical(interface), (IPv4CIDR.parseAddress(gateway).map { $0 != 0 && $0 >> 24 != 127 && $0 >> 24 < 224 } == true) || IPAddress.gateway6(gateway, interface: interface) != nil else { throw RoutePlanningError.invalidGateway }
         self.gateway = IPAddress.gateway6(gateway, interface: interface) ?? gateway; self.interface = interface
     }

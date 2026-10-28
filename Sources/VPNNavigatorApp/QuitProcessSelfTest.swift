@@ -7,6 +7,11 @@ import VPNNavigatorCore
 @MainActor
 enum QuitProcessSelfTest {
     private static var started = false
+    static func trace(_ message: String) {
+        guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
+              ProcessInfo.processInfo.arguments.contains("--vpnnav-quit-process-self-test") else { return }
+        FileHandle.standardError.write(Data(("Quit fixture: " + message + "\n").utf8))
+    }
     static func verifyRejection() async throws {
         guard BuildChannel.isLocal, ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" else { throw LocalInstallError.unsafe }
         let client = HelperClient.shared
@@ -21,11 +26,14 @@ enum QuitProcessSelfTest {
         guard !started, BuildChannel.isLocal,
               ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" else { return }
         started = true
+        trace("main scene ready")
         Task {
-            for _ in 0..<100 {
+            for tick in 0..<100 {
                 await model.refreshConnectionStatus()
-                if model.profileOpenReady && (model.connected || model.canQuit) {
+                if tick % 20 == 0 { trace("startup ready=\(model.profileOpenReady), state=\(model.sessionState.rawValue)") }
+                if model.profileOpenReady && !model.backgroundServicesBusy && !model.maintenanceInProgress && (model.connected || model.canQuit) {
                     print("Quit fixture: real application termination requested")
+                    fflush(stdout)
                     NSApp.terminate(nil)
                     return
                 }

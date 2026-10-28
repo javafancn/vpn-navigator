@@ -191,7 +191,8 @@ final class AppModel: ObservableObject {
         ipv6Updater = APNICIPv6PreviewStore(root: root.appendingPathComponent("Rules"))
         automaticRulesEnabled = backgroundPreferences.rulesEnabled
         launchAtLogin = backgroundPreferences.loginEnabled
-        helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
+        let initialStatus = helper.installationStatus
+        helperStateVerified = initialStatus != .enabled && !(BuildChannel.isLocal && initialStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-local-quit-rejection-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-overview-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-status-bar-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-localization-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-public-egress-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-connection-history-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-health-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
         // CI-only in-memory composition fixture for checking the populated
@@ -979,9 +980,10 @@ final class AppModel: ObservableObject {
         guard !helperPollingPaused else { return }
         let capturedEpoch = statusEpoch
         guard !routingModeSwitching else { return }
+        let installationStatus = helper.installationStatus
         installationIssue = helper.localInstallationIssue
-        helperStatus = displayHelperStatus(helper.installationStatus)
-        if helper.installationStatus == .enabled {
+        helperStatus = displayHelperStatus(installationStatus)
+        if installationStatus == .enabled {
             if let report = await helper.sessionReport() {
                 guard capturedEpoch == statusEpoch, !routingModeSwitching else { return }
                 applyVerifiedSessionReport(report)
@@ -1000,7 +1002,7 @@ final class AppModel: ObservableObject {
                 sendTrend.reset()
             }
         } else {
-            let unresolved = BuildChannel.isLocal && (helper.installationStatus == .requiresApproval || LocalInstallation.hasRecoveryEvidence)
+            let unresolved = BuildChannel.isLocal && (installationStatus == .requiresApproval || LocalInstallation.hasRecoveryEvidence)
             helperStateVerified = !unresolved
             menuTraffic.reset()
             smartConnection.observe(nil)
@@ -1266,8 +1268,10 @@ final class AppModel: ObservableObject {
         }
         // Verify the current helper even when the last UI snapshot was idle.
         // This also handles Quit during initial scene/status loading.
+        QuitProcessSelfTest.trace("verifying current session")
         await refreshConnectionStatus()
         if !canQuit {
+            QuitProcessSelfTest.trace("disconnecting and recovering network")
             if !stopping { await disconnect(pauseAutomatic: false) }
             await refreshConnectionStatus()
         }
@@ -1280,10 +1284,13 @@ final class AppModel: ObservableObject {
             // wake an exited helper. Restore its saved preference next launch.
             try await UserServices.disableRules()
             helperPollingPaused = true; statusEpoch &+= 1
+            QuitProcessSelfTest.trace("draining requests and stopping idle helper")
             if helper.installationStatus == .enabled { try await helper.stopForApplicationQuit() }
+            QuitProcessSelfTest.trace("helper process stopped")
             finished = true
             return true
         } catch {
+            QuitProcessSelfTest.trace("helper stop failed")
             message = L10n.text("退出尚未完成：后台助手未能安全停止，请检查连接和网络恢复状态后重试。")
             return false
         }

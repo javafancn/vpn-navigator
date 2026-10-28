@@ -3585,6 +3585,11 @@
     "en": "Verifying this session's actual route…"
   },
   {
+    "key": "正在核验程序身份…",
+    "zh": "正在核验程序身份…",
+    "en": "Verifying application identity…"
+  },
+  {
     "key": "正在读取并保存",
     "zh": "正在读取并保存",
     "en": "Reading and saving"

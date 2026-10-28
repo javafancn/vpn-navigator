@@ -33,6 +33,7 @@ final class ApplicationLifecycle: NSObject, NSApplicationDelegate {
         quitting = true
         Task {
             let finished = await model.prepareApplicationQuit()
+            QuitProcessSelfTest.trace(finished ? "termination approved" : "termination cancelled")
             quitting = false
             if !finished { model.quickAccess.openMainWindow() }
             sender.reply(toApplicationShouldTerminate: finished)

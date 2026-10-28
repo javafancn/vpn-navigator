@@ -193,7 +193,7 @@ private struct ConnectionProtectionCard: View {
                     Text(L10n.text("连接异常，请先检查并恢复网络。")).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(2)
                     Spacer(minLength: 0)
                     Button(recovery ? L10n.text("恢复网络") : L10n.text("一键排障…")) {
-                        if recovery { Task { await model.disconnect() } }
+                        if recovery { Task { await model.retryNetworkRecovery() } }
                         else { model.showingTroubleshooting = true }
                     }.buttonStyle(ReferenceSecondaryButton()).controlSize(.small)
                         .disabled(model.busy || model.stopping || model.maintenanceInProgress || model.profileTransferInProgress)

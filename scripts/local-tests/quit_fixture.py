@@ -15,7 +15,7 @@ def helper_pid(run):
     return int(match.group(1)) if match else None
 
 
-def exercise_quit(run, active=False):
+def exercise_quit(run, active=False, recovering=False):
     assert os.environ.get('GITHUB_ACTIONS') == 'true'
     before = (BASE / 'manifest.json').read_bytes()
     plist = Path('/Library/LaunchDaemons/com.javafancn.vpn-navigator.local-helper.plist')
@@ -26,7 +26,10 @@ def exercise_quit(run, active=False):
         run([APP, '--vpnnav-local-traffic-self-test'])
         run([APP, '--vpnnav-local-quit-rejection-check'])
         assert helper_pid(run) == pid, 'Unsafe exit killed the active helper'
-    result = run(['python3', 'scripts/run-ui-self-test.py', APP, '--vpnnav-quit-process-self-test'])
+    arguments = ['python3', 'scripts/run-ui-self-test.py', APP, '--vpnnav-quit-process-self-test']
+    if recovering:
+        arguments.append('--vpnnav-quit-with-recoverable-journal')
+    result = run(arguments)
     assert 'Quit fixture: real application termination requested' in result.stdout
     # launchctl print and signal zero do not wake the Mach service.
     for _ in range(50):
@@ -52,3 +55,5 @@ def exercise_quit(run, active=False):
     assert (BASE / 'manifest.json').read_bytes() == before
     print('PASS: real application Quit ' + ('disconnects TLS VPN, restores network and ' if active else '') +
           'ends helper process, remains stopped, preserves approval and registration, and relaunches on next demand.')
+    if recovering:
+        print('PASS: real application Quit safely reconciles an absent pending route intent and completes network recovery before stopping the helper.')

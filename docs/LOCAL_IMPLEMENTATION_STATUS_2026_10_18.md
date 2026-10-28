@@ -124,3 +124,12 @@ PR #17 扩展真实隔离服务器认证：账号密码、加密私钥、静态 
 修复 Darwin 的 link# 组播／广播路由被误收为局域网网段，导致 PF 拒绝 224.0.0.0/4 参数的问题。解析器排除组播、保留广播、零地址与回环网段；保护策略继续独立拒绝不合法输入，未放宽网段限制。保护错误区分网卡、服务器端点和局域网，IPv6 错误区分物理旁路、其它隧道及采样失败。
 
 允许已清理、无活动配置和恢复证据的 failed 会话修改“下次连接保护”，与设置页一致；活动／孤儿／PF 恢复场景继续禁用。新增合成 macOS 路由及地址状态回归、局域网解析到 PF 生成的联动检查、错误类别及真实原生开关检查，不使用用户实际地址或配置。
+
+## Build 27 / 0.8.7 — route command resources and recovery
+
+- Bound Foundation object lifetimes per routing command and journal append; explicitly close both pipe handles and use null stdin.
+- Add a 128-FD stress fixture with 3,072 real read-only route subprocesses and journaled synthetic add/rollback operations. An isolated debug child observes the old command pattern without making legacy failure a portability requirement.
+- Reconcile pending add intents only after exact-prefix absence is proven from a readable routing table, with private original-log archives and unchanged committed-route ownership checks. Pending deletes, foreign exact-prefix routes, malformed records and unknown system state remain blocked.
+- Connect the home recovery button to authenticated recovery and attempt safe idle recovery during application Quit before applying the existing strict helper exit policy.
+- Cover real installed application Quit with both recoverable pending-add evidence and malformed evidence that must remain protected.
+- Bump local package version to 0.8.7 / Build 27. Physical-network and user-Mac acceptance remain required.

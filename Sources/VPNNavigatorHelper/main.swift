@@ -11,6 +11,10 @@ if CommandLine.arguments.dropFirst().first == "--commit-dns" {
     catch { exit(1) }
 }
 #if DEBUG
+if CommandLine.arguments.dropFirst().first == "--self-test-route-pressure-legacy" {
+    do { try RouteCommandPressureSelfTest.run(legacy: true); exit(0) }
+    catch { fputs("Legacy resource observation stopped: \(error.localizedDescription)\n", stderr); exit(2) }
+}
 if CommandLine.arguments.dropFirst().first == "--self-test-management" {
     guard getuid() != 0, CommandLine.arguments.count == 4 else { exit(1) }
     do {
@@ -40,6 +44,12 @@ if CommandLine.arguments.dropFirst().first == "--self-test-dns-journal" {
 #endif
 
 #if VPNNAV_LOCAL_TEST
+if CommandLine.arguments.dropFirst().first == "--self-test-route-pressure" {
+    guard getuid() == 0, CommandLine.arguments.count == 2, ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
+          let approval = try? LocalInstallation.load(), LocalInstallation.selfMatches([.helper], approval: approval) else { exit(1) }
+    do { try RouteCommandPressureSelfTest.run(); exit(0) }
+    catch { fputs("Route resource pressure fixture failed: \(error.localizedDescription)\n", stderr); exit(1) }
+}
 if CommandLine.arguments.dropFirst().first == "--self-test-ipv6-kernel" {
     guard getuid() == 0, CommandLine.arguments.count == 3, ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
           let approval = try? LocalInstallation.load(), LocalInstallation.selfMatches([.helper], approval: approval) else { exit(1) }

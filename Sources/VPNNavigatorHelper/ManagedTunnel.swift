@@ -729,6 +729,8 @@ final class ManagedTunnel {
             message = "已核验旧进程退出，DNS、路由与本应用断线保护已恢复。"
             return message
         }
+        do { try RouteJournalRecovery.reconcileAbsentAdds(journal) }
+        catch { state = .failed; message = error.localizedDescription; return "ERROR: " + message }
         _ = RouteExecutor(journal: journal)
         if FileManager.default.fileExists(atPath: journal.path) {
             state = .failed

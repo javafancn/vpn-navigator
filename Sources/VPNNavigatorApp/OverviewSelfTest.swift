@@ -54,6 +54,9 @@ enum OverviewSelfTest {
             receivedBytes: nil, sentBytes: nil, attemptID: attempt, networkRecoveryRequired: false)
         model.applyVerifiedSessionReport(failed)
         guard model.message?.contains("synthetic route failure") == true, model.pendingManualFailureAttempt == nil else { throw Failure.check }
+        guard model.canEditOverviewProtection else { throw Failure.check }
+        model.setOverviewProtection(false)
+        guard !model.killSwitch else { throw Failure.check }
         model.message = nil
         model.applyVerifiedSessionReport(failed)
         guard model.message == nil else { throw Failure.check }

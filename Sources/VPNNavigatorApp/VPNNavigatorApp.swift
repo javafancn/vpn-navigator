@@ -254,7 +254,8 @@ final class AppModel: ObservableObject {
         networkRecoveryRequired || firewallRecoveryRequired || (firewallActive && !connected && !connecting && !stopping)
     }
     var canEditOverviewProtection: Bool {
-        sessionState == .disconnected && helperStateVerified && !overviewRecoveryNeeded && !busy &&
+        SessionExitPolicy.mayExit(state: sessionState, activeProfileID: activeProfileID,
+            helperVerified: helperStateVerified, recoveryRequired: overviewRecoveryNeeded) && !busy &&
             !maintenanceInProgress && !backgroundServicesBusy && !profileTransferInProgress && !routingModeSwitching
     }
     func setOverviewProtection(_ enabled: Bool) {

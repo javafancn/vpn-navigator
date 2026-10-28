@@ -2,6 +2,15 @@ import XCTest
 @testable import VPNNavigatorCore
 
 final class LeakGuardPolicyTests: XCTestCase {
+    func testInvalidProtectionInputsIdentifyTheFailedStage() throws {
+        let lan = try IPv4CIDR("192.168.20.0/24")
+        XCTAssertThrowsError(try LeakGuardPolicy(physical: "utun7", endpoint: "8.8.8.8", port: 1194,
+            transport: .udp, local: [lan], country: [])) { XCTAssertEqual($0 as? LeakGuardError, .invalidInterface) }
+        XCTAssertThrowsError(try LeakGuardPolicy(physical: "en1", endpoint: "not-a-numeric-endpoint", port: 1194,
+            transport: .udp, local: [lan], country: [])) { XCTAssertEqual($0 as? LeakGuardError, .invalidEndpoint) }
+        XCTAssertThrowsError(try LeakGuardPolicy(physical: "en1", endpoint: "8.8.8.8", port: 1194,
+            transport: .udp, local: [IPv4CIDR("224.0.0.0/4")], country: [])) { XCTAssertEqual($0 as? LeakGuardError, .invalidLocalNetworks) }
+    }
     func testPolicyBlocksAllOtherInterfacesAndIPv6() throws {
         let policy = try LeakGuardPolicy(physical: "en0", endpoint: "8.8.8.8", port: 1194,
             transport: .udp, local: [IPv4CIDR("192.168.1.0/24")], country: [])

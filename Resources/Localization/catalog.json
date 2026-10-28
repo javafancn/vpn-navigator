@@ -805,6 +805,11 @@
     "en": "Wired only"
   },
   {
+    "key": "仅有链路本地 IPv6 与接口作用域路由",
+    "zh": "仅有链路本地 IPv6 与接口作用域路由",
+    "en": "Only link-local IPv6 and interface-scoped routes are present"
+  },
+  {
     "key": "仅本机保存，最多 200 次会话",
     "zh": "仅本机保存，最多 200 次会话",
     "en": "Stored on this Mac only · Up to 200 sessions"
@@ -1323,6 +1328,11 @@
     "key": "双栈规则路由需要有效的中国 IPv6 规则，请先更新 IPv6 规则。",
     "zh": "双栈规则路由需要有效的中国 IPv6 规则，请先更新 IPv6 规则。",
     "en": "Dual-stack rule routing needs valid China IPv6 rules. Update them first."
+  },
+  {
+    "key": "发现其它 IPv6 隧道路由，尚不能排除旁路。请关闭其它 VPN／TUN，或启用断线保护后重试。",
+    "zh": "发现其它 IPv6 隧道路由，尚不能排除旁路。请关闭其它 VPN／TUN，或启用断线保护后重试。",
+    "en": "Other IPv6 tunnel routes were found and bypass cannot be ruled out. Close other VPN/TUN clients or enable disconnect protection before retrying."
   },
   {
     "key": "发现物理网络 IPv6 默认路由",
@@ -2045,6 +2055,11 @@
     "en": "Cancelled; start another check manually"
   },
   {
+    "key": "已同时读取路由和接口地址，未发现可用于公网的 IPv6 源地址。",
+    "zh": "已同时读取路由和接口地址，未发现可用于公网的 IPv6 源地址。",
+    "en": "Routes and interface addresses were checked together; no non-link-local IPv6 source address was found."
+  },
+  {
     "key": "已启用",
     "zh": "已启用",
     "en": "Enabled"
@@ -2690,6 +2705,21 @@
     "en": "Invalid connection protection parameters."
   },
   {
+    "key": "断线保护无法核验服务器地址、端口或传输协议，请检查配置。",
+    "zh": "断线保护无法核验服务器地址、端口或传输协议，请检查配置。",
+    "en": "Disconnect protection cannot verify the server address, port or transport. Check the profile."
+  },
+  {
+    "key": "断线保护无法核验物理网卡；请检查当前网络和其它 VPN／TUN。",
+    "zh": "断线保护无法核验物理网卡；请检查当前网络和其它 VPN／TUN。",
+    "en": "Disconnect protection cannot verify the physical interface. Check the current network and other VPN/TUN clients."
+  },
+  {
+    "key": "断线保护未取得有效的物理局域网网段，请查看本机路由诊断。",
+    "zh": "断线保护未取得有效的物理局域网网段，请查看本机路由诊断。",
+    "en": "Disconnect protection could not identify a valid physical LAN prefix. Check local route diagnostics."
+  },
+  {
     "key": "断线保护（实验性，全局 VPN / 国内直连）",
     "zh": "断线保护（实验性，全局 VPN / 国内直连）",
     "en": "Connection protection (experimental, global / China direct)"
@@ -2743,6 +2773,11 @@
     "key": "无法完成导入或刷新配置列表，请检查存储权限。",
     "zh": "无法完成导入或刷新配置列表，请检查存储权限。",
     "en": "Could not import or refresh the profile index. Check storage permissions."
+  },
+  {
+    "key": "无法完整核验 IPv6 路由与接口地址，连接已停止。请查看网络诊断后重试。",
+    "zh": "无法完整核验 IPv6 路由与接口地址，连接已停止。请查看网络诊断后重试。",
+    "en": "IPv6 routes and interface addresses could not be fully verified. The connection was stopped. Check network diagnostics before retrying."
   },
   {
     "key": "无法打开卸载包：{0}",

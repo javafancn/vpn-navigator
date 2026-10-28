@@ -29,6 +29,7 @@ struct NetworkDiagnosticsView: View {
         guard let local else { return L10n.text("尚未取得 IPv6 路由状态") }
         switch local.health.ipv6Safety {
         case .noDefaultRoute: return L10n.text("未发现 IPv6 默认路由")
+        case .linkLocalOnly: return L10n.text("仅有链路本地 IPv6 与接口作用域路由")
         case .tunnelOnly: return L10n.text("发现隧道路由，归属仍需核验")
         case .physicalBypass: return L10n.text("发现物理网络 IPv6 默认路由")
         case .unknown: return L10n.text("无法确认 IPv6 路由状态")

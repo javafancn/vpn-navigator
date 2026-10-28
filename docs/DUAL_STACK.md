@@ -8,6 +8,7 @@
 - 根据服务器实际分配的 IPv4、IPv6 隧道地址安装对应地址族的默认路由，显示助手确认的 IPv4、IPv6 或双栈状态。IPv6 不需要另一个 VPN 会话。
 - 设置中可要求受管连接必须建立双栈，缺少任一地址族时拒绝连接。默认自动协商；不支持某个地址族时仍须满足保护条件，不会把缺少 IPv6 的连接标为双栈。
 - IPv4-only 服务器遇到可绕行的 IPv6 默认出口时，需要启用保护，或更换双栈服务器；IPv6-only 隧道在受管模式下需要保护以阻断未承载的 IPv4。原始模式不由应用保证这些路径。
+- 0.8.6 起，默认项全部为 utun 的接口作用域路由时，还会读取完整接口地址。只有对应接口均存在，且所有接口仅有链路本地 IPv6 与 lo0 回环地址时，才认定没有可用的 IPv6 公网源地址，允许 IPv4 受管连接。物理默认路由、非作用域隧道、全球／ULA 地址、损坏或缺失的采样仍不放行；运行期间继续核验。不能仅凭 `I` 标志忽略一条路由。
 - 实验性 PF 保护只放行本次隧道、固定服务器端点、明确的直连范围及必要的 DHCP／IPv6 邻居发现。IPv6 默认阻断规则仍保留，隧道和直连放行位于其前；没有使用“放行所有物理 IPv6”的规则。
 - 没有 PF 的连接仍依赖路由与定期核验，不提供无泄漏保证。物理出口或本地网段改变时停止受管连接并走既有恢复流程。
 
@@ -38,3 +39,5 @@ IPv4 和 IPv6 写入同一份 root 所有的 routes.journal，均采用写前记
 公网服务器的双栈转发、IPv6 物理出口、ND／DHCPv6、DNS 分域、多网卡切换、休眠恢复、断线保护抓包与长时间运行仍需物理环境验收。本次不发布 Beta 或 Release。
 
 实现参考：[OpenVPN 2.7 手册](https://openvpn.net/community-docs/community-articles/openvpn-2-7-manual.html)、[2.7.8 Management 协议说明](https://github.com/OpenVPN/openvpn/blob/v2.7.8/doc/management-notes.txt)。
+
+接口作用域与链路本地判断参考 Apple 的 [netstat 标志说明](https://github.com/apple-oss-distributions/network_cmds/blob/main/netstat.tproj/netstat.1) 和 [RFC 4291 §2.5.6](https://www.rfc-editor.org/rfc/rfc4291.html#section-2.5.6)。

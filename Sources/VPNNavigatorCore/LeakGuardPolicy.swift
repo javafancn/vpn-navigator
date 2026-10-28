@@ -18,9 +18,11 @@ public struct LeakGuardPolicy: Sendable {
                 transport: FirewallRulePreview.Transport, local: [IPv4CIDR], country: [IPv4CIDR], managedDirect: [IPv4CIDR] = [],
                 physical4: String? = nil, physical6: String? = nil, local6: [IPv6CIDR] = [], managedDirect6: [IPv6CIDR] = [],
                 ipv4Tunnel: Bool = true, ipv6Tunnel: Bool = false) throws {
-        guard Self.validPhysical(physical), IPAddress.canonical(endpoint) != nil, port > 0,
-              (IPAddress.isIPv6(endpoint) || !local.isEmpty), local.allSatisfy({ $0.prefix >= 8 }), country.allSatisfy({ $0.prefix >= 8 }),
-              physical4.map(Self.validPhysical) ?? true, physical6.map(Self.validPhysical) ?? true else { throw LeakGuardError.invalid }
+        guard Self.validPhysical(physical), physical4.map(Self.validPhysical) ?? true,
+              physical6.map(Self.validPhysical) ?? true else { throw LeakGuardError.invalidInterface }
+        guard IPAddress.canonical(endpoint) != nil, port > 0 else { throw LeakGuardError.invalidEndpoint }
+        guard (IPAddress.isIPv6(endpoint) || !local.isEmpty), local.allSatisfy({ $0.prefix >= 8 && $0.network >> 24 != 0 && $0.network >> 24 != 127 && $0.network >> 24 < 224 }) else { throw LeakGuardError.invalidLocalNetworks }
+        guard country.allSatisfy({ $0.prefix >= 8 }) else { throw LeakGuardError.invalid }
         if !country.isEmpty { _ = try RuleSet(text: country.map(\.description).joined(separator: "\n")) }
         guard managedDirect.count <= 30_000 else { throw LeakGuardError.invalid }
         for prefix in managedDirect { _ = try CustomRuleSet.prefix(prefix.description) }
@@ -76,11 +78,14 @@ public struct LeakGuardPolicy: Sendable {
         return nil
     }
 }
-public enum LeakGuardError: Error, LocalizedError {
-    case invalid, incompatibleHost, unresolved, notActive
+public enum LeakGuardError: Error, LocalizedError, Equatable {
+    case invalid, invalidInterface, invalidEndpoint, invalidLocalNetworks, incompatibleHost, unresolved, notActive
     public var errorDescription: String? {
         switch self {
         case .invalid: return L10n.text("断线保护参数无效。")
+        case .invalidInterface: return L10n.text("断线保护无法核验物理网卡；请检查当前网络和其它 VPN／TUN。")
+        case .invalidEndpoint: return L10n.text("断线保护无法核验服务器地址、端口或传输协议，请检查配置。")
+        case .invalidLocalNetworks: return L10n.text("断线保护未取得有效的物理局域网网段，请查看本机路由诊断。")
         case .incompatibleHost: return L10n.text("此 Mac 的 PF 配置无法安全接入断线保护。未替换系统规则，请检查其他网络过滤服务。")
         case .unresolved: return L10n.text("断线保护仍需恢复。请先执行安全网络恢复，再建立新连接。")
         case .notActive: return L10n.text("无法核验断线保护，已停止 VPN 会话。")
@@ -105,12 +110,12 @@ public struct GuardEndpoint: Sendable {
         }
         guard let remote = remotes.first, (2...4).contains(remote.count),
               (DiagnosticTargetPolicy.validHostname(remote[1]) || IPAddress.canonical(remote[1]) != nil),
-              let port = remote.count >= 3 ? UInt16(remote[2]) : 1194, port > 0 else { throw LeakGuardError.invalid }
+              let port = remote.count >= 3 ? UInt16(remote[2]) : 1194, port > 0 else { throw LeakGuardError.invalidEndpoint }
         if remote.count == 4 { proto = remote[3] }
         let transport: FirewallRulePreview.Transport
         if ["udp", "udp4", "udp6"].contains(proto) { transport = .udp }
         else if ["tcp", "tcp4", "tcp6", "tcp-client", "tcp4-client", "tcp6-client"].contains(proto) { transport = .tcp }
-        else { throw LeakGuardError.invalid }
+        else { throw LeakGuardError.invalidEndpoint }
         return .init(host: remote[1], port: port, transport: transport, preferredFamily: proto.contains("6") ? 6 : proto.contains("4") ? 4 : nil)
     }
     public func pinnedProfile(_ source: String, address: String) throws -> String {

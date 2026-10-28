@@ -31,7 +31,7 @@ def main():
     info = SOURCE / 'Contents/Info.plist'
     current = plistlib.loads(info.read_bytes())
     version = current['CFBundleShortVersionString']
-    previous = '0.8.4'
+    previous = '0.8.5'
     assert tuple(map(int, version.split('.'))) > tuple(map(int, previous.split('.')))
     architecture = platform.machine()
     new_package = Path(f'dist/VPN-Navigator-{version}-{architecture}-Local.pkg')
@@ -43,7 +43,7 @@ def main():
         try:
             older = dict(current)
             older['CFBundleShortVersionString'] = previous
-            older['CFBundleVersion'] = '24'
+            older['CFBundleVersion'] = '25'
             info.write_bytes(plistlib.dumps(older))
             run(['codesign', '--force', '--options', 'runtime', '--sign', '-', '--identifier', 'com.javafancn.vpn-navigator', SOURCE])
             run(['zsh', 'scripts/build-local-pkg.sh'])

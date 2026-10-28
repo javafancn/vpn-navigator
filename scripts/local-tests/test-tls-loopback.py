@@ -195,7 +195,16 @@ verb 3
         # Exercise actual IPv6 data and the journal executor without changing defaults.
         run([probe, '--connect-only', valid])
         from quit_fixture import exercise_quit
-        exercise_quit(run, active=True)
+        app_approval = folder / 'app-quit-approval.json'
+        app_approval.write_bytes(original)
+        # The TLS probe temporarily occupies the approved app role. Restore
+        # the real app identity for actual NSApplication/XPC lifecycle checks,
+        # then restore the probe identity for the remaining network fixtures.
+        run(['sudo', 'cp', app_approval, MANIFEST])
+        try:
+            exercise_quit(run, active=True)
+        finally:
+            run(['sudo', 'cp', temporary, MANIFEST])
         run([probe, '--connect-only', valid])
         # Both ends run on one host. Bind BOTH UDP sockets to their respective
         # utuns: a kernel-generated ICMP reply can otherwise take a local route

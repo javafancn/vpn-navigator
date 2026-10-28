@@ -35,9 +35,9 @@ final class ApplicationLifecycle: NSObject, NSApplicationDelegate {
             return .terminateCancel
         }
         guard !quitting else { return .terminateCancel }
+        let repairExit = model.allowInstallationRepairExit
         guard model.beginApplicationQuit() else { return .terminateCancel }
         quitting = true
-        let repairExit = model.allowInstallationRepairExit
         let flushHistory = model.connectionHistory.takeQuitFlusher()
         Task.detached {
             let result = await HelperClient.shared.prepareApplicationQuit(allowInstallationRepairExit: repairExit)

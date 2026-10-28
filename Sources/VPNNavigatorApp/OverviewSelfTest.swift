@@ -49,8 +49,36 @@ enum OverviewSelfTest {
             attemptID: attempt, networkRecoveryRequired: true))
         guard model.overviewRecoveryNeeded, !model.overviewConnectionVerified(), !model.canEditOverviewProtection,
               model.menuTraffic.samples.isEmpty else { throw Failure.check }
+        model.pendingManualFailureAttempt = attempt
+        let failed = SessionReport(state: .failed, message: "synthetic route failure", activeProfileID: nil,
+            receivedBytes: nil, sentBytes: nil, attemptID: attempt, networkRecoveryRequired: false)
+        model.applyVerifiedSessionReport(failed)
+        guard model.message?.contains("synthetic route failure") == true, model.pendingManualFailureAttempt == nil else { throw Failure.check }
+        model.message = nil
+        model.applyVerifiedSessionReport(failed)
+        guard model.message == nil else { throw Failure.check }
+        model.pendingManualFailureAttempt = UUID()
+        model.applyVerifiedSessionReport(failed)
+        guard model.message == nil, model.pendingManualFailureAttempt != nil else { throw Failure.check }
+        model.pendingManualFailureAttempt = nil
         idle(); guard model.canEditOverviewProtection, !model.overviewRecoveryNeeded else { throw Failure.check }
         print("PASS overview: verified 60-second live graph, measured duration, actual route instead of selection, dual-stack receipt, stale-state expiry, next-connection preference guard, PF recovery and real two-card raster; no VPN requests.")
+    }
+    static func verifyInstalledTraffic() async throws {
+        guard BuildChannel.isLocal, ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" else { throw Failure.check }
+        var tracker = TunnelSpeedTracker()
+        for _ in 0..<6 {
+            guard let report = await HelperClient.shared.sessionReport(),
+                  ConnectionObservation(report).verifiedConnection,
+                  !report.requiresNetworkRecovery, !report.firewallRecoveryRequired else { throw Failure.check }
+            tracker.observe(report)
+            if tracker.current() != nil && !tracker.visibleSamples().isEmpty {
+                print("PASS: actual installed helper TLS report produces fresh live throughput and chart points; owned journals are not recovery failures.")
+                return
+            }
+            try await Task.sleep(nanoseconds: 800_000_000)
+        }
+        throw Failure.check
     }
     private enum Failure: Error { case check }
 }

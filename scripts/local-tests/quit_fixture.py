@@ -23,6 +23,7 @@ def exercise_quit(run, active=False):
     pid = helper_pid(run)
     assert pid is not None, 'Fixture must start with a live authenticated helper'
     if active:
+        run([APP, '--vpnnav-local-traffic-self-test'])
         run([APP, '--vpnnav-local-quit-rejection-check'])
         assert helper_pid(run) == pid, 'Unsafe exit killed the active helper'
     result = run(['python3', 'scripts/run-ui-self-test.py', APP, '--vpnnav-quit-process-self-test'])

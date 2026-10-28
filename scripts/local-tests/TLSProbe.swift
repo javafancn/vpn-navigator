@@ -101,9 +101,9 @@ func scenario(_ test: Scenario) async -> Bool {
             guard duplicate.hasPrefix("ERROR:") else { return false }
         }
         if state == "connected" || state == "failed" {
-            // Active sessions intentionally retain their PID/DNS evidence.
-            // Recovery must be clear only after failure or explicit disconnect.
-            matched = state == test.outcome && (state == "connected" || report["networkRecoveryRequired"] as? Bool == false)
+            // Healthy owned journals are not abandoned recovery evidence.
+            matched = state == test.outcome && report["networkRecoveryRequired"] as? Bool == false &&
+                report["firewallRecoveryRequired"] as? Bool == false
             break
         }
         try? await Task.sleep(nanoseconds: 250_000_000)
@@ -183,7 +183,8 @@ func exercise(_ profile: String, shouldConnect: Bool, disconnectAtEnd: Bool = tr
         let unchanged = await ask { $0.sessionSnapshot(reply: $1) }
         guard refusedMode.hasPrefix("ERROR:"), let bytes = unchanged.data(using: .utf8),
               let snapshot = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any],
-              snapshot["state"] as? String == "connected", snapshot["attemptID"] as? String == attemptID,
+              snapshot["state"] as? String == "connected", snapshot["networkRecoveryRequired"] as? Bool == false,
+              snapshot["firewallRecoveryRequired"] as? Bool == false, snapshot["attemptID"] as? String == attemptID,
               snapshot["activeProfileID"] as? String == profileID, snapshot["routingMode"] as? String == "Original" else { return false }
         print("PASS: installed XPC rejects unsupported live route switching without changing the real TLS session.")
         let routeRequest: [String: Any] = ["ip": "127.0.0.1", "profileID": profileID, "attemptID": attemptID, "mode": "Original"]
@@ -233,7 +234,9 @@ Task {
         let raw = await ask { $0.sessionSnapshot(reply: $1) }
         guard let data = raw.data(using: .utf8),
               let report = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              report["state"] as? String == "connected" else { exit(1) }
+              report["state"] as? String == "connected",
+              report["networkRecoveryRequired"] as? Bool == false,
+              report["firewallRecoveryRequired"] as? Bool == false else { exit(1) }
         let counters: [String: Any] = ["sent": report["sentBytes"] ?? 0, "received": report["receivedBytes"] ?? 0]
         guard let encoded = try? JSONSerialization.data(withJSONObject: counters, options: [.sortedKeys]) else { exit(1) }
         print(String(decoding: encoded, as: UTF8.self)); exit(0)

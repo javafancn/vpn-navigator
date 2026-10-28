@@ -17,14 +17,19 @@ enum AppBranding {
     static func statusLabel(download: String, upload: String) -> NSImage {
         if let cachedStatus, cachedStatus.download == download, cachedStatus.upload == upload { return cachedStatus.image }
         let symbol = statusIcon
-        let image = NSImage(size: NSSize(width: 104, height: 22), flipped: false) { _ in
-            symbol.draw(in: NSRect(x: 1, y: 2, width: 18, height: 18))
+        let image = NSImage(size: NSSize(width: 84, height: 22), flipped: false) { _ in
+            symbol.draw(in: NSRect(x: 2, y: 3, width: 16, height: 16), from: .zero,
+                        operation: .sourceOver, fraction: 1, respectFlipped: false, hints: nil)
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .medium),
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium),
                 .foregroundColor: NSColor.black
             ]
-            ("↓ " + download as NSString).draw(in: NSRect(x: 25, y: 11, width: 79, height: 11), withAttributes: attributes)
-            ("↑ " + upload as NSString).draw(in: NSRect(x: 25, y: 0, width: 79, height: 11), withAttributes: attributes)
+            // Point drawing avoids NSString's line-fragment clipping inside
+            // a rectangle shorter than the font's actual line height.
+            ("↓ " + download.replacingOccurrences(of: " ", with: "") as NSString)
+                .draw(at: NSPoint(x: 22, y: 10.5), withAttributes: attributes)
+            ("↑ " + upload.replacingOccurrences(of: " ", with: "") as NSString)
+                .draw(at: NSPoint(x: 22, y: 0), withAttributes: attributes)
             return true
         }
         image.isTemplate = true
@@ -48,6 +53,7 @@ struct StatusBarLabel: View {
             let description = L10n.format("VPN Navigator，{0}。隧道下载 {1}，上传 {2}。", [model.menuStatusTitle, download, upload])
             Image(nsImage: AppBranding.statusLabel(download: download, upload: upload))
                 .renderingMode(.template)
+                .frame(width: 84, height: 22)
                 .accessibilityLabel(description)
                 .help(description)
                 .onReceive(clock) { tick = $0 }

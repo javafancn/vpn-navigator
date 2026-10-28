@@ -42,10 +42,16 @@ final class ManagedTunnel {
     private var releaseProtectionOnExit = false
     private var protectionTeardownBlocked = false
     var firewallActive: Bool { packetGuard.active }
-    var firewallRecoveryRequired: Bool { packetGuard.requiresRecovery }
+    private var hasLiveSessionOwner: Bool {
+        SessionRecoveryPolicy.hasLiveOwner(state: state, profileID: activeProfileID,
+            attemptID: activeAttemptID, ownedChildRunning: process?.isRunning == true)
+    }
+    var firewallRecoveryRequired: Bool {
+        packetGuard.requiresRecovery && (!packetGuard.active || !hasLiveSessionOwner || protectionTeardownBlocked)
+    }
     var networkRecoveryRequired: Bool {
-        dnsRecovery.exists || packetGuard.requiresRecovery || hasPersistentSessionEvidence ||
-        FileManager.default.fileExists(atPath: workdir.appendingPathComponent("routes.journal").path)
+        firewallRecoveryRequired || (!hasLiveSessionOwner && (dnsRecovery.exists || hasPersistentSessionEvidence ||
+            FileManager.default.fileExists(atPath: workdir.appendingPathComponent("routes.journal").path)))
     }
     private var activeMode: RoutingMode = .original
     private(set) var routingRevision: UUID?
@@ -511,6 +517,7 @@ final class ManagedTunnel {
         } catch {
             let failure = "Routing failed; VPN stopped for safety: \(error.localizedDescription)"
             stop(); lastError = failure; state = .failed; message = failure
+            failureCode = .route; eventStore.append(.route)
         }
     }
     private func physicalPaths(endpoint: String) throws -> (PhysicalIPPath?, PhysicalIPPath?) {

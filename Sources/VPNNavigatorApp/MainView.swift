@@ -128,6 +128,13 @@ struct MainView: View {
             model.quickAccess.openMainWindow = {
                 MainWindowPresentation.shared.show { openWindow(id: "main") }
             }
+            if ProcessInfo.processInfo.arguments.contains("--vpnnav-overview-self-test"), OverviewSelfTest.begin() {
+                Task {
+                    do { try await OverviewSelfTest.run(model: model); Darwin.exit(0) }
+                    catch { print("Overview self-test failed: \(error)"); Darwin.exit(1) }
+                }
+            }
+            if model.overviewIsFixture { model.showOverviewSnapshot() }
             if ProcessInfo.processInfo.arguments.contains("--vpnnav-status-bar-self-test"), StatusBarSelfTest.begin() {
                 Task {
                     do { try await StatusBarSelfTest.run(model: model); Darwin.exit(0) }
@@ -407,7 +414,7 @@ private struct ConnectionOverview: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                WorkspaceHeading(title: L10n.text("连接总览"), subtitle: L10n.text("清晰掌控当前 VPN 状态与网络策略"), symbol: "globe.americas.fill")
+                WorkspaceHeading(title: L10n.text("连接总览"), subtitle: model.overviewIsFixture ? L10n.text("界面预览：合成数据，未建立 VPN") : L10n.text("清晰掌控当前 VPN 状态与网络策略"), symbol: "globe.americas.fill")
                 Spacer()
                 Button(L10n.text("会话质量与历史…")) { model.showingConnectionHistory = true }.buttonStyle(ReferenceSecondaryButton())
             }.padding(.bottom, 4)
@@ -432,7 +439,7 @@ private struct ConnectionOverview: View {
                     Text(statusTitle)
                         .font(.system(size: 28, weight: .semibold))
                         .foregroundStyle(model.connected ? Color.green : hasError ? Color.orange : GlassPalette.blue)
-                    Text(model.connected ? L10n.text("安全连接已建立") : model.connecting ? L10n.text("点击上方按钮取消连接") : model.firewallRecoveryRequired ? L10n.text("点击上方按钮解除断线保护") : L10n.text("点击上方按钮开始连接"))
+                    Text(model.connected ? L10n.text("VPN 连接已建立") : model.connecting ? L10n.text("点击上方按钮取消连接") : model.firewallRecoveryRequired ? L10n.text("点击上方按钮解除断线保护") : L10n.text("点击上方按钮开始连接"))
                         .font(.system(size: 16))
                         .foregroundStyle(model.connected ? Color.green : GlassPalette.ink.opacity(0.6))
                     if model.connected && model.activeProfileID != model.selectedID && model.selectedID != nil {
@@ -532,32 +539,7 @@ private struct ConnectionOverview: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 310)
             }
-            HStack(spacing: 12) {
-                statistic(L10n.text("累计接收"), symbol: "arrow.down.circle", value: bytes(model.traffic?.receivedBytes), samples: model.receiveTrend.samples, rate: model.connected && model.connectionHistory.state.quality.verified ? model.connectionHistory.state.quality.receivedPerSecond : nil)
-                    .frame(width: 188)
-                statistic(L10n.text("累计发送"), symbol: "arrow.up.circle", value: bytes(model.traffic?.sentBytes), samples: model.sendTrend.samples, rate: model.connected && model.connectionHistory.state.quality.verified ? model.connectionHistory.state.quality.sentPerSecond : nil)
-                    .frame(width: 188)
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "checkmark.shield.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(.green)
-                        .frame(width: 54, height: 54)
-                        .background(Color.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 15))
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(L10n.text("连接保护")).font(.system(size: 18, weight: .semibold))
-                        Label(model.firewallActive ? L10n.text("PF 断线保护已接入") : L10n.text("受管连接异常时停止会话"), systemImage: model.firewallActive ? "checkmark.circle.fill" : "info.circle")
-                            .font(.system(size: 12)).foregroundStyle(.green)
-                        Text(model.firewallActive ? L10n.text("实验性保护，完整真机防泄漏验收待完成。") : L10n.text("可在连接偏好中启用实验性断线保护。"))
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .frame(height: 158, alignment: .topLeading)
-                .glassCard(cornerRadius: 17)
-            }
+            ConnectionOverviewCards()
             Spacer(minLength: 0)
         }
         .padding(.horizontal, GlassLayout.pageInset)
@@ -587,21 +569,7 @@ private struct ConnectionOverview: View {
                 .background(stepper ? GlassPalette.blue : .clear, in: RoundedRectangle(cornerRadius: 6))
         }.referenceInput().contentShape(Rectangle())
     }
-    private func statistic(_ title: String, symbol: String, value: String, samples: [Double], rate: Double?) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 9) {
-                Image(systemName: symbol).font(.system(size: 24)).foregroundStyle(GlassPalette.blue)
-                Text(title).font(.system(size: 16)).foregroundStyle(.secondary)
-            }
-            Text(value).font(.system(size: 30, weight: .medium)).lineLimit(1).minimumScaleFactor(0.75)
-            Text(ConnectionHistoryDisplay.rate(rate)).font(.system(size: 12)).foregroundStyle(.secondary)
-            TrafficSparkline(samples: samples).frame(height: 24)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 158)
-        .glassCard(cornerRadius: 17)
-    }
+
 }
 
 private struct ReferencePowerOrb: View {

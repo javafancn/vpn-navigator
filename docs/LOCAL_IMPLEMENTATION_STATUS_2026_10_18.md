@@ -127,7 +127,7 @@ PR #17 扩展真实隔离服务器认证：账号密码、加密私钥、静态 
 
 ## Build 27 / 0.8.7 — route command resources and recovery
 
-- Bound Foundation object lifetimes per routing command and journal append; explicitly close both pipe handles and use null stdin.
+- Bound Foundation object lifetimes per routing command and journal append; explicitly close both pipe handles and use null stdin. Wait on the subprocess termination callback rather than polling a worker run loop for every short command.
 - Add a 128-FD stress fixture with 3,072 real read-only route subprocesses and journaled synthetic add/rollback operations. An isolated debug child observes the old command pattern without making legacy failure a portability requirement.
 - Reconcile pending add intents only after exact-prefix absence is proven from a readable routing table, with private original-log archives and unchanged committed-route ownership checks. Pending deletes, foreign exact-prefix routes, malformed records and unknown system state remain blocked.
 - Connect the home recovery button to authenticated recovery and attempt safe idle recovery during application Quit before applying the existing strict helper exit policy.

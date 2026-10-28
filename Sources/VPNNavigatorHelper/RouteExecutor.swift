@@ -208,6 +208,10 @@ final class RouteExecutor {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: executable)
         task.arguments = arguments
+        // Wait for completion directly rather than polling this worker's run loop
+        // once for each of the thousands of short-lived routing commands.
+        let terminated = DispatchSemaphore(value: 0)
+        task.terminationHandler = { _ in terminated.signal() }
         let output = Pipe()
         defer {
             try? output.fileHandleForReading.close()
@@ -230,7 +234,7 @@ final class RouteExecutor {
         }
         timeout.resume()
         let data = output.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
+        terminated.wait()
         timeout.cancel()
         guard data.count <= 8_000_000 else {
             throw RouteExecutionError.commandOutputTooLarge

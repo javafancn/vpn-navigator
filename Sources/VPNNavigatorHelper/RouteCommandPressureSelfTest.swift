@@ -35,6 +35,11 @@ enum RouteCommandPressureSelfTest {
         func descriptors() -> Int { (0..<Int(limited.rlim_cur)).filter { fcntl(Int32($0), F_GETFD) != -1 }.count }
         try probe()
         let baseline = descriptors()
+        if legacy {
+            for _ in 0..<128 { try probe() }
+            print("Legacy observation completed 128 commands; descriptors \(baseline) -> \(descriptors()); elapsed \(Int(ProcessInfo.processInfo.systemUptime - started))s.")
+            return
+        }
         let routes = try (0..<512).map {
             RouteTarget(try IPv4CIDR("198.18.\($0 / 256).\($0 % 256)/32"), .viaGateway("192.0.2.1"))
         }

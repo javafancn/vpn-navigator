@@ -1,88 +1,105 @@
 # VPN Navigator
 
-原生 macOS OpenVPN 客户端，提供配置管理、Original / 全局 VPN / 中国大陆直连策略、菜单栏控制与网络诊断。
+**English** | [简体中文](README.zh-CN.md)
 
-支持受管 IPv4／IPv6 双栈路由、IPv6 服务器端点、双栈中国规则与自定义 IPv6 分流。详见 [双栈支持](docs/DUAL_STACK.md)。
+> English is the default README language. Most linked development and acceptance documents are currently written in Chinese.
 
-主窗口关闭后应用继续保持 VPN 与后台服务，Dock 图标隐藏；点击状态栏“打开主窗口”恢复窗口与 Dock，完全退出请使用状态栏“退出”。状态栏采用导航 Logo，并显示 VPN 隧道下载／上传速率（连接时约每秒采样，B/s、KB/s、MB/s 自动切换；未采样或数据过期显示 —）。它不代表整台 Mac 的总网速。
+A native macOS OpenVPN client with profile management, Original / Global VPN / Mainland China Direct routing, menu bar controls, and network diagnostics.
 
-当前开发版本：**0.8.4**。提供开发预览、本地测试及 Developer ID 发布构建三种通道。本地测试通道无需付费开发者证书，包含引擎并经管理员批准固定程序身份；尚待真实网络及用户 Mac 安装验收。正式分发仍须签名、公证及发布验收。
+Supports managed IPv4/IPv6 dual-stack routing, IPv6 server endpoints, dual-stack China routing rules, and custom IPv6 split tunneling. See [Dual-stack support](docs/DUAL_STACK.md).
 
-## 已实现
+Closing the main window keeps the VPN and background services running and hides the Dock icon. Choose **Open Main Window** in the menu bar to restore the window and Dock icon; choose **Quit** to exit completely. The menu bar displays the navigation logo and VPN tunnel download/upload rates, sampled approximately once per second while connected, with automatic B/s, KB/s, and MB/s units. Missing or stale samples display **—**. These rates measure the VPN tunnel, not all traffic on your Mac.
 
-- 五个原生工作区、随桌面透色的毛玻璃、菜单栏、单窗口和退出前停止会话。
-- 主窗口 ⌘1–5 工作区切换、⌘F 配置搜索、Return 进入列表与 ↑↓ 选择；支持 VoiceOver 状态标签、键盘焦点和系统增强对比度，提供「帮助 → 键盘与辅助功能」。详见 [键盘与辅助功能](docs/KEYBOARD_AND_ACCESSIBILITY.md)。
-- 毛玻璃快速打开面板、元数据搜索、键盘导航；⇧⌘P、菜单栏入口及可选全局快捷键，冲突可见并可重试；切换活动 VPN 需再次确认，凭据继续在主窗口输入。
-- `.ovpn` 导入、多词搜索、全部/收藏/分组筛选、名称/导入时间排序、分组复用、备注、安全编辑、版本恢复；原始配置保留，邻接证书材料内联至运行副本。
-- Finder“打开方式”、Dock 文件打开与窗口拖拽导入；先确认文件名，忙碌时暂存，重复去重；复用批量结果与取消。
-- 配置库加密备份与预览恢复，包含原始文件、自包含材料、元数据和历史；新 ID 新增恢复，保留现有配置。详见 [加密备份与迁移](docs/ENCRYPTED_BACKUP.md)。
-- 本机配置健康与内联 X.509 有效期检查、单独选择开启的到期提醒；配置更新向导预览确认、保留设置与历史、拒绝过期确认并支持中断恢复，身份变化隔离旧凭据。详见 [配置健康与更新](docs/PROFILE_HEALTH_AND_UPDATES.md)。
-- 可迁移的自包含配置导出与独立路由预览；私有原子保存；批量导入逐文件结果、进度与取消，单个失败继续处理，保留成功项。
-- 用户名密码与可选 Keychain 保存；连接时自动询问缺少的凭据；加密私钥密码、SCRV1/密码拼接静态 OTP，以及首次认证的 CRV1 动态挑战；输入仅用于本次验证。
-- 已认证 XPC、签名/权限校验、受管 OpenVPN 子进程、Unix 管理套接字、可取消连接和 20–180 秒连接/认证期限。
-- 每配置 IPv4／IPv6 自定义直连/VPN 规则、启停和冲突检查；地区规则、模式切换及安全重连保持本次策略，VPN 例外同时从物理路由与 PF 直连表扣除。
-- 路由解释区分离线预览与本次会话实际接口/网关核验；一键排障汇总助手、配置、规则、IPv6、DNS、TCP 和路由，并给出建议；用户触发、可取消、30 秒整体期限。
-- 三种路由策略；规则 / 全局在同一隧道内切换，主窗口及菜单栏显示助手核验的实际模式；按实际隧道地址族应用中国 IPv4／IPv6 直连，其他默认流量经 VPN。端点固定、局域网保护、路由事务日志、校验、热更新及确认进程退出后的回滚。
-- DNS 写前记录、固定原物理网络服务、可信 DNS hook 检查点；仅在当前值仍属于本应用时恢复，冲突时保留证据。
-- **默认关闭的实验性 PF 断线保护**：独立 anchor、引用 token、接口绑定状态、IPv4／IPv6 物理出口策略与异常后保留保护。严格拒绝不兼容宿主 PF 配置，不替换主规则集。
-- 可选受管模式安全重连：仅在 PF 核验成功后，确认旧子进程、DNS 和路由已清理，再在保护持续存在的条件下启动新会话；10 分钟最多 3 次。
-- 随包提供可校验的离线初始 IPv4 地区规则、官方源回退下载、流式大小限制、本地导入、每日更新及快照恢复。
-- 实际 TCP 端口探测、系统 DNS 查询、最多 8 跳 traceroute、3 次 ICMP 延迟/丢包；支持取消和期限。
-- 手动公网 IPv4／IPv6 出口查询，固定 HTTPS 服务、独立临时请求及有界响应；结合实际连接远端和只读会话路由区分匹配、直连及无法核验。结果仅在当前窗口保留，不等同于 DNS／全部流量防泄漏检查。详见 [公网出口检测](docs/PUBLIC_EGRESS.md)。
-- 私有、有界的故障类别日志与脱敏报告导出；报告不包含原始引擎输出、地址、域名、配置或凭据。
-- 会话质量与连接历史：按真实间隔采样速率、连接／重连／路由切换时间线；默认本机保留 7 天，可选 30／90 天、暂停和确认清空。休眠或失联间断不补算在线时长，不保存原始报告及凭据。详见 [连接历史](docs/CONNECTION_HISTORY.md)。
-- 首次使用检查、连接偏好、登录启动、升级/卸载准备；同时停用登录启动，默认保留配置，明确删除时核验 Keychain 清理结果。
-- 从校验后的 OpenVPN/OpenSSL 源码构建 macOS 13 目标引擎；双架构安装器、版本自动读取、更新包架构筛选、最低系统版本审计、签名/公证与可选 Draft Release 流程。
+Current development version: **0.8.4**. Three build channels are available: development preview, local test, and Developer ID distribution. Local-test builds include the engine and use administrator approval to pin code identity without a paid developer certificate. Real-network and user-Mac installation acceptance are still required. Production distribution requires signing, notarization, and release acceptance.
 
-界面支持简体中文／English，默认跟随系统。在「设置与维护 → 界面语言」保存后，下次启动生效，不中断当前 VPN。详见 [语言与本地化](docs/LOCALIZATION.md)。
+## Implemented features
 
-支持常见跨平台配置中的两种 Windows DNS 可选提示：`ignore-unknown-option block-outside-dns` 与 `setenv opt block-outside-dns`。仅接受这两种精确目标，不开放通用环境变量或忽略列表；在 macOS 上由 OpenVPN 按可选指令语义处理，不能据此宣称已启用 DNS 防泄漏。参见 [OpenVPN 2.7 手册的 Windows 专用选项](https://openvpn.net/community-docs/community-articles/openvpn-2-7-manual/)。
+- Five native workspaces, translucent glass that reveals the desktop, menu bar controls, a single main window, and session cleanup before quitting.
+- Main-window shortcuts: ⌘1–5 to switch workspaces, ⌘F to search profiles, Return to enter the list, and ↑↓ to select. Supports VoiceOver status labels, keyboard focus, and the system Increase Contrast setting. See **Help → Keyboard & Accessibility** and [Keyboard and accessibility](docs/KEYBOARD_AND_ACCESSIBILITY.md).
+- A translucent Quick Open panel with metadata search and keyboard navigation, ⇧⌘P, a menu bar entry, and an optional global shortcut with visible conflicts and retry support. Switching an active VPN requires confirmation; credentials are entered in the main window.
+- `.ovpn` import, multi-word search, all/favorite/group filters, name/import-time sorting, reusable groups, notes, safe editing, and version restoration. Imported originals are retained in the profile library, and adjacent certificate material is embedded into the runtime copy.
+- Import through Finder **Open With**, opening files on the Dock icon, and window drag and drop. Confirms filenames, queues requests while busy, deduplicates inputs, and reuses batch results and cancellation.
+- Encrypted profile-library backups and restore previews, including original files, self-contained material, metadata, and history. Restored profiles receive new IDs and are added without replacing existing profiles. See [Encrypted backup and migration](docs/ENCRYPTED_BACKUP.md).
+- Local profile health and embedded X.509 validity checks, opt-in certificate-expiry reminders, and a profile update wizard with preview and confirmation. Updates preserve settings and history, reject stale confirmations, recover from interruptions, and isolate old credentials when identity changes. See [Profile health and updates](docs/PROFILE_HEALTH_AND_UPDATES.md).
+- Portable self-contained profile export, independent route previews, private atomic saves, and batch import with per-file results, progress, and cancellation. Individual failures do not discard successful imports.
+- Username/password authentication with optional Keychain storage and prompts for missing credentials; encrypted private-key passphrases, SCRV1/password-concatenated static OTP, and CRV1 dynamic challenges during initial authentication. Challenge input is used only for that authentication attempt.
+- Authenticated XPC, code-signature and permission checks, managed OpenVPN child processes, a Unix management socket, cancellable connections, and 20–180-second connection/authentication deadlines.
+- Per-profile custom IPv4/IPv6 direct/VPN rules with enable/disable controls and conflict detection. Regional rules, mode switches, and safe reconnects preserve the current session policy. VPN exceptions are removed from both physical routes and PF direct-access tables.
+- Route explanations distinguish offline previews from verified interfaces/gateways in the current session. One-click troubleshooting checks the helper, profile, rules, IPv6, DNS, TCP, and routes, with suggested actions. Checks are user-triggered, cancellable, and bounded by a 30-second overall deadline.
+- Three routing policies, with rule/global switching inside the same tunnel. The main window and menu bar show the helper-verified actual mode. Mainland China IPv4/IPv6 direct routes follow the tunnel's actual address families; other default traffic uses the VPN. Includes endpoint pinning, LAN protection, route transaction journals, validation, live updates, and rollback after process exit is confirmed.
+- Write-ahead DNS records tied to the original physical network service and trusted DNS-hook checkpoints. Restoration occurs only while current values still belong to this app; conflicts retain recovery evidence.
+- **Experimental PF disconnect protection, off by default**: an independent anchor, reference token, interface-bound states, IPv4/IPv6 physical-egress policy, and retained protection after failures. Incompatible host PF configurations are rejected; the main ruleset is not replaced.
+- Optional safe reconnect in managed modes: after PF verification, confirms cleanup of the old child process, DNS, and routes before starting another session while protection remains active. Limited to three attempts per ten minutes.
+- A verifiable offline seed of IPv4 regional rules, downloads with official-source fallback and streaming size limits, local import, daily updates, and snapshot restoration.
+- Real TCP port probes, system DNS queries, traceroute limited to eight hops, and three ICMP latency/loss probes, with cancellation and deadlines.
+- Manual public IPv4/IPv6 egress checks using fixed HTTPS services, separate ephemeral requests, and bounded responses. Actual VPN peer and read-only session routes help distinguish matching egress, direct traffic, and unverifiable results. Results remain in the current window and do not constitute DNS or all-traffic leak testing. See [Public egress checks](docs/PUBLIC_EGRESS.md).
+- Private, bounded failure-category logs and redacted diagnostic exports. Reports exclude raw engine output, addresses, domains, profiles, and credentials.
+- Session quality and connection history: rates sampled over real intervals and a connection/reconnect/route-switch timeline. Local retention defaults to seven days, with 30/90-day options, pause, and confirmed clearing. Sleep or observation gaps do not inflate connected duration. Raw reports and credentials are not retained. See [Connection history](docs/CONNECTION_HISTORY.md).
+- First-use checks, connection preferences, launch at login, and upgrade/uninstall preparation. Maintenance also disables launch at login, keeps profiles by default, and verifies Keychain cleanup when deletion is explicitly selected.
+- macOS 13-targeted engines built from checksum-verified OpenVPN/OpenSSL sources; installers for both architectures, automatic version extraction, update-package architecture filtering, minimum-OS audits, signing/notarization, and an optional Draft Release workflow.
 
-## 构建
+The application supports Simplified Chinese and English and follows the system language by default. Save a choice under **Settings & Maintenance → Interface Language**; it takes effect on the next launch without interrupting the current VPN. See [Language and localization](docs/LOCALIZATION.md). The README's default language does not change this application behavior.
 
-需要 macOS 13+ 和 Swift 5.9+：
+Two optional Windows DNS hints commonly found in cross-platform profiles are accepted: `ignore-unknown-option block-outside-dns` and `setenv opt block-outside-dns`. Only these exact targets are allowed, without opening generic environment variables or ignore lists. On macOS, OpenVPN handles them as optional directives; accepting them does not enable DNS leak protection. See the [Windows-specific options in the OpenVPN 2.7 manual](https://openvpn.net/community-docs/community-articles/openvpn-2-7-manual/).
+
+Profile filtering, sorting, and reusable groups are described in [Profile library management](docs/PROFILE_LIBRARY.md).
+
+Private local index backups and confirmed recovery after corruption are described in [Profile index recovery](docs/PROFILE_INDEX_RECOVERY.md).
+
+For custom rules, route explanations, and one-click troubleshooting, see [Routing tools](docs/ROUTING_TOOLS.md).
+
+## Smart connection and live traffic
+
+Opt-in automatic connection can run at application launch, wake, or network recovery. Choose the last successful or a fixed profile, restrict eligible networks, and pause at any time. Manual disconnects and connection failures pause automatic connection. Local status notifications can report failures only or all changes. Both features are off by default. See [Smart connection and status notifications](docs/SMART_CONNECTION.md).
+
+The home screen shows the last 60 seconds of actual tunnel download/upload traffic, current rates, and cumulative transfer totals. The connection card shows observed connected duration, verified actual routing, IPv4/dual-stack status, and PF protection. The protection toggle is editable only while idle with no pending recovery and applies to the next managed connection. Recovery and one-click troubleshooting are available from the home screen. Graphs do not bridge interruptions or invent samples; stale samples are not displayed as live rates. PF status does not establish that DNS leak acceptance has passed.
+
+Choosing **Quit** or pressing **Cmd-Q** disconnects the VPN, verifies network recovery, and then stops the helper process and current scheduled rule-update job. Installation approval and preferences remain available for the next launch. Closing the window keeps the application in the menu bar. Full removal still uses the uninstall entry under **Upgrade & Uninstall Preparation**.
+
+## Build and install
+
+Requires macOS 13+ and Swift 5.9+:
 
 ```sh
 swift test
 zsh scripts/build-app.sh
 ```
 
-未提供 `OPENVPN_BIN` 的构建是 UI-only。本地连接请使用[本地测试安装包](docs/LOCAL_TEST_INSTALLATION.md)，由管理员批准并核验固定代码身份；正式分发使用 Developer ID 签名安装包。两种通道均需受保护程序及后台助手。应用不会要求最终用户安装 Homebrew。
+Builds without `OPENVPN_BIN` are UI-only. For local VPN connections, use a [local-test installer](docs/LOCAL_TEST_INSTALLATION.md), which verifies pinned code identity approved by an administrator. Production distribution uses a Developer ID-signed installer. Both channels require protected application components and a background helper. End users do not need Homebrew.
 
-可直接打开 [Actions 双架构安装包构建](https://github.com/javafancn/vpn-navigator/actions/workflows/package-installers.yml)，选择 **Run workflow → main**。工作流分别在 Intel / Apple Silicon runner 编译完整引擎和应用，生成两份含安装包、卸载包、SHA-256 与安装说明的 artifact；运行摘要也提供下载链接。main 的程序或构建文件变化会自动触发，产物保留 30 天。该流程使用本地测试通道，无需付费签名证书；正式公证流程仍独立运行。
+### Download Intel or Apple Silicon installers
 
-源码引擎与签名分发步骤见 [安装与发布](docs/INSTALL_AND_RELEASE.md) 和 [手动签名工作流](docs/SIGNED_RELEASE_WORKFLOW.md)。
+1. Open [Build macOS installers (Intel + Apple Silicon)](https://github.com/javafancn/vpn-navigator/actions/workflows/package-installers.yml).
+2. Select **Run workflow → main** and wait for both architecture jobs to succeed.
+3. Download the matching artifact from the run summary or **Artifacts** section:
 
-## 安全范围
+| Mac | Artifact name |
+| --- | --- |
+| Apple Silicon (M-series) | `VPN-Navigator-<version>-Apple-Silicon-arm64-Local-Test` |
+| Intel | `VPN-Navigator-<version>-Intel-x86_64-Local-Test` |
 
-断线保护为显式启用的实验性能力，支持 IPv4／IPv6 端点及全局/中国直连模式。在兼容的系统 PF 布局中接入独立 anchor；启用、重建、收紧规则或解除时会重置现有网络连接，包括其他 VPN。它不与未知 PF 布局强行共存。完整物理网络防泄漏验收尚未完成，不能依据静态规则或回环测试宣称零泄漏。
+Each artifact includes the complete engine and application installer, uninstaller, SHA-256 checksums, and installation instructions. Relevant application/build changes on `main` trigger packaging automatically. Artifacts are retained for 30 days; rerun the workflow if they expire. This workflow uses the local-test channel and requires no paid signing certificate. Builds are ad-hoc signed and not notarized; the production notarization workflow is separate.
 
-受管单栈会话还须满足未承载地址族的保护条件，具体见双栈说明。已连接会话内的 CRV1 重认证、SAML/浏览器认证、TAP、任意脚本/插件和硬件 PKCS11 不在当前支持范围；不支持的配置或认证应明确失败。
+Before updating an installed connection-capable build, complete **Upgrade & Uninstall Preparation** in the existing app. When upgrading from 0.8.3 or earlier, close the maintenance sheet after preparation succeeds, explicitly quit the old app, and then open the new installer. Normal Quit preserves installation approval and does not replace full uninstall preparation. See [Local installation, updates, and removal](docs/LOCAL_TEST_INSTALLATION.md) for the full procedure.
 
-异常恢复只处理可确认的本应用 DNS、路由与 PF 所有权。活着或复用的孤儿 PID 不会被盲目终止，模糊事务不会被猜测删除。
+For source-built engines and signed distribution, see [Installation and release](docs/INSTALL_AND_RELEASE.md) and [Manual signing workflow](docs/SIGNED_RELEASE_WORKFLOW.md).
 
-## 验证与发布门槛
+## Security scope
 
-自动化包括核心测试、macOS 14/15/26 和 Intel 构建、双架构 UI 包、回环网络探测、合成服务 DNS 恢复、PF 规则语法、实际单回环端口的 PF 阻断/解除，以及源码引擎与最低系统版本检查。各项是否通过以当前提交的 Actions 结果为准。
+Disconnect protection is an explicitly enabled experimental feature for IPv4/IPv6 endpoints and Global/China Direct modes. It integrates an independent anchor into compatible system PF layouts. Enabling, rebuilding, tightening, or removing protection resets existing network connections, including other VPNs. Unknown PF layouts are rejected. Full physical-network leak acceptance remains incomplete; static rules and loopback tests cannot establish zero leakage.
 
-以下仍需在签名安装包与实际服务器上记录结果：特权助手授权、真实 TLS/MFA、国内外出口与 DNS 抓包、IPv6/网络切换/睡眠唤醒、守护进程崩溃、长时运行及安装升级卸载。[完整验收清单](docs/QA.md) 与 [功能完成记录](docs/PRODUCT_READINESS_2026_10_17.md) 与 [认证及维护补完](docs/AUTH_AND_MAINTENANCE_2026_10_18.md)。
+Managed single-stack sessions must also meet protection requirements for the address family not carried by the tunnel; see the dual-stack documentation. In-session CRV1 reauthentication, SAML/browser authentication, TAP, arbitrary scripts/plugins, and hardware PKCS11 are outside the current support scope. Unsupported profiles or authentication must fail explicitly.
 
-## 数据与许可证
+Recovery handles only DNS, routes, and PF resources whose ownership by this app can be confirmed. Live or reused orphan PIDs are not blindly terminated, and ambiguous transactions are not deleted by guesswork.
 
-配置可能包含私钥，默认只保存在本机私有目录；请勿提交真实 `.ovpn`、密码、私钥或签名证书。
+## Validation and release gates
 
-初始地区规则来自 [misakaio/chnroutes2](https://github.com/misakaio/chnroutes2)，保留 CC BY-SA 2.0 标识、来源和快照 blob SHA，见 `Resources/Rules/README.md`。OpenVPN/OpenSSL 的原始许可证与对应源码归档由源码构建/签名流程收集并随正式应用提供；分发前仍须审阅实际依赖与通知。
+Automation includes core tests, macOS 14/15/26 and Intel builds, dual-architecture UI packages, loopback probes, synthetic-service DNS restoration, PF syntax checks, actual PF blocking/unblocking of one loopback port, and source-engine/minimum-OS checks. Installed-system checks also exercise real application Quit, helper shutdown, retained approval/registration, and subsequent on-demand startup. Pass/fail status is determined by the Actions results for the specific commit.
 
-配置库支持分组/收藏筛选、排序及分组复用，见 [配置库管理](docs/PROFILE_LIBRARY.md)。
+Further acceptance on user Macs and actual servers must record privileged-helper authorization, real TLS/MFA, domestic/international egress and DNS captures, IPv6, network switching, sleep/wake, daemon crashes, long-running sessions, and installation/update/removal. See the [Full QA checklist](docs/QA.md), [Product readiness record](docs/PRODUCT_READINESS_2026_10_17.md), and [Authentication and maintenance completion](docs/AUTH_AND_MAINTENANCE_2026_10_18.md).
 
-配置列表支持本机私有备份和损坏后的确认恢复，见 [配置列表恢复](docs/PROFILE_INDEX_RECOVERY.md)。
+## Data and licenses
 
-自定义规则、路由解释和一键排障的范围见 [路由工具](docs/ROUTING_TOOLS.md)。
+Profiles may contain private keys and are stored in private local directories by default. Do not commit real `.ovpn` profiles, passwords, private keys, or signing certificates.
 
-### 智能连接与状态通知
-
-支持按应用启动、唤醒或网络恢复触发连接，可选择最近成功或固定配置、限定网络并随时暂停。手动断开及连接失败暂停自动连接；本地状态通知可选择异常或全部变化。默认关闭，详见 [智能连接与状态通知](docs/SMART_CONNECTION.md)。
-
-主页提供最近 60 秒的真实隧道下载／上传曲线、即时速度及累计流量；连接状态卡展示已观察连接时间、已核验的实际路由、IPv4／双栈和 PF 保护状态。保护开关仅在空闲且无恢复任务时可编辑，作用于下次受管连接；异常可从主页恢复网络或打开一键排障。曲线不连接中断前后的数据，不填充虚构样本，过期采样不显示为实时速度；PF 状态不代表已通过 DNS 防泄漏验收。
-
-明确选择“退出应用”／Cmd-Q 时，应用会先断开 VPN 并核验网络恢复，再停止助手进程及当前规则更新任务，保留安装批准与偏好供下次启动恢复。关闭窗口继续在状态栏运行。完整卸载仍使用“升级与卸载准备”中的卸载入口。
+The initial regional rules come from [misakaio/chnroutes2](https://github.com/misakaio/chnroutes2). Their CC BY-SA 2.0 attribution, source, and snapshot blob SHA are retained; see [Regional rule provenance](Resources/Rules/README.md). Source-build/signing workflows collect the original OpenVPN/OpenSSL licenses and corresponding source archives for distribution with the application. Review the actual dependencies and notices before distributing.

@@ -82,29 +82,18 @@ private struct TrafficRatePlot: View {
                 Text("0")
             }.font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.6).frame(width: 43)
             ZStack {
-                Canvas { context, size in
-                    for fraction in [0.0, 0.5, 1.0] {
-                        var grid = Path()
-                        grid.move(to: .init(x: 0, y: size.height * CGFloat(fraction)))
-                        grid.addLine(to: .init(x: size.width, y: size.height * CGFloat(fraction)))
-                        context.stroke(grid, with: .color(.secondary.opacity(0.12)), style: .init(lineWidth: 0.5, dash: [2, 3]))
-                    }
-                    for upload in [false, true] {
-                        let locations = points.map { point in
-                            CGPoint(x: 2 + (size.width - 4) * CGFloat(max(0, min(1, (point.uptime - (uptime - 60)) / 60))),
-                                    y: 2 + (size.height - 4) * CGFloat(1 - min(1, (upload ? point.speed.sentPerSecond : point.speed.receivedPerSecond) / ceiling)))
-                        }
-                        guard let first = locations.first, let last = locations.last else { continue }
-                        let color: Color = upload ? .teal : GlassPalette.blue
-                        if locations.count == 1 {
-                            context.fill(Path(ellipseIn: CGRect(x: first.x - 2, y: first.y - 2, width: 4, height: 4)), with: .color(color))
-                        } else {
-                            var line = Path(); line.addLines(locations)
-                            var area = line
-                            area.addLine(to: .init(x: last.x, y: size.height))
-                            area.addLine(to: .init(x: first.x, y: size.height)); area.closeSubpath()
-                            context.fill(area, with: .color(color.opacity(0.065)))
-                            context.stroke(line, with: .color(color), style: .init(lineWidth: 1.7, lineCap: .round, lineJoin: .round, dash: upload ? [3, 2] : []))
+                // Ordinary vector paths also render on Intel virtual machines
+                // without a Metal device. Canvas can abort during app startup.
+                GeometryReader { geometry in
+                    ZStack {
+                        Path { grid in
+                            for fraction in [0.0, 0.5, 1.0] {
+                                grid.move(to: .init(x: 0, y: geometry.size.height * CGFloat(fraction)))
+                                grid.addLine(to: .init(x: geometry.size.width, y: geometry.size.height * CGFloat(fraction)))
+                            }
+                        }.stroke(.secondary.opacity(0.12), style: .init(lineWidth: 0.5, dash: [2, 3]))
+                        ForEach([false, true], id: \.self) { upload in
+                            series(upload: upload, size: geometry.size)
                         }
                     }
                 }.clipped().accessibilityHidden(true)
@@ -116,6 +105,28 @@ private struct TrafficRatePlot: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L10n.text("最近 60 秒的 VPN 流量趋势"))
         .accessibilityValue(points.isEmpty ? placeholder : L10n.format("有效采样 {0} 个，下载 {1}，上传 {2}", [String(points.count), TunnelSpeedFormat.string(points.last?.speed.receivedPerSecond), TunnelSpeedFormat.string(points.last?.speed.sentPerSecond)]))
+    }
+    @ViewBuilder
+    private func series(upload: Bool, size: CGSize) -> some View {
+        let locations = points.map { point in
+            CGPoint(x: 2 + max(0, size.width - 4) * CGFloat(max(0, min(1, (point.uptime - (uptime - 60)) / 60))),
+                    y: 2 + max(0, size.height - 4) * CGFloat(1 - min(1, (upload ? point.speed.sentPerSecond : point.speed.receivedPerSecond) / ceiling)))
+        }
+        let color: Color = upload ? .teal : GlassPalette.blue
+        if let first = locations.first, let last = locations.last {
+            if locations.count == 1 {
+                Path(ellipseIn: CGRect(x: first.x - 2, y: first.y - 2, width: 4, height: 4)).fill(color)
+            } else {
+                let line = Path { $0.addLines(locations) }
+                Path { area in
+                    area.addPath(line)
+                    area.addLine(to: .init(x: last.x, y: size.height))
+                    area.addLine(to: .init(x: first.x, y: size.height))
+                    area.closeSubpath()
+                }.fill(color.opacity(0.065))
+                line.stroke(color, style: .init(lineWidth: 1.7, lineCap: .round, lineJoin: .round, dash: upload ? [3, 2] : []))
+            }
+        }
     }
 }
 

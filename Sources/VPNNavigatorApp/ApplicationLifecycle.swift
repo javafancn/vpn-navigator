@@ -29,14 +29,14 @@ final class ApplicationLifecycle: NSObject, NSApplicationDelegate {
         guard let model else { return .terminateNow }
         guard !model.maintenanceInProgress, !model.backgroundServicesBusy, !model.profileTransferInProgress,
               !model.routingModeSwitching else { return .terminateCancel }
-        guard !model.canQuit else { return .terminateNow }
         guard !quitting else { return .terminateCancel }
+        guard !model.canQuit || model.needsHelperProcessExit else { return .terminateNow }
         quitting = true
         Task {
-            if !model.stopping { await model.disconnect() }
-            await model.refreshConnectionStatus()
+            let finished = await model.prepareApplicationQuit()
             quitting = false
-            sender.reply(toApplicationShouldTerminate: model.canQuit)
+            if !finished { model.quickAccess.openMainWindow() }
+            sender.reply(toApplicationShouldTerminate: finished)
         }
         return .terminateLater
     }

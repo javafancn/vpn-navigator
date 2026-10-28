@@ -194,6 +194,9 @@ verb 3
         assert result.returncode == 0, 'Installed helper TLS fixture failed: ' + result.stderr
         # Exercise actual IPv6 data and the journal executor without changing defaults.
         run([probe, '--connect-only', valid])
+        from quit_fixture import exercise_quit
+        exercise_quit(run, active=True)
+        run([probe, '--connect-only', valid])
         # Both ends run on one host. Bind BOTH UDP sockets to their respective
         # utuns: a kernel-generated ICMP reply can otherwise take a local route
         # to the client's address and never return through the encrypted stream.

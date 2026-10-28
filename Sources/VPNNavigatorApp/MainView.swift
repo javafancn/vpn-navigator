@@ -115,6 +115,9 @@ struct MainView: View {
         .preferredColorScheme(.light)
         .environment(\.locale, L10n.locale)
         .onAppear {
+            if ProcessInfo.processInfo.arguments.contains("--vpnnav-quit-process-self-test") {
+                QuitProcessSelfTest.start(model: model)
+            }
             if ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true", ProcessInfo.processInfo.arguments.contains(where: { $0.hasSuffix("self-test") }) {
                 FileHandle.standardError.write(Data("Main scene appeared\n".utf8))
             }

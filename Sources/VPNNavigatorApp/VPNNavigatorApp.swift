@@ -136,6 +136,7 @@ final class AppModel: ObservableObject {
     private let localEvents = DiagnosticEventStore(file: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("VPNNavigator/Diagnostics/events.json"))
     private var profileMutations = 0
     @Published private(set) var maintenanceInProgress = false
+    private var helperPollingPaused = false
     @Published private(set) var backgroundServicesBusy = false
     @Published private(set) var automaticRulesEnabled = true
     @Published private(set) var launchAtLogin = false
@@ -192,7 +193,7 @@ final class AppModel: ObservableObject {
         launchAtLogin = backgroundPreferences.loginEnabled
         helperStateVerified = helper.installationStatus != .enabled && !(BuildChannel.isLocal && helper.installationStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
-        if ProcessInfo.processInfo.arguments.contains("--vpnnav-overview-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-status-bar-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-localization-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-public-egress-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-connection-history-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-health-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-local-quit-rejection-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-overview-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-status-bar-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-localization-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-public-egress-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-connection-history-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-health-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
         // launches OpenVPN. Additional labelled overview artwork is CI-only.
@@ -975,6 +976,7 @@ final class AppModel: ObservableObject {
         smartConnection.observe(report)
     }
     func refreshConnectionStatus() async {
+        guard !helperPollingPaused else { return }
         let capturedEpoch = statusEpoch
         guard !routingModeSwitching else { return }
         installationIssue = helper.localInstallationIssue
@@ -1182,8 +1184,9 @@ final class AppModel: ObservableObject {
         if action == .requestSwitch { await switchToSelected(expectedSession: expectedSession) }
         else { await connectSelected() }
     }
-    func disconnect() async {
-        smartConnection.pauseForManualDisconnect()
+    func disconnect(pauseAutomatic: Bool = true) async {
+        if pauseAutomatic { smartConnection.pauseForManualDisconnect() }
+        else { smartConnection.cancelPending(); smartConnection.expectDisconnect() }
         connectionHistory.observe(.userStop)
         statusEpoch &+= 1
         guard !stopping else { return }
@@ -1243,6 +1246,46 @@ final class AppModel: ObservableObject {
             rulesUpdatedAt = try await updater.lastUpdated()
             message = L10n.format("已校验并导入 {0} 条 IPv4 规则。", [String(describing: candidate.routes.count)])
         } catch { message = L10n.format("规则导入失败，原规则已保留：{0}", [String(describing: error.localizedDescription)]) }
+    }
+
+    var needsHelperProcessExit: Bool { helper.installationStatus == .enabled }
+
+    /// Full application Quit stops the process while retaining its launchd
+    /// registration, approval and user preferences. Window close never calls it.
+    func prepareApplicationQuit() async -> Bool {
+        guard !maintenanceInProgress, !backgroundServicesBusy, !profileTransferInProgress,
+              !routingModeSwitching, profileMutations == 0 else { return false }
+        maintenanceInProgress = true
+        smartConnection.cancelPending()
+        var finished = false
+        defer {
+            maintenanceInProgress = false; busy = false
+            if !finished {
+                helperPollingPaused = false
+                helper.resumeAfterCancelledQuit()
+                Task { await restoreBackgroundServices() }
+            }
+        }
+        if !canQuit {
+            if !stopping { await disconnect(pauseAutomatic: false) }
+            await refreshConnectionStatus()
+        }
+        guard canQuit else {
+            message = L10n.text("退出尚未完成：VPN 会话或网络恢复仍需处理，应用将保持运行。")
+            return false
+        }
+        do {
+            // Stop the scheduled rule agent before quiescing XPC, so it cannot
+            // wake an exited helper. Restore its saved preference next launch.
+            try await UserServices.disableRules()
+            helperPollingPaused = true; statusEpoch &+= 1
+            if helper.installationStatus == .enabled { try await helper.stopForApplicationQuit() }
+            finished = true
+            return true
+        } catch {
+            message = L10n.text("退出尚未完成：后台助手未能安全停止，请检查连接和网络恢复状态后重试。")
+            return false
+        }
     }
 
     func prepareMaintenance(removeProfiles: Bool) async -> Bool {
@@ -1519,6 +1562,12 @@ struct VPNNavigatorApp: App {
                 print(String(decoding: bytes, as: UTF8.self)); Darwin.exit(0)
             }
             Darwin.exit(1)
+        }
+        if BuildChannel.isLocal && ProcessInfo.processInfo.arguments.contains("--vpnnav-local-quit-rejection-check") {
+            Task { @MainActor in
+                do { try await QuitProcessSelfTest.verifyRejection(); Darwin.exit(0) }
+                catch { print("Quit rejection fixture failed"); Darwin.exit(1) }
+            }
         }
         if BuildChannel.isLocal && ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") {
             Task { let result = await HelperClient.shared.ping(); print(result); Darwin.exit(result.hasPrefix("VPN Navigator Helper") ? 0 : 1) }

@@ -9,5 +9,5 @@
     <key>MachServices</key>
     <dict><key>com.javafancn.vpn-navigator.helper</key><true/></dict>
     <key>RunAtLoad</key><true/>
-    <key>KeepAlive</key><true/>
+    <key>KeepAlive</key><false/>
 </dict></plist>

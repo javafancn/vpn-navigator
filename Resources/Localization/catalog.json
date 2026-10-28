@@ -2760,6 +2760,11 @@
     "en": "Cannot verify VPN state"
   },
   {
+    "key": "无法核验 VPN 隧道接口，路由未应用。",
+    "zh": "无法核验 VPN 隧道接口，路由未应用。",
+    "en": "Cannot verify the VPN tunnel interface. Routing was not applied."
+  },
+  {
     "key": "无法核验当前 Wi-Fi 名称；请检查位置授权或网络状态。",
     "zh": "无法核验当前 Wi-Fi 名称；请检查位置授权或网络状态。",
     "en": "Cannot verify the current Wi-Fi name. Check Location permission or network state."
@@ -2768,6 +2773,11 @@
     "key": "无法核验断线保护，已停止 VPN 会话。",
     "zh": "无法核验断线保护，已停止 VPN 会话。",
     "en": "Cannot verify protection; VPN session stopped."
+  },
+  {
+    "key": "无法核验物理出口；请检查本地网络，并断开其它 VPN／TUN 后重试。",
+    "zh": "无法核验物理出口；请检查本地网络，并断开其它 VPN／TUN 后重试。",
+    "en": "Cannot verify the physical gateway. Check the local network and disconnect other VPN/TUN clients before retrying."
   },
   {
     "key": "无法确认 IPv6 路由状态",
@@ -3008,6 +3018,11 @@
     "key": "服务器未提供所需的隧道地址，无法应用对应地址族的自定义规则。",
     "zh": "服务器未提供所需的隧道地址，无法应用对应地址族的自定义规则。",
     "en": "Server did not provide the tunnel address required for this family's custom rules."
+  },
+  {
+    "key": "服务器端点不适用于受管路由；请检查配置中的服务器地址。",
+    "zh": "服务器端点不适用于受管路由；请检查配置中的服务器地址。",
+    "en": "The server endpoint cannot be used for managed routing. Check the server address in the profile."
   },
   {
     "key": "服务未安装",
@@ -3428,6 +3443,11 @@
     "key": "检查配置编辑器、外部材料和重叠规则，保留原始文件后修正。",
     "zh": "检查配置编辑器、外部材料和重叠规则，保留原始文件后修正。",
     "en": "Review the editor, external materials and overlapping rules. Keep the original file before correcting it."
+  },
+  {
+    "key": "检测到其它 VPN／TUN 正在接管外网路由。请先关闭 FLClash／Clash 等客户端的 TUN 或断开其它 VPN，再连接规则／全局模式。",
+    "zh": "检测到其它 VPN／TUN 正在接管外网路由。请先关闭 FLClash／Clash 等客户端的 TUN 或断开其它 VPN，再连接规则／全局模式。",
+    "en": "Another VPN/TUN is handling internet routes. Turn off TUN in FLClash/Clash or disconnect the other VPN before using rule/global mode."
   },
   {
     "key": "检测响应不是支持核验的公网地址。",
@@ -4185,6 +4205,11 @@
     "en": "Notifications allowed; banners and sounds follow System Settings"
   },
   {
+    "key": "系统已有冲突路由；请先断开其它 VPN／TUN，未覆盖已有路由。",
+    "zh": "系统已有冲突路由；请先断开其它 VPN／TUN，未覆盖已有路由。",
+    "en": "Conflicting system routes already exist. Disconnect other VPN/TUN clients first. Existing routes were not replaced."
+  },
+  {
     "key": "系统报告代理参与；该结果不能作为 VPN 路径依据。",
     "zh": "系统报告代理参与；该结果不能作为 VPN 路径依据。",
     "en": "A proxy participated according to the system. This result cannot verify the VPN path."
@@ -4928,6 +4953,11 @@
     "key": "连接失败",
     "zh": "连接失败",
     "en": "Connection failed"
+  },
+  {
+    "key": "连接失败：{0}",
+    "zh": "连接失败：{0}",
+    "en": "Connection failed: {0}"
   },
   {
     "key": "连接异常，自动连接已暂停；请检查后主动恢复。",

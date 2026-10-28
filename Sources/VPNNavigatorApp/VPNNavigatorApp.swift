@@ -156,6 +156,8 @@ final class AppModel: ObservableObject {
     var routingModeSwitching: Bool { routingModeTarget != nil }
     private var routingRevision: UUID?
     private var statusEpoch: UInt64 = 0
+    // Negotiation and routing can fail after the initial request succeeds.
+    var pendingManualFailureAttempt: UUID?
     private let routingModeService: RoutingModeService
     @Published var activeProfileID: UUID?
     @Published var traffic: TunnelTraffic?
@@ -964,6 +966,10 @@ final class AppModel: ObservableObject {
         firewallActive = report.firewallActive
         firewallRecoveryRequired = report.firewallRecoveryRequired
         networkRecoveryRequired = report.requiresNetworkRecovery
+        if report.state == .failed, let pending = pendingManualFailureAttempt, report.attemptID == pending {
+            pendingManualFailureAttempt = nil
+            message = L10n.format("连接失败：{0}", [report.message])
+        }
         traffic = report.traffic
         if report.state == .connected, let value = report.traffic {
             receiveTrend.record(cumulativeBytes: value.receivedBytes)
@@ -1108,12 +1114,14 @@ final class AppModel: ObservableObject {
             var connectionPreferences = sessionPreferences
             connectionPreferences.customRules = selected.mode == .original ? nil : try CustomRuleSet(selected.customRules).rules
             connectionHistory.observe(.begin(profileID: selected.id, attemptID: attempt))
+            pendingManualFailureAttempt = automatically ? nil : attempt
             let result = await helper.connect(profile: text, profileID: selected.id,
                                               mode: selected.mode, rules: rulesText,
                                               username: connectionUsername, password: connectionPassword, preferences: connectionPreferences, attemptID: attempt)
             guard connectionAttempt == attempt else { return }
             if !automatically { password = "" } // Automatic attempts never mutate credential drafts.
             if result.hasPrefix("ERROR:") {
+                pendingManualFailureAttempt = nil
                 connectionHistory.observe(.requestFailed(attemptID: attempt))
                 message = result
                 connectionStatus = "failed: \(result)"
@@ -1187,6 +1195,7 @@ final class AppModel: ObservableObject {
         else { await connectSelected() }
     }
     func disconnect(pauseAutomatic: Bool = true) async {
+        pendingManualFailureAttempt = nil
         if pauseAutomatic { smartConnection.pauseForManualDisconnect() }
         else { smartConnection.cancelPending(); smartConnection.expectDisconnect() }
         connectionHistory.observe(.userStop)
@@ -1556,6 +1565,12 @@ struct VPNNavigatorApp: App {
         }
         if BuildChannel.isLocal && ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") {
             Task { let result = await HelperClient.shared.ping(); print(result); Darwin.exit(result.hasPrefix("VPN Navigator Helper") ? 0 : 1) }
+        }
+        if BuildChannel.isLocal && ProcessInfo.processInfo.arguments.contains("--vpnnav-local-traffic-self-test") {
+            Task { @MainActor in
+                do { try await OverviewSelfTest.verifyInstalledTraffic(); Darwin.exit(0) }
+                catch { print("Installed live traffic verification failed"); Darwin.exit(1) }
+            }
         }
         if BuildChannel.isLocal && ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") {
             Task {

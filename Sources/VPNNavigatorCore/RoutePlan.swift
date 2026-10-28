@@ -31,8 +31,22 @@ public struct RoutePlan: Sendable {
     public var removalOrder: [RouteTarget] { installOrder.reversed() }
 }
 
-public enum RoutePlanningError: Error, Equatable {
-    case invalidGateway, invalidInterface, badServerAddress, blockedServerAddress, routeCollision
+public enum RoutePlanningError: Error, Equatable, LocalizedError {
+    case invalidGateway, invalidInterface, badServerAddress, blockedServerAddress, routeCollision, competingTunnel
+    public var errorDescription: String? {
+        switch self {
+        case .competingTunnel:
+            return L10n.text("检测到其它 VPN／TUN 正在接管外网路由。请先关闭 FLClash／Clash 等客户端的 TUN 或断开其它 VPN，再连接规则／全局模式。")
+        case .invalidGateway:
+            return L10n.text("无法核验物理出口；请检查本地网络，并断开其它 VPN／TUN 后重试。")
+        case .invalidInterface:
+            return L10n.text("无法核验 VPN 隧道接口，路由未应用。")
+        case .badServerAddress, .blockedServerAddress:
+            return L10n.text("服务器端点不适用于受管路由；请检查配置中的服务器地址。")
+        case .routeCollision:
+            return L10n.text("系统已有冲突路由；请先断开其它 VPN／TUN，未覆盖已有路由。")
+        }
+    }
 }
 
 public enum RoutePlanner {

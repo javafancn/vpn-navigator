@@ -20,8 +20,25 @@ enum StatusBarSelfTest {
             receivedBytes: 1_000, sentBytes: 100, attemptID: attempt, networkRecoveryRequired: false, routingMode: .original))
         guard model.connected, !model.canQuit, model.menuTraffic.current() == nil else { throw Failure.check("session fixture") }
         let label = AppBranding.statusLabel(download: "999 MB/s", upload: "1.2 KB/s")
-        guard label.isTemplate, label.size == NSSize(width: 104, height: 22),
-              let bitmap = label.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)), bitmap.pixelsWide >= 104 else { throw Failure.check("template label raster") }
+        guard label.isTemplate, label.size == NSSize(width: 84, height: 22),
+              AppBranding.statusLabel(download: "999 MB/s", upload: "1.2 KB/s") === label,
+              let bitmap = label.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)), bitmap.pixelsWide >= 84 else { throw Failure.check("template label raster") }
+        for rates in [("—", "—"), ("0 B/s", "0 B/s"), ("999 MB/s", "18.4 EB/s")] {
+            let image = AppBranding.statusLabel(download: rates.0, upload: rates.1)
+            guard let raster = image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)) else { throw Failure.check("throughput raster") }
+            let scale = Double(raster.pixelsWide) / 84
+            for half in [0, 1] {
+                var ink = 0
+                for y in Int(Double(half * 11 + 1) * scale)..<Int(Double(half * 11 + 10) * scale) {
+                    for x in Int(34 * scale)..<Int(82 * scale) {
+                        if (raster.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.1 { ink += 1 }
+                    }
+                }
+                guard ink > 3 else { throw Failure.check("rate value missing or clipped") }
+            }
+        }
+        let idleLabel = AppBranding.statusLabel(download: "—", upload: "—", showsTraffic: false)
+        guard idleLabel.size == NSSize(width: 22, height: 22), idleLabel.isTemplate else { throw Failure.check("idle status item keeps a standard icon width") }
         if Bundle.main.bundleURL.pathExtension == "app" {
             guard Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String == "AppIcon",
                   let icon = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"), NSImage(contentsOf: icon) != nil,

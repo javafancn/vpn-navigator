@@ -2,6 +2,14 @@ import XCTest
 @testable import VPNNavigatorCore
 
 final class DualStackRoutingTests: XCTestCase {
+    func testOtherTunnelCannotBeAdoptedAsPhysicalGateway() {
+        for gateway in ["192.0.2.1", "fe80::1%utun3"] {
+            XCTAssertThrowsError(try PhysicalIPPath(gateway: gateway, interface: "utun3")) { error in
+                XCTAssertEqual(error as? RoutePlanningError, .competingTunnel)
+            }
+        }
+        XCTAssertNoThrow(try PhysicalIPPath(gateway: "192.0.2.1", interface: "en0"))
+    }
     private func paths() throws -> (PhysicalIPPath, PhysicalIPPath) {
         (try .init(gateway: "192.168.1.1", interface: "en0"), try .init(gateway: "fe80::1%en0", interface: "en0"))
     }

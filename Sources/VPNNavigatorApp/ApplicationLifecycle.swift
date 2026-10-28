@@ -26,9 +26,13 @@ final class ApplicationLifecycle: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationWillTerminate(_ notification: Notification) { model?.profileHealth.stop(); model?.smartConnection.stop(); model?.quickAccess.shutdown() }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        QuitProcessSelfTest.trace("termination delegate reached")
         guard let model else { return .terminateNow }
         guard !model.maintenanceInProgress, !model.backgroundServicesBusy, !model.profileTransferInProgress,
-              !model.routingModeSwitching else { return .terminateCancel }
+              !model.routingModeSwitching else {
+            QuitProcessSelfTest.trace("termination blocked by an operation in progress")
+            return .terminateCancel
+        }
         guard !quitting else { return .terminateCancel }
         quitting = true
         Task {

@@ -67,7 +67,9 @@ struct MaintenanceAssistantView: View {
                 Spacer()
                 Button(L10n.text("完成")) { dismiss() }.buttonStyle(ReferenceSecondaryButton()).disabled(preparing)
             }
-        }.padding(24).frame(width: 680).background(GlassAtmosphere()).interactiveDismissDisabled(preparing)
+        }.padding(24).frame(width: 680)
+            .background(GlassAtmosphere(onWindow: { $0.preventsApplicationTerminationWhenModal = false }))
+            .interactiveDismissDisabled(preparing)
     }
 }
 
@@ -164,7 +166,7 @@ struct SetupAssistantView: View {
             if let issue = model.installationIssue { Text(issue).font(.system(size: 13)).foregroundStyle(.secondary) }
         }
         .padding(24).frame(width: 660)
-        .background(GlassAtmosphere())
+        .background(GlassAtmosphere(onWindow: { $0.preventsApplicationTerminationWhenModal = false }))
         .fileImporter(isPresented: $importing, allowedContentTypes: [.init(filenameExtension: "ovpn")!]) { result in
             if case .success(let url) = result { Task { await model.importFile(url) } }
         }

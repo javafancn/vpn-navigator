@@ -37,6 +37,8 @@ enum StatusBarSelfTest {
                 guard ink > 3 else { throw Failure.check("rate value missing or clipped") }
             }
         }
+        let idleLabel = AppBranding.statusLabel(download: "—", upload: "—", showsTraffic: false)
+        guard idleLabel.size == NSSize(width: 22, height: 22), idleLabel.isTemplate else { throw Failure.check("idle status item keeps a standard icon width") }
         if Bundle.main.bundleURL.pathExtension == "app" {
             guard Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String == "AppIcon",
                   let icon = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"), NSImage(contentsOf: icon) != nil,

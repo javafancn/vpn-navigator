@@ -67,7 +67,9 @@ struct MaintenanceAssistantView: View {
                 Spacer()
                 Button(L10n.text("完成")) { dismiss() }.buttonStyle(ReferenceSecondaryButton()).disabled(preparing)
             }
-        }.padding(24).frame(width: 680).background(GlassAtmosphere()).interactiveDismissDisabled(preparing)
+        }.padding(24).frame(width: 680)
+            .background(GlassAtmosphere(onWindow: { $0.preventsApplicationTerminationWhenModal = false }))
+            .interactiveDismissDisabled(preparing)
     }
 }
 
@@ -110,7 +112,8 @@ struct SetupAssistantView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var importing = false
-    private var signed: Bool { PrivilegedServiceTrust.helperRequirement() != nil }
+    @State private var signatureReady: Bool?
+    private var signed: Bool { signatureReady == true }
     private var engine: Bool {
         Bundle.main.resourceURL.map {
             FileManager.default.isExecutableFile(atPath: $0.appendingPathComponent("openvpn").path)
@@ -128,7 +131,7 @@ struct SetupAssistantView: View {
                 Spacer()
             }
             VStack(spacing: 0) {
-                checkRow(BuildChannel.isLocal ? L10n.text("本地安装批准") : L10n.text("应用签名"), detail: BuildChannel.isLocal ? (signed ? L10n.text("管理员已批准此版本；本地运行时签名，未公证") : L10n.text("请用可信 Local.pkg 安装或修复")) : (signed ? L10n.text("已检测到开发者团队身份") : L10n.text("当前为开发预览包，请安装正式签名版本")), ready: signed)
+                checkRow(BuildChannel.isLocal ? L10n.text("本地安装批准") : L10n.text("应用签名"), detail: signatureReady == nil ? L10n.text("正在核验程序身份…") : BuildChannel.isLocal ? (signed ? L10n.text("管理员已批准此版本；本地运行时签名，未公证") : L10n.text("请用可信 Local.pkg 安装或修复")) : (signed ? L10n.text("已检测到开发者团队身份") : L10n.text("当前为开发预览包，请安装正式签名版本")), ready: signed)
                 Divider().opacity(0.25)
                 checkRow(L10n.text("OpenVPN 引擎"), detail: engine ? L10n.text("已找到内置引擎；连接时会核验签名") : L10n.text("当前安装包未包含引擎，暂不能连接 VPN"), ready: engine)
                 Divider().opacity(0.25)
@@ -152,7 +155,7 @@ struct SetupAssistantView: View {
                 .font(.system(size: 12)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
-                Button(L10n.text("重新检查")) { Task { await model.refreshConnectionStatus() } }
+                Button(L10n.text("重新检查")) { Task { await model.refreshConnectionStatus(); await refreshSignature() } }
                     .buttonStyle(ReferenceSecondaryButton())
                 Spacer()
                 Button(L10n.text("完成")) {
@@ -163,11 +166,20 @@ struct SetupAssistantView: View {
             if let issue = model.installationIssue { Text(issue).font(.system(size: 13)).foregroundStyle(.secondary) }
         }
         .padding(24).frame(width: 660)
-        .background(GlassAtmosphere())
+        .background(GlassAtmosphere(onWindow: { $0.preventsApplicationTerminationWhenModal = false }))
         .fileImporter(isPresented: $importing, allowedContentTypes: [.init(filenameExtension: "ovpn")!]) { result in
             if case .success(let url) = result { Task { await model.importFile(url) } }
         }
         .task { await model.refreshConnectionStatus() }
+        .task(id: model.helperStatus + (model.installationIssue ?? "")) { await refreshSignature() }
+    }
+    @MainActor private func refreshSignature() async {
+        signatureReady = nil
+        let verified = await Task.detached(priority: .utility) {
+            PrivilegedServiceTrust.helperRequirement() != nil
+        }.value
+        guard !Task.isCancelled else { return }
+        signatureReady = verified
     }
     private func checkRow(_ title: String, detail: String, ready: Bool) -> some View {
         HStack(spacing: 12) {

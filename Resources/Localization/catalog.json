@@ -3585,6 +3585,11 @@
     "en": "Verifying this session's actual route…"
   },
   {
+    "key": "正在核验程序身份…",
+    "zh": "正在核验程序身份…",
+    "en": "Verifying application identity…"
+  },
+  {
     "key": "正在读取并保存",
     "zh": "正在读取并保存",
     "en": "Reading and saving"
@@ -5033,6 +5038,16 @@
     "key": "退出",
     "zh": "退出",
     "en": "Quit"
+  },
+  {
+    "key": "退出尚未完成：VPN 会话或网络恢复仍需处理，应用将保持运行。",
+    "zh": "退出尚未完成：VPN 会话或网络恢复仍需处理，应用将保持运行。",
+    "en": "Quit is incomplete: the VPN session or network recovery still needs attention. The application will remain running."
+  },
+  {
+    "key": "退出尚未完成：后台助手未能安全停止，请检查连接和网络恢复状态后重试。",
+    "zh": "退出尚未完成：后台助手未能安全停止，请检查连接和网络恢复状态后重试。",
+    "en": "Quit is incomplete: the helper could not stop safely. Check the connection and network recovery status, then retry."
   },
   {
     "key": "选择 VPN Navigator 加密备份。解密和预览均在本机进行。",

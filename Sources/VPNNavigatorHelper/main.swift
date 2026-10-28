@@ -73,6 +73,22 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
         terminationSignal = termination; termination.resume()
     }
 
+    func stopWhenIdle(reply: @escaping (String) -> Void) {
+        queue.async {
+            guard !self.retiring,
+                  HelperQuitPolicy.mayStop(self.currentSessionReport(),
+                    hasRecoveryEvidence: LocalInstallation.hasRecoveryEvidence,
+                    installationPending: BuildChannel.isLocal && LocalInstallation.isInstallationPending) else {
+                reply("ERROR: Helper still owns a session or network recovery; exit refused")
+                return
+            }
+            self.retiring = true
+            reply(HelperQuitReceipt(processID: getpid()).json)
+            // Let XPC deliver the receipt. No launchctl bootout, approval
+            // removal or KeepAlive: the next authenticated demand can wake us.
+            self.queue.asyncAfter(deadline: .now() + 0.3) { exit(0) }
+        }
+    }
     func prepareLocalMaintenance(reply: @escaping (String) -> Void) {
         guard BuildChannel.isLocal else { reply("ERROR: Local maintenance is unavailable in this channel"); return }
         engine.cancellation.cancel(nil)

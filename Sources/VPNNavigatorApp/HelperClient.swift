@@ -1,5 +1,6 @@
 import Foundation
 import ServiceManagement
+import Darwin
 import VPNNavigatorCore
 
 /// This client never executes privileged commands. A trusted, separately signed
@@ -7,6 +8,63 @@ import VPNNavigatorCore
 final class HelperClient {
     static let shared = HelperClient()
     private init() {}
+    private let activity = HelperActivityGate()
+
+    func resumeAfterCancelledQuit() { activity.resume() }
+
+    /// Runs outside MainActor: AppKit's terminateLater modal loop must not
+    /// prevent authenticated disconnect/cleanup continuations from progressing.
+    func prepareApplicationQuit(allowInstallationRepairExit: Bool) async -> ApplicationQuitResult {
+        var latest: SessionReport?
+        QuitProcessSelfTest.trace("independent termination worker started")
+        do {
+            let status = installationStatus
+            if status == .enabled {
+                guard let report = await sessionReport() else { return .refused(nil) }
+                latest = report
+                if !HelperQuitPolicy.mayStop(report, hasRecoveryEvidence: false, installationPending: false) {
+                    QuitProcessSelfTest.trace("disconnecting verified session")
+                    let response = await disconnect(attemptID: report.attemptID)
+                    guard !response.hasPrefix("ERROR:") else { return .refused(latest) }
+                }
+                guard let confirmed = await sessionReport() else { return .refused(latest) }
+                latest = confirmed
+                guard HelperQuitPolicy.mayStop(confirmed, hasRecoveryEvidence: false, installationPending: false) else {
+                    return .refused(latest)
+                }
+                try await UserServices.disableRules()
+                QuitProcessSelfTest.trace("draining requests and stopping idle helper")
+                try await stopForApplicationQuit()
+                QuitProcessSelfTest.trace("helper process stopped")
+            } else {
+                guard allowInstallationRepairExit || (status != .requiresApproval && !LocalInstallation.hasRecoveryEvidence) else {
+                    return .refused(nil)
+                }
+                try await UserServices.disableRules()
+            }
+            return .ready(latest)
+        } catch { return .refused(latest) }
+    }
+
+    /// Drain existing requests and block new polls before asking the helper
+    /// to exit. Observe PID disappearance without sending another XPC request.
+    func stopForApplicationQuit() async throws {
+        activity.pause()
+        let deadline = ProcessInfo.processInfo.systemUptime + 15
+        while activity.count > 0 {
+            guard ProcessInfo.processInfo.systemUptime < deadline else { throw LocalInstallError.command }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        let result = await ask(duringQuit: true) { $0.stopWhenIdle(reply: $1) }
+        guard let receipt = HelperQuitReceipt.decode(result) else { throw LocalInstallError.command }
+        for _ in 0..<50 {
+            // This is a read-only existence check. A root-owned process yields
+            // EPERM while alive; only ESRCH confirms it has actually exited.
+            if kill(receipt.processID, 0) == -1 && errno == ESRCH { return }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        throw LocalInstallError.command
+    }
 
     var installationStatus: SMAppService.Status {
         if BuildChannel.isLocal {
@@ -42,8 +100,10 @@ final class HelperClient {
         try await SMAppService.daemon(plistName: HelperIdentity.plistName).unregister()
     }
 
-    private func ask(timeout: TimeInterval = 12, _ call: @escaping (VPNNavigatorHelperAPI, @escaping (String) -> Void) -> Void) async -> String {
-        await withCheckedContinuation { continuation in
+    private func ask(timeout: TimeInterval = 12, duringQuit: Bool = false, _ call: @escaping (VPNNavigatorHelperAPI, @escaping (String) -> Void) -> Void) async -> String {
+        guard activity.enter(duringQuit: duringQuit) else { return "ERROR: Application is quitting" }
+        defer { activity.leave() }
+        return await withCheckedContinuation { continuation in
             let connection = NSXPCConnection(machServiceName: HelperIdentity.machService,
                                            options: .privileged)
             let completion = OnceReply { value in
@@ -136,6 +196,30 @@ final class HelperClient {
                 expectedMode: request.previous.rawValue, expectedRevision: request.revision.uuidString, reply: reply)
         }
     }
+}
+
+enum ApplicationQuitResult: Sendable {
+    case ready(SessionReport?)
+    case refused(SessionReport?)
+    var succeeded: Bool { if case .ready = self { return true }; return false }
+    var report: SessionReport? {
+        switch self { case .ready(let report), .refused(let report): return report }
+    }
+}
+
+private final class HelperActivityGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var paused = false
+    private var active = 0
+    var count: Int { lock.lock(); defer { lock.unlock() }; return active }
+    func pause() { lock.lock(); paused = true; lock.unlock() }
+    func resume() { lock.lock(); paused = false; lock.unlock() }
+    func enter(duringQuit: Bool) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard !paused || duringQuit else { return false }
+        active += 1; return true
+    }
+    func leave() { lock.lock(); active -= 1; lock.unlock() }
 }
 
 /// NSXPC errors and callbacks can arrive concurrently. Resume continuations exactly once.

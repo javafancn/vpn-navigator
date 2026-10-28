@@ -1,4 +1,5 @@
 import AppKit
+import CoreFoundation
 import VPNNavigatorCore
 
 /// Cmd-Q and menu-bar Quit share one asynchronous shutdown path. A failed
@@ -26,17 +27,33 @@ final class ApplicationLifecycle: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationWillTerminate(_ notification: Notification) { model?.profileHealth.stop(); model?.smartConnection.stop(); model?.quickAccess.shutdown() }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        QuitProcessSelfTest.trace("termination delegate reached")
         guard let model else { return .terminateNow }
         guard !model.maintenanceInProgress, !model.backgroundServicesBusy, !model.profileTransferInProgress,
-              !model.routingModeSwitching else { return .terminateCancel }
-        guard !model.canQuit else { return .terminateNow }
+              !model.routingModeSwitching else {
+            QuitProcessSelfTest.trace("termination blocked by an operation in progress")
+            return .terminateCancel
+        }
         guard !quitting else { return .terminateCancel }
+        let repairExit = model.allowInstallationRepairExit
+        guard model.beginApplicationQuit() else { return .terminateCancel }
         quitting = true
-        Task {
-            if !model.stopping { await model.disconnect() }
-            await model.refreshConnectionStatus()
-            quitting = false
-            sender.reply(toApplicationShouldTerminate: model.canQuit)
+        let flushHistory = model.connectionHistory.takeQuitFlusher()
+        Task.detached {
+            let result = await HelperClient.shared.prepareApplicationQuit(allowInstallationRepairExit: repairExit)
+            await flushHistory(result.report)
+            // terminateLater changes the run-loop mode. MainActor Tasks/main
+            // dispatch alone do not progress there; use its explicit modes.
+            RunLoop.main.perform(inModes: [.modalPanel, .default, .eventTracking]) {
+                MainActor.assumeIsolated {
+                    model.finishApplicationQuit(result)
+                    self.quitting = false
+                    QuitProcessSelfTest.trace(result.succeeded ? "termination approved" : "termination cancelled")
+                    if !result.succeeded { model.quickAccess.openMainWindow() }
+                    sender.reply(toApplicationShouldTerminate: result.succeeded)
+                }
+            }
+            CFRunLoopWakeUp(CFRunLoopGetMain())
         }
         return .terminateLater
     }

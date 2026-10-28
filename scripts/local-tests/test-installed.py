@@ -39,6 +39,18 @@ def main():
     folder = pathlib.Path(tempfile.mkdtemp(prefix='vpnnav-local-fixture-', dir='/tmp'))
     try:
         health()
+        from quit_fixture import exercise_quit
+        exercise_quit(run)
+        exercise_quit(run)
+        evidence = pathlib.Path('/var/run/vpn-navigator/routes.journal')
+        assert run(['sudo', 'test', '-e', evidence], ok=False).returncode != 0
+        run(['sudo', 'mkdir', '-p', evidence.parent])
+        run(['sudo', 'touch', evidence])
+        try:
+            run([APP / 'Contents/MacOS/VPNNavigatorApp', '--vpnnav-local-quit-rejection-check'])
+            assert run(['sudo', 'test', '-e', evidence], ok=False).returncode == 0
+        finally:
+            run(['sudo', 'rm', evidence])
         manifest = BASE / 'manifest.json'
         saved_manifest = folder / 'manifest-backup.json'
         run(['cp', manifest, saved_manifest])

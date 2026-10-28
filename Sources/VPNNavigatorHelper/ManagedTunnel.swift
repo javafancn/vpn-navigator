@@ -441,11 +441,17 @@ final class ManagedTunnel {
         do {
             routes = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet6"])
         } catch {
-            throw TunnelError.ipv6Unsafe
+            throw TunnelError.ipv6CheckUnavailable
         }
         switch IPv6RouteSafety.evaluate(routes) {
-        case .noDefaultRoute: return
-        case .tunnelOnly, .physicalBypass, .unknown: throw TunnelError.ipv6Unsafe
+        case .noDefaultRoute, .linkLocalOnly: return
+        case .tunnelOnly:
+            let interfaces: String
+            do { interfaces = try RouteExecutor.command("/sbin/ifconfig", ["-a"]) }
+            catch { throw TunnelError.ipv6CheckUnavailable }
+            guard IPv6RouteSafety.evaluate(routes, interfaces: interfaces) == .linkLocalOnly else { throw TunnelError.ipv6TunnelConflict }
+        case .physicalBypass: throw TunnelError.ipv6Unsafe
+        case .unknown: throw TunnelError.ipv6CheckUnavailable
         }
     }
     private func handle(_ snapshot: TunnelSnapshot) {
@@ -897,10 +903,12 @@ final class ManagedTunnel {
 }
 enum TunnelError: Error, LocalizedError {
     case needRoot, alreadyRunning, missingRules, badCredential, engineMissing,
-         managementUnavailable, connectionTimedOut, noPhysicalGateway, noTunnelInterface, noActiveRoutePlan, ipv6Unsafe, unresolvedRoutes, routeVerificationFailed, orphanedSession
+         managementUnavailable, connectionTimedOut, noPhysicalGateway, noTunnelInterface, noActiveRoutePlan, ipv6Unsafe, ipv6CheckUnavailable, ipv6TunnelConflict, unresolvedRoutes, routeVerificationFailed, orphanedSession
 
     var errorDescription: String? {
         switch self {
+        case .ipv6CheckUnavailable: return L10n.text("无法完整核验 IPv6 路由与接口地址，连接已停止。请查看网络诊断后重试。")
+        case .ipv6TunnelConflict: return L10n.text("发现其它 IPv6 隧道路由，尚不能排除旁路。请关闭其它 VPN／TUN，或启用断线保护后重试。")
         case .ipv6Unsafe: return "服务器没有建立 IPv6 隧道，但系统仍有 IPv6 出口。请启用断线保护或使用支持双栈的服务器。"
         case .engineMissing: return "Signed OpenVPN engine is not installed."
         case .needRoot: return "Approve the privileged helper in macOS."

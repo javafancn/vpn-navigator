@@ -22,6 +22,10 @@ public enum LocalIPv4Networks {
             guard (1...4).contains(octets.count) else { continue }
             while octets.count < 4 { octets.append("0") }
             if let cidr = try? IPv4CIDR(octets.joined(separator: ".") + "/\(prefix)") {
+                // Darwin also installs link# routes for multicast/broadcast.
+                // Those are not LANs and must never enter a PF allow table.
+                let first = cidr.network >> 24
+                guard first != 0, first != 127, first < 224 else { continue }
                 routes.insert(cidr)
             }
         }

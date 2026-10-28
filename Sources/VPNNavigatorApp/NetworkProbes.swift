@@ -19,9 +19,10 @@ enum NetworkProbes {
         async let ipv6 = BoundedProbeCommand.run("/usr/sbin/netstat", ["-rn", "-f", "inet6"])
         async let defaultRoute = BoundedProbeCommand.run("/sbin/route", ["-n", "get", "default"])
         async let dns = BoundedProbeCommand.run("/usr/sbin/scutil", ["--dns"])
-        let values = try await (route, ipv6, defaultRoute, dns)
+        async let interfaces = BoundedProbeCommand.run("/sbin/ifconfig", ["-a"])
+        let values = try await (route, ipv6, defaultRoute, dns, interfaces)
         return .init(gateway: field("gateway", values.0), interface: field("interface", values.0),
-                     health: NetworkHealthSummary(ipv6Table: values.1, defaultIPv4Route: values.2, dnsSummary: values.3))
+                     health: NetworkHealthSummary(ipv6Table: values.1, defaultIPv4Route: values.2, dnsSummary: values.3, ipv6Interfaces: values.4))
     }
     private static func field(_ key: String, _ text: String) -> String {
         text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
@@ -136,7 +137,7 @@ private final class ProbeCommandCancellation: @unchecked Sendable {
 }
 enum BoundedProbeCommand {
     static func run(_ executable: String, _ arguments: [String], timeout: Int = 6, allowNonzero: Bool = false) async throws -> String {
-        let allowed: Set<String> = ["/sbin/route", "/usr/sbin/netstat", "/usr/sbin/scutil", "/usr/bin/dscacheutil", "/sbin/ping", "/sbin/ping6", "/usr/sbin/traceroute", "/usr/sbin/traceroute6"]
+        let allowed: Set<String> = ["/sbin/route", "/sbin/ifconfig", "/usr/sbin/netstat", "/usr/sbin/scutil", "/usr/bin/dscacheutil", "/sbin/ping", "/sbin/ping6", "/usr/sbin/traceroute", "/usr/sbin/traceroute6"]
         guard allowed.contains(executable) else { throw ProbeError.commandFailed }
         let cancellation = ProbeCommandCancellation()
         return try await withTaskCancellationHandler {

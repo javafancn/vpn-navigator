@@ -93,7 +93,8 @@ final class TroubleshootingModel: ObservableObject {
                 let safety = local.health.ipv6Safety
                 if report?.ipStack == .dual || report?.ipStack == .ipv6 {
                     checks.append(.init("ipv6", L10n.text("助手已建立 IPv6 路由"), .info, L10n.text("当前连接包含 IPv6 隧道；实际目标路径仍需下面的路由核验。")))
-                } else if safety == .noDefaultRoute { checks.append(.init("ipv6", L10n.text("未发现 IPv6 默认路由"), .info, L10n.text("只代表当前系统路由表采样。"))) }
+                } else if safety == .linkLocalOnly { checks.append(.init("ipv6", L10n.text("仅有链路本地 IPv6 与接口作用域路由"), .info, L10n.text("已同时读取路由和接口地址，未发现可用于公网的 IPv6 源地址。"))) }
+                else if safety == .noDefaultRoute { checks.append(.init("ipv6", L10n.text("未发现 IPv6 默认路由"), .info, L10n.text("只代表当前系统路由表采样。"))) }
                 else if report?.firewallActive == true { checks.append(.init("ipv6", L10n.text("助手报告保护已启用"), .info, L10n.text("IPv6 物理出口阻断仍需实际流量验收，此检查不提供无泄漏证明。"))) }
                 else { checks.append(.init("ipv6", L10n.text("IPv6 路径需要留意"), .warning, L10n.text("存在 IPv6 默认路由或无法确定其归属。"), L10n.text("受管 IPv4 模式要求核验 IPv6 条件；查看路由与连接保护说明。"))) }
             } catch {

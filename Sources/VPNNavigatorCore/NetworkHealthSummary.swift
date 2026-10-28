@@ -6,8 +6,8 @@ public struct NetworkHealthSummary: Sendable {
     public let resolverCount: Int
     public let nameserverCount: Int
 
-    public init(ipv6Table: String, defaultIPv4Route: String, dnsSummary: String) {
-        ipv6Safety = IPv6RouteSafety.evaluate(ipv6Table)
+    public init(ipv6Table: String, defaultIPv4Route: String, dnsSummary: String, ipv6Interfaces: String? = nil) {
+        ipv6Safety = IPv6RouteSafety.evaluate(ipv6Table, interfaces: ipv6Interfaces)
         ipv4DefaultInterface = defaultIPv4Route
             .components(separatedBy: .newlines)
             .first(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("interface:") })?

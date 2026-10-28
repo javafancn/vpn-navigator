@@ -9,12 +9,13 @@ enum QuitProcessSelfTest {
     private static var started = false
     static func verifyRejection() async throws {
         guard BuildChannel.isLocal, ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" else { throw LocalInstallError.unsafe }
-        let model = AppModel()
-        // A deliberately stale idle UI must still be protected by the server's
-        // live session/evidence checks. Failure must resume authenticated IPC.
-        guard !(await model.prepareApplicationQuit()), model.message != nil,
-              await HelperClient.shared.ping() == "VPN Navigator Helper (local)" else { throw LocalInstallError.command }
-        print("PASS: unsafe helper exit refused, application Quit cancelled and authenticated requests resumed.")
+        let client = HelperClient.shared
+        var refused = false
+        do { try await client.stopForApplicationQuit() }
+        catch { refused = true }
+        client.resumeAfterCancelledQuit()
+        guard refused, await client.ping() == "VPN Navigator Helper (local)" else { throw LocalInstallError.command }
+        print("PASS: unsafe direct helper exit refused and authenticated requests resumed after cancellation.")
     }
     static func start(model: AppModel) {
         guard !started, BuildChannel.isLocal,

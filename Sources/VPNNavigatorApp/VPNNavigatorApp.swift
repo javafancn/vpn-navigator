@@ -1248,8 +1248,6 @@ final class AppModel: ObservableObject {
         } catch { message = L10n.format("规则导入失败，原规则已保留：{0}", [String(describing: error.localizedDescription)]) }
     }
 
-    var needsHelperProcessExit: Bool { helper.installationStatus == .enabled }
-
     /// Full application Quit stops the process while retaining its launchd
     /// registration, approval and user preferences. Window close never calls it.
     func prepareApplicationQuit() async -> Bool {
@@ -1266,6 +1264,9 @@ final class AppModel: ObservableObject {
                 Task { await restoreBackgroundServices() }
             }
         }
+        // Verify the current helper even when the last UI snapshot was idle.
+        // This also handles Quit during initial scene/status loading.
+        await refreshConnectionStatus()
         if !canQuit {
             if !stopping { await disconnect(pauseAutomatic: false) }
             await refreshConnectionStatus()

@@ -30,7 +30,6 @@ final class ApplicationLifecycle: NSObject, NSApplicationDelegate {
         guard !model.maintenanceInProgress, !model.backgroundServicesBusy, !model.profileTransferInProgress,
               !model.routingModeSwitching else { return .terminateCancel }
         guard !quitting else { return .terminateCancel }
-        guard !model.canQuit || model.needsHelperProcessExit else { return .terminateNow }
         quitting = true
         Task {
             let finished = await model.prepareApplicationQuit()

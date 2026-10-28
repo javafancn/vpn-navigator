@@ -12,7 +12,7 @@ final class ConnectionHistoryController: ObservableObject {
     private var subscription: AnyCancellable?
     private var started = false
     private var loading = false
-    private struct Pending {
+    private struct Pending: Sendable {
         let input: ConnectionHistoryInput
         let date: Date
         let uptime: Double
@@ -49,6 +49,20 @@ final class ConnectionHistoryController: ObservableObject {
     func waitForPending() async {
         await start()
         while let task = drain { await task.value }
+    }
+    /// The termination worker can persist queued history without scheduling
+    /// another MainActor continuation inside AppKit's modal termination loop.
+    func takeQuitFlusher() -> @Sendable (SessionReport?) async -> Void {
+        let values = pending
+        pending.removeAll()
+        let archive = store
+        return { report in
+            for value in values { _ = await archive.consume(value.input, date: value.date, uptime: value.uptime) }
+            _ = await archive.consume(.userStop, date: Date(), uptime: ProcessInfo.processInfo.systemUptime)
+            if let report {
+                _ = await archive.consume(.report(.init(report)), date: Date(), uptime: ProcessInfo.processInfo.systemUptime)
+            }
+        }
     }
     func configure(_ preferences: ConnectionHistoryPreferences) async {
         guard !busy else { return }; busy = true; actionProblem = nil; defer { busy = false }

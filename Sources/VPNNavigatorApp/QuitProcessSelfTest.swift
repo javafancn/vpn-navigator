@@ -7,7 +7,7 @@ import VPNNavigatorCore
 @MainActor
 enum QuitProcessSelfTest {
     private static var started = false
-    static func trace(_ message: String) {
+    nonisolated static func trace(_ message: String) {
         guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
               ProcessInfo.processInfo.arguments.contains("--vpnnav-quit-process-self-test") else { return }
         FileHandle.standardError.write(Data(("Quit fixture: " + message + "\n").utf8))

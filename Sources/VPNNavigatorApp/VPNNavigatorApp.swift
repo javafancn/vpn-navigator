@@ -1250,50 +1250,27 @@ final class AppModel: ObservableObject {
         } catch { message = L10n.format("规则导入失败，原规则已保留：{0}", [String(describing: error.localizedDescription)]) }
     }
 
-    /// Full application Quit stops the process while retaining its launchd
-    /// registration, approval and user preferences. Window close never calls it.
-    func prepareApplicationQuit() async -> Bool {
+    /// Synchronous UI barrier; the authenticated I/O runs outside MainActor
+    /// while AppKit is waiting in its modal termination run loop.
+    var allowInstallationRepairExit: Bool { repairExitAuthorized && canRepairInterruptedInstallation }
+    func beginApplicationQuit() -> Bool {
         guard !maintenanceInProgress, !backgroundServicesBusy, !profileTransferInProgress,
               !routingModeSwitching, profileMutations == 0 else { return false }
         maintenanceInProgress = true
-        smartConnection.cancelPending()
-        var finished = false
-        defer {
-            maintenanceInProgress = false; busy = false
-            if !finished {
-                helperPollingPaused = false
-                helper.resumeAfterCancelledQuit()
-                Task { await restoreBackgroundServices() }
-            }
-        }
-        // Verify the current helper even when the last UI snapshot was idle.
-        // This also handles Quit during initial scene/status loading.
-        QuitProcessSelfTest.trace("verifying current session")
-        await refreshConnectionStatus()
-        if !canQuit {
-            QuitProcessSelfTest.trace("disconnecting and recovering network")
-            if !stopping { await disconnect(pauseAutomatic: false) }
-            await refreshConnectionStatus()
-        }
-        guard canQuit else {
-            message = L10n.text("退出尚未完成：VPN 会话或网络恢复仍需处理，应用将保持运行。")
-            return false
-        }
-        do {
-            // Stop the scheduled rule agent before quiescing XPC, so it cannot
-            // wake an exited helper. Restore its saved preference next launch.
-            try await UserServices.disableRules()
-            helperPollingPaused = true; statusEpoch &+= 1
-            QuitProcessSelfTest.trace("draining requests and stopping idle helper")
-            if helper.installationStatus == .enabled { try await helper.stopForApplicationQuit() }
-            QuitProcessSelfTest.trace("helper process stopped")
-            finished = true
-            return true
-        } catch {
-            QuitProcessSelfTest.trace("helper stop failed")
-            message = L10n.text("退出尚未完成：后台助手未能安全停止，请检查连接和网络恢复状态后重试。")
-            return false
-        }
+        helperPollingPaused = true; statusEpoch &+= 1
+        smartConnection.cancelPending(); smartConnection.expectDisconnect()
+        return true
+    }
+    func finishApplicationQuit(_ result: ApplicationQuitResult) {
+        if let report = result.report { applyVerifiedSessionReport(report) }
+        maintenanceInProgress = false; busy = false
+        guard !result.succeeded else { return }
+        helperPollingPaused = false
+        helper.resumeAfterCancelledQuit()
+        message = result.report?.requiresNetworkRecovery == true ?
+            L10n.text("退出尚未完成：VPN 会话或网络恢复仍需处理，应用将保持运行。") :
+            L10n.text("退出尚未完成：后台助手未能安全停止，请检查连接和网络恢复状态后重试。")
+        Task { await refreshConnectionStatus(); await restoreBackgroundServices() }
     }
 
     func prepareMaintenance(removeProfiles: Bool) async -> Bool {

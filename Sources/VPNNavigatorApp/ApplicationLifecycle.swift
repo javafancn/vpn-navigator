@@ -34,13 +34,24 @@ final class ApplicationLifecycle: NSObject, NSApplicationDelegate {
             return .terminateCancel
         }
         guard !quitting else { return .terminateCancel }
+        guard model.beginApplicationQuit() else { return .terminateCancel }
         quitting = true
-        Task {
-            let finished = await model.prepareApplicationQuit()
-            QuitProcessSelfTest.trace(finished ? "termination approved" : "termination cancelled")
-            quitting = false
-            if !finished { model.quickAccess.openMainWindow() }
-            sender.reply(toApplicationShouldTerminate: finished)
+        let repairExit = model.allowInstallationRepairExit
+        let flushHistory = model.connectionHistory.takeQuitFlusher()
+        Task.detached {
+            let result = await HelperClient.shared.prepareApplicationQuit(allowInstallationRepairExit: repairExit)
+            await flushHistory(result.report)
+            // terminateLater changes the run-loop mode. MainActor Tasks/main
+            // dispatch alone do not progress there; use its explicit modes.
+            RunLoop.main.perform(inModes: [.modalPanel, .default, .eventTracking]) {
+                MainActor.assumeIsolated {
+                    model.finishApplicationQuit(result)
+                    self.quitting = false
+                    QuitProcessSelfTest.trace(result.succeeded ? "termination approved" : "termination cancelled")
+                    if !result.succeeded { model.quickAccess.openMainWindow() }
+                    sender.reply(toApplicationShouldTerminate: result.succeeded)
+                }
+            }
         }
         return .terminateLater
     }

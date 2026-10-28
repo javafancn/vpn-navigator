@@ -12,6 +12,40 @@ final class HelperClient {
 
     func resumeAfterCancelledQuit() { activity.resume() }
 
+    /// Runs outside MainActor: AppKit's terminateLater modal loop must not
+    /// prevent authenticated disconnect/cleanup continuations from progressing.
+    func prepareApplicationQuit(allowInstallationRepairExit: Bool) async -> ApplicationQuitResult {
+        var latest: SessionReport?
+        QuitProcessSelfTest.trace("independent termination worker started")
+        do {
+            let status = installationStatus
+            if status == .enabled {
+                guard let report = await sessionReport() else { return .refused(nil) }
+                latest = report
+                if !HelperQuitPolicy.mayStop(report, hasRecoveryEvidence: false, installationPending: false) {
+                    QuitProcessSelfTest.trace("disconnecting verified session")
+                    let response = await disconnect(attemptID: report.attemptID)
+                    guard !response.hasPrefix("ERROR:") else { return .refused(latest) }
+                }
+                guard let confirmed = await sessionReport() else { return .refused(latest) }
+                latest = confirmed
+                guard HelperQuitPolicy.mayStop(confirmed, hasRecoveryEvidence: false, installationPending: false) else {
+                    return .refused(latest)
+                }
+                try await UserServices.disableRules()
+                QuitProcessSelfTest.trace("draining requests and stopping idle helper")
+                try await stopForApplicationQuit()
+                QuitProcessSelfTest.trace("helper process stopped")
+            } else {
+                guard allowInstallationRepairExit || (status != .requiresApproval && !LocalInstallation.hasRecoveryEvidence) else {
+                    return .refused(nil)
+                }
+                try await UserServices.disableRules()
+            }
+            return .ready(latest)
+        } catch { return .refused(latest) }
+    }
+
     /// Drain existing requests and block new polls before asking the helper
     /// to exit. Observe PID disappearance without sending another XPC request.
     func stopForApplicationQuit() async throws {
@@ -161,6 +195,15 @@ final class HelperClient {
                 expectedProfileID: request.profileID.uuidString, expectedAttemptID: request.attemptID.uuidString,
                 expectedMode: request.previous.rawValue, expectedRevision: request.revision.uuidString, reply: reply)
         }
+    }
+}
+
+enum ApplicationQuitResult: Sendable {
+    case ready(SessionReport?)
+    case refused(SessionReport?)
+    var succeeded: Bool { if case .ready = self { return true }; return false }
+    var report: SessionReport? {
+        switch self { case .ready(let report), .refused(let report): return report }
     }
 }
 

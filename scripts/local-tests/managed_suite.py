@@ -96,9 +96,9 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
     rules.write_text(''.join(f'11.65.{i // 128}.{(i % 128) * 2}/32\n' for i in range(4096)))
     extra = folder / 'managed-server.ext'
     extra.write_text('extendedKeyUsage=serverAuth\n')
-    run([openssl, 'req', '-new', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes',
+    run(['env', 'OPENSSL_CONF=/dev/null', openssl, 'req', '-new', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes',
          '-subj', '/CN=vpnnav-ci-server', '-keyout', folder / 'managed-server.key', '-out', folder / 'managed-server.csr'])
-    run([openssl, 'x509', '-req', '-in', folder / 'managed-server.csr', '-CA', folder / 'ca.crt',
+    run(['env', 'OPENSSL_CONF=/dev/null', openssl, 'x509', '-req', '-in', folder / 'managed-server.csr', '-CA', folder / 'ca.crt',
          '-CAkey', folder / 'ca.key', '-CAcreateserial', '-days', '1', '-extfile', extra, '-out', folder / 'managed-server.crt'])
     exceptions = control_exceptions(run)
     stop_server()

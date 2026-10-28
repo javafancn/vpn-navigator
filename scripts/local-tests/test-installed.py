@@ -9,6 +9,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
+import ipaddress
 
 APP = pathlib.Path('/Applications/VPN Navigator.app')
 BASE = pathlib.Path('/Library/Application Support/VPNNavigator/Local')
@@ -18,11 +20,11 @@ PLIST = pathlib.Path('/Library/LaunchDaemons/' + LABEL + '.plist')
 SERVICE = 'com.javafancn.vpn-navigator.helper'
 
 
-def run(args, ok=True):
+def run(args, ok=True, timeout=120):
     command = [str(x) for x in args]
     if '/usr/sbin/installer' in command:
         command.insert(command.index('/usr/sbin/installer') + 1, '-dumplog')
-    result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+    result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
     if ok and result.returncode:
         raise AssertionError('Fixture command failed: ' + str(args[0]) + '\n' + result.stdout + result.stderr)
     return result
@@ -39,13 +41,27 @@ def main():
     folder = pathlib.Path(tempfile.mkdtemp(prefix='vpnnav-local-fixture-', dir='/tmp'))
     try:
         health()
+        pressure = run(['sudo', 'env', 'GITHUB_ACTIONS=true', PAYLOAD / 'VPNNavigatorHelper', '--self-test-route-pressure'], timeout=240)
+        print(pressure.stdout, end='')
         from quit_fixture import exercise_quit
         exercise_quit(run)
         exercise_quit(run)
         evidence = pathlib.Path('/var/run/vpn-navigator/routes.journal')
         assert run(['sudo', 'test', '-e', evidence], ok=False).returncode != 0
         run(['sudo', 'mkdir', '-p', evidence.parent])
-        run(['sudo', 'touch', evidence])
+        pending = folder / 'recoverable-route.jsonl'
+        pending.write_text(json.dumps({'phase': 'begun', 'mutation': {
+            'id': str(uuid.uuid4()), 'action': 'add',
+            'route': {'prefix': {'network': int(ipaddress.IPv4Address('198.51.100.253')), 'prefix': 32},
+                      'destination': {'viaGateway': {'_0': '192.0.2.1'}}}}}) + '\n')
+        pending.chmod(0o600)
+        run(['sudo', 'cp', pending, evidence])
+        exercise_quit(run, recovering=True)
+        assert run(['sudo', 'test', '-e', evidence], ok=False).returncode != 0
+        malformed = folder / 'malformed-recovery.jsonl'
+        malformed.write_text('{ malformed recovery fixture')
+        malformed.chmod(0o600)
+        run(['sudo', 'cp', malformed, evidence])
         try:
             run([APP / 'Contents/MacOS/VPNNavigatorApp', '--vpnnav-local-quit-rejection-check'])
             assert run(['sudo', 'test', '-e', evidence], ok=False).returncode == 0

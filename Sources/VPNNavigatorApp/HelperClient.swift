@@ -24,10 +24,14 @@ final class HelperClient {
                 latest = report
                 if !HelperQuitPolicy.mayStop(report, hasRecoveryEvidence: false, installationPending: false) {
                     QuitProcessSelfTest.trace("disconnecting verified session")
-                    let response = await disconnect(attemptID: report.attemptID)
-                    guard !response.hasPrefix("ERROR:") else { return .refused(latest) }
+                    _ = await disconnect(attemptID: report.attemptID)
                 }
-                guard let confirmed = await sessionReport() else { return .refused(latest) }
+                guard var confirmed = await sessionReport() else { return .refused(latest) }
+                if confirmed.activeProfileID == nil, !ConnectionControl.inProgress(confirmed.state), confirmed.requiresNetworkRecovery {
+                    _ = await recoverOrphanedRoutes()
+                    guard let recovered = await sessionReport() else { return .refused(confirmed) }
+                    confirmed = recovered
+                }
                 latest = confirmed
                 guard HelperQuitPolicy.mayStop(confirmed, hasRecoveryEvidence: false, installationPending: false) else {
                     return .refused(latest)

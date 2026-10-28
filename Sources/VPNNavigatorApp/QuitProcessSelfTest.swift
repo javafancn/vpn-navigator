@@ -20,6 +20,13 @@ enum QuitProcessSelfTest {
         catch { refused = true }
         client.resumeAfterCancelledQuit()
         guard refused, await client.ping() == "VPN Navigator Helper (local)" else { throw LocalInstallError.command }
+        if let report = await client.sessionReport(), report.requiresNetworkRecovery,
+           report.activeProfileID == nil, !ConnectionControl.inProgress(report.state) {
+            let result = await client.prepareApplicationQuit(allowInstallationRepairExit: false)
+            client.resumeAfterCancelledQuit()
+            guard !result.succeeded, await client.ping() == "VPN Navigator Helper (local)" else { throw LocalInstallError.command }
+            print("PASS: application quit recovery also refuses unresolved evidence without stopping the helper.")
+        }
         print("PASS: unsafe direct helper exit refused and authenticated requests resumed after cancellation.")
     }
     static func start(model: AppModel) {
@@ -31,7 +38,10 @@ enum QuitProcessSelfTest {
             for tick in 0..<100 {
                 await model.refreshConnectionStatus()
                 if tick % 20 == 0 { trace("startup ready=\(model.profileOpenReady), state=\(model.sessionState.rawValue)") }
-                if model.profileOpenReady && !model.backgroundServicesBusy && !model.maintenanceInProgress && (model.connected || model.canQuit) {
+                let recovering = ProcessInfo.processInfo.arguments.contains("--vpnnav-quit-with-recoverable-journal") &&
+                    model.activeProfileID == nil && model.networkRecoveryRequired &&
+                    !ConnectionControl.inProgress(model.sessionState)
+                if model.profileOpenReady && !model.backgroundServicesBusy && !model.maintenanceInProgress && (model.connected || model.canQuit || recovering) {
                     print("Quit fixture: real application termination requested")
                     fflush(stdout)
                     NSApp.terminate(nil)

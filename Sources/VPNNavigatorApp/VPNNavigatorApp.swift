@@ -813,10 +813,14 @@ final class AppModel: ObservableObject {
         NSWorkspace.shared.open(url)
     }
     func retryNetworkRecovery() async {
+        guard !busy, !stopping, !maintenanceInProgress, !profileTransferInProgress, !routingModeSwitching else { return }
+        if connected || connecting || activeProfileID != nil { await disconnect() }
         guard !connected && !connecting else {
             message = L10n.text("Disconnect the VPN before attempting route recovery.")
             return
         }
+        busy = true
+        defer { busy = maintenanceInProgress }
         message = await helper.recoverOrphanedRoutes()
         await refreshConnectionStatus()
     }

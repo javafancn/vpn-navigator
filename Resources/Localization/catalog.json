@@ -4285,6 +4285,11 @@
     "en": "The system resolver returned no addresses."
   },
   {
+    "key": "系统路由命令启动失败（错误 {0}），已保留恢复记录。",
+    "zh": "系统路由命令启动失败（错误 {0}），已保留恢复记录。",
+    "en": "The system routing command could not start (error {0}). Recovery evidence was retained."
+  },
+  {
     "key": "系统路由表的实际接口",
     "zh": "系统路由表的实际接口",
     "en": "Actual interface in the system route table"

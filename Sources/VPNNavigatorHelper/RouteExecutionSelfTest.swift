@@ -4,6 +4,9 @@ import VPNNavigatorCore
 
 enum RouteExecutionSelfTest {
     static func run() throws {
+        try RouteCommandPressureSelfTest.observeLegacyBehavior()
+        try RouteCommandPressureSelfTest.run()
+        try RouteJournalRecoverySelfTest.run()
         try DualStackRouteSelfTest.run()
         try RouteSwitchSelfTest.run()
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

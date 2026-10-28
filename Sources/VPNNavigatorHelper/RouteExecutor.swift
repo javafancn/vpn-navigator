@@ -139,6 +139,7 @@ final class RouteExecutor {
     }
 
     private func append<T: Encodable>(_ event: T) throws {
+        try autoreleasepool {
         var data = try JSONEncoder().encode(event)
         data.append(10)
         if !FileManager.default.fileExists(atPath: journal.path) {
@@ -152,6 +153,7 @@ final class RouteExecutor {
         try handle.seekToEnd()
         try handle.write(contentsOf: data)
         try handle.synchronize()
+        }
     }
 
     func applyIPv6(_ routes: [IPv6RouteTarget]) throws {
@@ -196,6 +198,7 @@ final class RouteExecutor {
     /// commands, and never let a stuck route/netstat command hang the root queue.
     @discardableResult
     static func command(_ executable: String, _ arguments: [String]) throws -> String {
+        return try autoreleasepool {
         let allowlisted: Set<String> = [
             "/sbin/route", "/usr/sbin/netstat", "/sbin/ifconfig", "/usr/bin/dscacheutil"
         ]
@@ -205,10 +208,20 @@ final class RouteExecutor {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: executable)
         task.arguments = arguments
+        // Wait for completion directly rather than polling this worker's run loop
+        // once for each of the thousands of short-lived routing commands.
+        let terminated = DispatchSemaphore(value: 0)
+        task.terminationHandler = { _ in terminated.signal() }
         let output = Pipe()
+        defer {
+            try? output.fileHandleForReading.close()
+            try? output.fileHandleForWriting.close()
+        }
+        task.standardInput = FileHandle.nullDevice
         task.standardOutput = output
         task.standardError = output
-        try task.run()
+        do { try task.run() }
+        catch { throw RouteExecutionError.commandLaunchFailed((error as NSError).code) }
 
         let timeout = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
         timeout.schedule(deadline: .now() + .seconds(12))
@@ -221,7 +234,7 @@ final class RouteExecutor {
         }
         timeout.resume()
         let data = output.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
+        terminated.wait()
         timeout.cancel()
         guard data.count <= 8_000_000 else {
             throw RouteExecutionError.commandOutputTooLarge
@@ -230,17 +243,21 @@ final class RouteExecutor {
             throw RouteExecutionError.commandFailed(executable)
         }
         return String(decoding: data, as: UTF8.self)
+        }
     }
 }
 
 enum RouteExecutionError: Error, LocalizedError {
     case existingRoute(String), commandFailed(String), routeOwnershipLost(String)
+    case commandLaunchFailed(Int)
     case ambiguousJournal, journalFailure, disallowedExecutable, commandOutputTooLarge
 
     var errorDescription: String? {
         switch self {
         case .existingRoute(let prefix):
             return "An existing system route already covers \(prefix)."
+        case .commandLaunchFailed(let code):
+            return L10n.format("系统路由命令启动失败（错误 {0}），已保留恢复记录。", [String(code)])
         case .commandFailed(let command):
             return "The system network command failed: \(command)."
         case .routeOwnershipLost(let prefix):
@@ -248,7 +265,7 @@ enum RouteExecutionError: Error, LocalizedError {
         case .ambiguousJournal:
             return "A previous route mutation may be incomplete. Manual network verification is required."
         case .journalFailure:
-            return "Cannot durably record route changes. System routing has not been modified."
+            return "Cannot durably record route changes. Recovery evidence has been preserved."
         case .disallowedExecutable:
             return "System tool is not permitted for privileged route execution."
         case .commandOutputTooLarge:

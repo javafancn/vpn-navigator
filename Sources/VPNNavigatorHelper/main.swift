@@ -47,7 +47,7 @@ if CommandLine.arguments.dropFirst().first == "--self-test-dns-journal" {
 if CommandLine.arguments.dropFirst().first == "--self-test-route-pressure" {
     guard getuid() == 0, CommandLine.arguments.count == 2, ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
           let approval = try? LocalInstallation.load(), LocalInstallation.selfMatches([.helper], approval: approval) else { exit(1) }
-    do { try RouteCommandPressureSelfTest.run(); exit(0) }
+    do { try RouteCommandPressureSelfTest.run(); try KernelRouteBenchmark.run(); exit(0) }
     catch { fputs("Route resource pressure fixture failed: \(error.localizedDescription)\n", stderr); exit(1) }
 }
 if CommandLine.arguments.dropFirst().first == "--self-test-ipv6-kernel" {

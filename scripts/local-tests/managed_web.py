@@ -39,7 +39,7 @@ def upstream_resolver(run):
 def web_fixture(run, folder, server_tunnel, upstream):
     assert sys.platform == 'darwin' and os.environ.get('GITHUB_ACTIONS') == 'true'
     assert re.fullmatch(r'utun[0-9]+', server_tunnel)
-    counts = {'dns': 0, 'http': 0}
+    counts = {'dns': 0, 'http': 0, 'wrong_source': 0}
     class DNSHandler(socketserver.BaseRequestHandler):
         def handle(self):
             packet, udp = self.request
@@ -56,6 +56,7 @@ def web_fixture(run, folder, server_tunnel, upstream):
                 name = '.'.join(labels).lower()
                 if name.endswith('.vpnnav.test'):
                     if self.client_address[0] != CLIENT_ALIAS:
+                        counts['wrong_source'] += 1
                         return
                     counts['dns'] += 1
                     answer = b''
@@ -87,15 +88,15 @@ def web_fixture(run, folder, server_tunnel, upstream):
     class UDP(socketserver.ThreadingUDPServer):
         daemon_threads = True
     dns = UDP(('0.0.0.0', 0), DNSHandler)
-    http = http.server.ThreadingHTTPServer(('0.0.0.0', 0), HTTPHandler)
-    threads = [threading.Thread(target=s.serve_forever, daemon=True) for s in [dns, http]]
+    http_service = http.server.ThreadingHTTPServer(('0.0.0.0', 0), HTTPHandler)
+    threads = [threading.Thread(target=s.serve_forever, daemon=True) for s in [dns, http_service]]
     anchor = 'com.apple/zzz.vpnnav-data-' + uuid.uuid4().hex
     def pf(*args, ok=True):
         return run(['sudo', '-n', '/sbin/pfctl', *args], ok=ok)
     rules = folder / 'managed-web.pf'
     rules.write_text(
         f'rdr pass on {server_tunnel} inet proto udp from {CLIENT_ALIAS} to {{ {DNS}, 1.1.1.1, 9.9.9.9 }} port 53 -> 198.18.254.1 port {dns.server_address[1]}\n'
-        f'rdr pass on {server_tunnel} inet proto tcp from {CLIENT_ALIAS} to {WEB} port 80 -> 198.18.254.1 port {http.server_address[1]}\n')
+        f'rdr pass on {server_tunnel} inet proto tcp from {CLIENT_ALIAS} to {WEB} port 80 -> 198.18.254.1 port {http_service.server_address[1]}\n')
     rules.chmod(0o600)
     owned_route = False
     before = pf('-sr').stdout
@@ -109,6 +110,12 @@ def web_fixture(run, folder, server_tunnel, upstream):
         for thread in threads:
             thread.start()
         yield counts
+    except BaseException:
+        print('Managed web counts: ' + json.dumps(counts), flush=True)
+        print('Managed web anchor: ' + pf('-a', anchor, '-sr').stdout + pf('-a', anchor, '-sn').stdout, flush=True)
+        print('Managed web states: ' + pf('-a', anchor, '-ss', ok=False).stdout, flush=True)
+        print('Managed DNS receipt: ' + run(['/usr/sbin/scutil', '--dns']).stdout, flush=True)
+        raise
     finally:
         pf('-a', anchor, '-F', 'rules')
         pf('-a', anchor, '-F', 'nat')
@@ -117,7 +124,7 @@ def web_fixture(run, folder, server_tunnel, upstream):
             path = run(['/sbin/route', '-n', 'get', CLIENT_ALIAS]).stdout
             assert re.search(r'^\s*interface:\s*' + re.escape(server_tunnel) + r'\s*$', path, re.M)
             run(['sudo', '-n', '/sbin/route', '-n', 'delete', '-host', CLIENT_ALIAS, '-interface', server_tunnel])
-        for service, thread in zip([dns, http], threads):
+        for service, thread in zip([dns, http_service], threads):
             if thread.is_alive():
                 service.shutdown(); thread.join(timeout=3)
             service.server_close()
@@ -127,7 +134,7 @@ def web_fixture(run, folder, server_tunnel, upstream):
 def verify_web(run, probe, counts, client_tunnel, fallback=False):
     resolver = '1.1.1.1' if fallback else DNS
     path = run(['/sbin/route', '-n', 'get', resolver]).stdout
-    assert re.search(r'^\s*interface:\s*' + re.escape(client_tunnel) + r'\s*$', path, re.M), 'DNS bypassed the VPN'
+    assert re.search(r'^\s*interface:\s*' + re.escape(client_tunnel) + r'\s*$', path, re.M), 'DNS bypassed the VPN: ' + path
     before = json.loads(run([probe, '--traffic']).stdout)
     result = None
     for _ in range(3):

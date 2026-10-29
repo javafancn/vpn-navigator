@@ -32,6 +32,9 @@ override in the managed connection test.
 - Record application connection time before watchdog sleeps, mode switches and
   Quit cleanup, for each transport/mode. Large IPv4 gateway plans use the native
   Darwin routing socket; every mutation retains its fsynced begin/commit pair.
+- Compare both IPv4 backends on the same 512 actual benchmarking routes with
+  identical per-mutation fsync, verify exact kernel ownership, and roll back all
+  prefixes. Report the installation timings without weakening durability.
 - Request real application Quit; observe complete route/DNS cleanup, disappearance
   of the helper PID, preserved installation approval and on-demand relaunch.
 

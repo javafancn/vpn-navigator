@@ -29,6 +29,8 @@ enum ManagedConnectionSelfTest {
             try? FileManager.default.removeItem(at: root)
         }
         let model = AppModel(backgroundServiceDefaults: defaults, profileStoreRoot: root.appendingPathComponent("Profiles"), libraryDefaults: defaults, smartDefaults: defaults)
+        await model.load()
+        guard model.rules != nil, model.message == nil else { throw Failure.check("bundled rule bootstrap: " + (model.message ?? "missing rules")) }
         await model.refreshConnectionStatus()
         guard model.sessionState == .disconnected else { throw Failure.check("initial disconnected session: " + model.connectionStatus) }
         await model.importFile(URL(fileURLWithPath: request.profilePath))
@@ -44,7 +46,9 @@ enum ManagedConnectionSelfTest {
         model.requireDualStack = false
         model.reconnectOriginal = false
         model.rememberCredentials = false
-        model.connectionTimeout = 180
+        // Zero is the normal preference: the application resolves it to 60 seconds.
+        model.connectionTimeout = 0
+        guard model.sessionPreferences.connectionTimeout == 60 else { throw Failure.check("default connection timeout") }
         if let problem = await model.saveCustomRules(for: profile.id, original: [], draft: request.customRules) { throw Failure.check("save direct exceptions: " + problem) }
         await model.setMode(request.mode, for: profile.id)
         guard model.selected?.mode == request.mode, model.message == nil else { throw Failure.check("persist routing mode: " + (model.message ?? "mode mismatch")) }

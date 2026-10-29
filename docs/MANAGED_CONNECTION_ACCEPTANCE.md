@@ -9,6 +9,8 @@ override in the managed connection test.
 ## Required scenarios
 
 - TCP and UDP, each with Original, Full VPN and China Direct: six combinations.
+- Bootstrap the bundled rules through normal application loading, and connect
+  with the default 60-second connection timeout (no extended test preference).
 - Import an inline-certificate profile into an isolated profile library, persist
   custom exceptions and mode, then invoke the application's normal Connect action.
 - ECDSA server certificate, TLS 1.2, AES-128-GCM, SHA256 and the optional Windows

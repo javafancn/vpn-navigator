@@ -12,6 +12,8 @@ final class DNSRecoveryJournal {
         let before: [String: Data]
         var tunnel: String?
         var applied: [String: Data]?
+        var serverProvided: Bool?
+        var previousApplied: [String: Data]?
     }
     private let file: URL
     init(file: URL = URL(fileURLWithPath: "/var/run/vpn-navigator/dns.journal")) { self.file = file }
@@ -37,7 +39,40 @@ final class DNSRecoveryJournal {
         var record = try load()
         record.tunnel = tunnel
         record.applied = try snapshot(keys(record))
+        record.serverProvided = true
         try save(record)
+    }
+    /// Pin the managed global resolver policy, retaining split-DNS dictionaries.
+    /// Record both known-owned values before modifying the dynamic store so a
+    /// crash on either side of the write remains recoverable without guessing.
+    func prepareManaged(tunnel: String, has4: Bool, has6: Bool) throws -> [String] {
+        try confirm(tunnel: tunnel)
+        var record = try load()
+        let primary = primaryKey(record.service)
+        func dictionary(_ data: Data?) throws -> [String: Any] {
+            guard let data else { return [:] }
+            return try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] ?? [:]
+        }
+        let scoped = try dictionary(record.applied?["State:/Network/Service/openvpn-\(tunnel)/DNS"])
+        var global = try dictionary(record.applied?[primary])
+        let split = !(scoped["SupplementalMatchDomains"] as? [String] ?? []).isEmpty
+        let provided = record.serverProvided == true && !split ? global["ServerAddresses"] as? [String] ?? [] : []
+        let servers = try ManagedDNSPolicy.servers(provided: provided, has4: has4, has6: has6)
+        let scopedServers = split ? try ManagedDNSPolicy.servers(provided: scoped["ServerAddresses"] as? [String] ?? [], has4: has4, has6: has6) : []
+        if global["ServerAddresses"] as? [String] != servers {
+            global["ServerAddresses"] = servers
+            global["SearchOrder"] = 5000
+            let next = try PropertyListSerialization.data(fromPropertyList: global, format: .binary, options: 0)
+            record.previousApplied = record.applied
+            record.applied?[primary] = next
+            try save(record)
+            guard let store, SCDynamicStoreSetValue(store, primary as CFString, global as CFDictionary) else { throw DNSJournalError.unavailable }
+            try confirm(tunnel: tunnel)
+            record.previousApplied = nil
+            try save(record)
+            _ = try RouteExecutor.command("/usr/bin/dscacheutil", ["-flushcache"])
+        }
+        return Array(Set(servers + scopedServers)).sorted()
     }
     func confirm(tunnel: String) throws {
         guard DNSRecoveryPolicy.validTunnel(tunnel) else { throw DNSJournalError.unavailable }
@@ -66,8 +101,9 @@ final class DNSRecoveryJournal {
         var set: [String: Any] = [:], remove: [String] = []
         for key in keys {
             let original = record.before[key], applied = record.applied?[key], now = current[key]
+            let previousMatches = try record.previousApplied.map { try equal(now, $0[key]) } ?? false
             let decision = DNSRecoveryPolicy.decide(currentMatchesOriginal: try equal(now, original),
-                currentMatchesApplied: try equal(now, applied), committed: record.applied != nil)
+                currentMatchesApplied: try equal(now, applied) || previousMatches, committed: record.applied != nil)
             switch decision {
             case .unchanged: continue
             case .conflict: throw DNSJournalError.conflict
@@ -121,7 +157,8 @@ final class DNSRecoveryJournal {
         guard DNSRecoveryPolicy.validServiceID(record.service),
               record.tunnel.map(DNSRecoveryPolicy.validTunnel) ?? true else { throw DNSJournalError.unavailable }
         let allowed = Set(keys(record))
-        guard Set(record.applied?.keys.map { $0 } ?? []).isSubset(of: allowed), record.before.count < 130 else {
+        guard Set(record.applied?.keys.map { $0 } ?? []).isSubset(of: allowed),
+              Set(record.previousApplied?.keys.map { $0 } ?? []).isSubset(of: allowed), record.before.count < 130 else {
             throw DNSJournalError.unavailable
         }
         return record

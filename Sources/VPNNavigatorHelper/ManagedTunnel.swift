@@ -512,9 +512,10 @@ final class ManagedTunnel {
                 if !has4 { throw DualStackError.unsafeFallback }
             }
             let paths = try physicalPaths(endpoint: remote), local = try localNetworks(paths: paths)
+            let dnsServers = try dnsRecovery.prepareManaged(tunnel: utun, has4: has4, has6: has6)
             let plan = try DualStackRoutePlan.build(endpoint: remote, tunnel: utun, has4: has4, has6: has6,
                 path4: paths.0, path6: paths.1, local4: local.0, local6: local.1,
-                mode: activeMode, country4: rules, country6: rules6, custom: custom)
+                mode: activeMode, country4: rules, country6: rules6, custom: custom, dnsServers: dnsServers)
             let executor = RouteExecutor(journal: workdir.appendingPathComponent("routes.journal"), shouldCancel: { [weak self] in self?.cancellationRequested == true || self?.attemptExpired == true })
             routing = executor
             try executor.apply(plan.ipv4); try executor.applyIPv6(plan.ipv6)
@@ -579,12 +580,12 @@ final class ManagedTunnel {
         return nil
     }
     private func verifyManagedRoutes(plan: DualStackRoutePlan, allCustom: Bool = false) throws {
-        for route in (plan.endpoint4.map { [$0] } ?? []) + plan.defaults4 {
+        for route in (plan.endpoint4.map { [$0] } ?? []) + plan.dns4 + plan.defaults4 {
             try ensureAttempt()
             let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", "-net", route.prefix.description])
             guard ObservedIPv4Route(commandOutput: raw).isExactly(route) else { throw TunnelError.routeVerificationFailed }
         }
-        for route in (plan.endpoint6.map { [$0] } ?? []) + plan.defaults6 {
+        for route in (plan.endpoint6.map { [$0] } ?? []) + plan.dns6 + plan.defaults6 {
             try ensureAttempt()
             let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", "-inet6", "-net", route.prefix.description])
             guard ObservedIPv6Route(commandOutput: raw).isExactly(route) else { throw TunnelError.routeVerificationFailed }
@@ -611,7 +612,8 @@ final class ManagedTunnel {
         for rule in checks {
             try ensureAttempt()
             let ip = rule.cidr.contains(":") ? try CustomRuleSet.prefix6(rule.cidr).address : IPv4CIDR.parseAddressString(try CustomRuleSet.prefix(rule.cidr).network)
-            try verify(ip, vpn: rule.action == .vpn)
+            let protectedDNS = plan.dns4.contains { $0.prefix.contains(IPv4CIDR.parseAddress(ip) ?? 0) } || plan.dns6.contains { $0.prefix.contains(ip) }
+            try verify(ip, vpn: protectedDNS || rule.action == .vpn)
         }
     }
     func explainRoute(_ request: RouteLookupRequest) throws -> RouteLookupResult {
@@ -621,7 +623,8 @@ final class ManagedTunnel {
         let decision = try RouteExplanation.decide(ip: request.ip, mode: activeMode, country: rules, custom: custom,
             local: plan?.local4 ?? [], endpoint: plan?.endpoint, effectiveDirect: plan?.direct4.map(\.prefix),
             country6: rules6, local6: plan?.local6 ?? [], effectiveDirect6: plan?.direct6.map(\.prefix),
-            available: plan.map { v6 ? !$0.defaults6.isEmpty : !$0.defaults4.isEmpty })
+            available: plan.map { v6 ? !$0.defaults6.isEmpty : !$0.defaults4.isEmpty },
+            protectedDNS: (plan?.dns4.map { $0.prefix.description.split(separator: "/")[0].description } ?? []) + (plan?.dns6.map { $0.prefix.address } ?? []))
         let args = ["-n", "get"] + (v6 ? ["-inet6"] : []) + [request.ip]
         let raw = decision.path == .blocked ? (try? RouteExecutor.command("/sbin/route", args)) ?? "" : try RouteExecutor.command("/sbin/route", args)
         let observed = Self.parseValue("interface:", in: raw) ?? "", gateway = Self.parseValue("gateway:", in: raw) ?? ""
@@ -637,6 +640,7 @@ final class ManagedTunnel {
     }
     private func verifyManagedEnvironment() throws {
         guard let plan = activePlan else { throw TunnelError.noActiveRoutePlan }
+        try dnsRecovery.confirm(tunnel: plan.tunnel)
         if packetGuard.active { try packetGuard.verify() }
         else { if plan.defaults6.isEmpty { try checkIPv6Bypass() }; if plan.defaults4.isEmpty { throw DualStackError.unsafeFallback } }
         for (v6, path) in [(false, plan.path4), (true, plan.path6)] {
@@ -769,7 +773,8 @@ final class ManagedTunnel {
         if let next6, next6.routes.count < 100 { throw DualStackError.missingRules }
         let plan = try DualStackRoutePlan.build(endpoint: old.endpoint, tunnel: old.tunnel,
             has4: !old.defaults4.isEmpty, has6: !old.defaults6.isEmpty, path4: old.path4, path6: old.path6,
-            local4: old.local4, local6: old.local6, mode: mode, country4: next4, country6: next6, custom: custom)
+            local4: old.local4, local6: old.local6, mode: mode, country4: next4, country6: next6, custom: custom,
+            dnsServers: old.dns4.map { IPv4CIDR.parseAddressString($0.prefix.network) } + old.dns6.map { $0.prefix.address })
         let nextProtection = try policy(for: plan)
         do {
             try ensureAttempt(); try verifyManagedEnvironment()

@@ -12,11 +12,15 @@ final class RouteExecutor {
     private var ambiguous = false
     private let shouldCancel: () -> Bool
     private let run: (String, [String]) throws -> String
+    private let usesKernelWriter: Bool
+    private var kernelWriter: KernelRouteWriter?
+    private var journalHandle: FileHandle?
 
-    init(journal: URL, shouldCancel: @escaping () -> Bool = { false }, run: @escaping (String, [String]) throws -> String = RouteExecutor.command) {
+    init(journal: URL, shouldCancel: @escaping () -> Bool = { false }, run: ((String, [String]) throws -> String)? = nil) {
         self.journal = journal
         self.shouldCancel = shouldCancel
-        self.run = run
+        self.run = run ?? RouteExecutor.command
+        usesKernelWriter = run == nil
         guard let data = try? Data(contentsOf: journal) else { return }
         let replay = RouteLedgerReplay(data: data)
         installed = replay.installed
@@ -29,6 +33,15 @@ final class RouteExecutor {
                 rollback()
             }
         }
+    }
+
+    deinit { try? journalHandle?.close() }
+
+    private func mutate(_ route: RouteTarget, adding: Bool) throws {
+        if usesKernelWriter, case .viaGateway = route.destination {
+            if kernelWriter == nil { kernelWriter = try KernelRouteWriter() }
+            try kernelWriter!.apply(route, adding: adding)
+        } else { _ = try run("/sbin/route", route.arguments(adding: adding)) }
     }
 
     func apply(_ route: RouteTarget) throws {
@@ -69,7 +82,7 @@ final class RouteExecutor {
         let mutation = RouteMutation(action: .add, route: route)
         try append(RouteLedgerEvent(phase: .begun, mutation: mutation))
         ambiguous = true
-        _ = try run("/sbin/route", route.arguments(adding: true))
+        try mutate(route, adding: true)
         try append(RouteLedgerEvent(phase: .committed, mutation: mutation))
         installed.append(route)
         ambiguous = false
@@ -101,6 +114,7 @@ final class RouteExecutor {
             }
         }
         if !ambiguous && installed.isEmpty && installed6.isEmpty {
+            try? journalHandle?.close(); journalHandle = nil
             try? FileManager.default.removeItem(at: journal)
         }
     }
@@ -125,7 +139,7 @@ final class RouteExecutor {
         try append(RouteLedgerEvent(phase: .begun, mutation: mutation))
         ambiguous = true
         if deleteSystemRoute {
-            _ = try run("/sbin/route", route.arguments(adding: false))
+            try mutate(route, adding: false)
         }
         try append(RouteLedgerEvent(phase: .committed, mutation: mutation))
         installed.removeAll { $0 == route }
@@ -142,15 +156,17 @@ final class RouteExecutor {
         try autoreleasepool {
         var data = try JSONEncoder().encode(event)
         data.append(10)
-        if !FileManager.default.fileExists(atPath: journal.path) {
-            guard FileManager.default.createFile(atPath: journal.path, contents: Data(),
-                                                  attributes: [.posixPermissions: 0o600]) else {
-                throw RouteExecutionError.journalFailure
+        if journalHandle == nil {
+            let descriptor = open(journal.path, O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
+            guard descriptor >= 0 else { throw RouteExecutionError.journalFailure }
+            var info = stat()
+            guard fstat(descriptor, &info) == 0, info.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
+                  info.st_uid == getuid(), info.st_mode & 0o077 == 0, info.st_nlink == 1 else {
+                close(descriptor); throw RouteExecutionError.journalFailure
             }
+            journalHandle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
         }
-        let handle = try FileHandle(forWritingTo: journal)
-        defer { try? handle.close() }
-        try handle.seekToEnd()
+        guard let handle = journalHandle else { throw RouteExecutionError.journalFailure }
         try handle.write(contentsOf: data)
         try handle.synchronize()
         }
@@ -250,10 +266,13 @@ final class RouteExecutor {
 enum RouteExecutionError: Error, LocalizedError {
     case existingRoute(String), commandFailed(String), routeOwnershipLost(String)
     case commandLaunchFailed(Int)
+    case kernelRouteFailed(Int)
     case ambiguousJournal, journalFailure, disallowedExecutable, commandOutputTooLarge
 
     var errorDescription: String? {
         switch self {
+        case .kernelRouteFailed(let code):
+            return "Kernel routing operation failed (errno \(code)); recovery evidence has been preserved."
         case .existingRoute(let prefix):
             return "An existing system route already covers \(prefix)."
         case .commandLaunchFailed(let code):

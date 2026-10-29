@@ -15,7 +15,8 @@ let package = Package(
     targets: [
         .target(name: "VPNNavigatorCore"),
         .executableTarget(name: "VPNNavigatorApp", dependencies: ["VPNNavigatorCore"]),
-        .executableTarget(name: "VPNNavigatorHelper", dependencies: ["VPNNavigatorCore"]),
+        .target(name: "CVPNRoutes"),
+        .executableTarget(name: "VPNNavigatorHelper", dependencies: ["VPNNavigatorCore", "CVPNRoutes"]),
         .executableTarget(name: "VPNNavigatorRuleAgent", dependencies: ["VPNNavigatorCore"]),
         .executableTarget(name: "VPNNavigatorLocalSetup", dependencies: ["VPNNavigatorCore"]),
         .executableTarget(name: "VPNNavigatorPFPreview", dependencies: ["VPNNavigatorCore"]),

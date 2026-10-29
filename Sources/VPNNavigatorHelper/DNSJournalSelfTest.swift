@@ -25,6 +25,23 @@ enum DNSJournalSelfTest {
         try journal.restore()
         guard CFEqual(SCDynamicStoreCopyValue(store, key), original), !journal.exists else { throw DNSJournalError.conflict }
 
+        // No DNS push: managed modes publish a VPN-family resolver and undo
+        // their own write exactly, without touching an existing network service.
+        try journal.begin(serviceOverride: id)
+        try journal.confirm(tunnel: "utun9999")
+        let fallback = try journal.prepareManaged(tunnel: "utun9999", has4: true, has6: false)
+        guard fallback == ["1.1.1.1", "9.9.9.9"] else { throw DNSJournalError.unavailable }
+        try journal.confirm(tunnel: "utun9999")
+        try journal.restore()
+        guard CFEqual(SCDynamicStoreCopyValue(store, key), original), !journal.exists else { throw DNSJournalError.conflict }
+
+        try journal.begin(serviceOverride: id)
+        SCDynamicStoreSetValue(store, key, ["ServerAddresses": ["223.5.5.5"]] as CFDictionary)
+        try journal.commit(tunnel: "utun9999")
+        guard try journal.prepareManaged(tunnel: "utun9999", has4: true, has6: false) == ["223.5.5.5"] else { throw DNSJournalError.unavailable }
+        try journal.restore()
+        guard CFEqual(SCDynamicStoreCopyValue(store, key), original) else { throw DNSJournalError.conflict }
+
         try journal.begin(serviceOverride: id)
         SCDynamicStoreSetValue(store, key, applied)
         try journal.commit(tunnel: "utun9999")

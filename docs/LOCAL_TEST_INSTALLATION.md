@@ -14,7 +14,7 @@ main 的程序、资源或构建文件变化也会触发打包。版本及 Build
 
 也可从通过检查的 `Local test installer and XPC trust` 运行取得安装测试产物：Apple Silicon 使用 ARM64，Intel 使用 X64；名称同时标明验收所用 macOS。专用打包 artifact 包含：
 
-- `VPN-Navigator-0.8.8-arm64-Local.pkg` 或 `…-x86_64-Local.pkg`：完整安装包，版本随应用变化。
+- `VPN-Navigator-0.8.9-arm64-Local.pkg` 或 `…-x86_64-Local.pkg`：完整安装包，版本随应用变化。
 - `…-Local-Uninstall.pkg`：系统组件卸载包；先在应用中完成维护准备。
 - `…-Local-SHA256.txt`：两个 PKG 的完整性校验。
 - `…-Local-manifest.json`：构建时生成的程序身份及文件哈希，安装后由管理员批准。

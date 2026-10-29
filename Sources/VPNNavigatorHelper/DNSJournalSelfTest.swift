@@ -42,6 +42,19 @@ enum DNSJournalSelfTest {
         try journal.restore()
         guard CFEqual(SCDynamicStoreCopyValue(store, key), original) else { throw DNSJournalError.conflict }
 
+        let splitKey = "State:/Network/Service/openvpn-utun9999/DNS" as CFString
+        defer { SCDynamicStoreRemoveValue(store, splitKey) }
+        try journal.begin(serviceOverride: id)
+        let split = ["ServerAddresses": ["10.8.0.53"], "SupplementalMatchDomains": ["corp.test"]] as CFDictionary
+        SCDynamicStoreSetValue(store, splitKey, split)
+        try journal.commit(tunnel: "utun9999")
+        let splitServers = try journal.prepareManaged(tunnel: "utun9999", has4: true, has6: false)
+        guard Set(splitServers) == Set(["10.8.0.53", "1.1.1.1", "9.9.9.9"]),
+              CFEqual(SCDynamicStoreCopyValue(store, splitKey), split) else { throw DNSJournalError.conflict }
+        try journal.restore()
+        guard CFEqual(SCDynamicStoreCopyValue(store, key), original),
+              SCDynamicStoreCopyValue(store, splitKey) == nil else { throw DNSJournalError.conflict }
+
         try journal.begin(serviceOverride: id)
         SCDynamicStoreSetValue(store, key, applied)
         try journal.commit(tunnel: "utun9999")

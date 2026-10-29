@@ -361,6 +361,12 @@ if [ "$script_type" = "dns-up" ]; then
     # helper crashed before CONNECTED, ownership is still available for recovery.
     "${BASH_SOURCE[0]%/*}/VPNNavigatorHelper" --commit-dns "$dev" || exit 1
 else
+    # Managed modes may replace the global resolver while retaining split DNS.
+    # Their journal is the sole restoration owner and restores ALL exact values
+    # after OpenVPN exits. A down-hook must not partially rewrite those values.
+    if [[ "${VPNNAV_MANAGED_DNS:-0}" == "1" ]]; then
+        exit 0
+    fi
     unset_dns
 fi
 

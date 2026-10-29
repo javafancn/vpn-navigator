@@ -52,6 +52,7 @@ enum ManagedConnectionSelfTest {
         if let problem = await model.saveCustomRules(for: profile.id, original: [], draft: request.customRules) { throw Failure.check("save direct exceptions: " + problem) }
         await model.setMode(request.mode, for: profile.id)
         guard model.selected?.mode == request.mode, model.message == nil else { throw Failure.check("persist routing mode: " + (model.message ?? "mode mismatch")) }
+        let started = ProcessInfo.processInfo.systemUptime
         await model.connectSelected()
         let deadline = ProcessInfo.processInfo.systemUptime + 180
         while !model.connected && ProcessInfo.processInfo.systemUptime < deadline {
@@ -63,6 +64,8 @@ enum ManagedConnectionSelfTest {
             }
             try await Task.sleep(nanoseconds: 250_000_000)
         }
+        guard model.connected else { throw Failure.check("connection deadline") }
+        print("METRIC: connection mode=\(request.mode.rawValue) seconds=\(String(format: "%.3f", ProcessInfo.processInfo.systemUptime - started))")
         try await verify(model, mode: request.mode)
         if request.switchRoundTrip {
             guard request.mode != .original else { throw Failure.check("live switching requires managed mode") }

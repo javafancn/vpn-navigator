@@ -5,9 +5,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <poll.h>
 #include <string.h>
-#include <time.h>
 
 int vpn_routes_open(void) {
     int fd = socket(PF_ROUTE, SOCK_RAW, AF_INET);
@@ -15,13 +13,10 @@ int vpn_routes_open(void) {
     if (fcntl(fd, F_SETFD, FD_CLOEXEC) < 0) {
         int saved = errno; close(fd); errno = saved; return -1;
     }
+    // route(8) also disables readback for mutations. Kernel write errors are
+    // synchronous; unread route broadcasts must never fill a retained socket.
+    (void)shutdown(fd, SHUT_RD);
     return fd;
-}
-
-static int64_t milliseconds(void) {
-    struct timespec t;
-    clock_gettime(CLOCK_MONOTONIC, &t);
-    return (int64_t)t.tv_sec * 1000 + t.tv_nsec / 1000000;
 }
 
 int vpn_routes_gateway4(int fd, uint32_t network, uint8_t prefix, uint32_t gateway, int adding) {
@@ -54,22 +49,7 @@ int vpn_routes_gateway4(int fd, uint32_t network, uint8_t prefix, uint32_t gatew
     do { sent = write(fd, &message, sizeof(message)); } while (sent < 0 && errno == EINTR);
     if (sent < 0) return errno;
     if (sent != sizeof(message)) return EIO;
-    // Do not report success before the kernel's own sequence/PID receipt.
-    int64_t deadline = milliseconds() + 2000;
-    while (milliseconds() < deadline) {
-        struct pollfd p = { .fd = fd, .events = POLLIN };
-        int ready = poll(&p, 1, (int)(deadline - milliseconds()));
-        if (ready < 0) { if (errno == EINTR) continue; return errno; }
-        if (ready == 0) return ETIMEDOUT;
-        if (!(p.revents & POLLIN)) return EIO;
-        unsigned char bytes[8192];
-        ssize_t count = read(fd, bytes, sizeof(bytes));
-        if (count < 0) { if (errno == EINTR) continue; return errno; }
-        if (count < sizeof(struct rt_msghdr)) continue;
-        struct rt_msghdr reply;
-        memcpy(&reply, bytes, sizeof(reply));
-        if (reply.rtm_version == RTM_VERSION && reply.rtm_pid == getpid() && reply.rtm_seq == seq &&
-            reply.rtm_type == message.header.rtm_type) return reply.rtm_errno;
-    }
-    return ETIMEDOUT;
+    // A complete successful write is the kernel mutation receipt, as used by
+    // Apple route(8). Exact ownership is still checked before every deletion.
+    return 0;
 }

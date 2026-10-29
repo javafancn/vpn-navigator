@@ -10,6 +10,7 @@ import uuid
 from pathlib import Path
 from managed_transport import ENDPOINT, transport
 from quit_fixture import exercise_quit
+from managed_web import DNS, WEB, upstream_resolver, web_fixture, verify_web
 
 APP = Path('/Applications/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp')
 MANIFEST = Path('/Library/Application Support/VPNNavigator/Local/manifest.json')
@@ -89,11 +90,15 @@ def data_echo(run, probe, server_tunnel, client_tunnel, aliases):
 def exercise_managed(run, folder, probe, config, profile, port, start_server, stop_server,
                      app_approval, probe_approval, openssl, aliases):
     original = config.read_text()
+    ccd = folder / 'clients/vpnnav-ci-client'
+    original_ccd = ccd.read_text()
+    upstream = upstream_resolver(run)
+    timings = {}
     before_default = run(['/sbin/route', '-n', 'get', 'default']).stdout
     rules = folder / 'managed-rules.txt'
     # Deliberately non-adjacent /32s: custom-direct merging must not collapse
     # this into a handful of routes. Exceeds the reported failure at ~2,542.
-    rules.write_text(''.join(f'11.65.{i // 128}.{(i % 128) * 2}/32\n' for i in range(4096)))
+    rules.write_text(''.join(f'11.65.{i // 128}.{(i % 128) * 2}/32\n' for i in range(4096)) + '1.2.4.0/24\n1.1.1.0/24\n')
     extra = folder / 'managed-server.ext'
     # Keep the same server identity/purpose constraints as the established RSA
     # fixture. remote-cert-tls intentionally rejects a certificate without KU.
@@ -104,13 +109,18 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
          '-CAkey', folder / 'ca.key', '-CAcreateserial', '-days', '1', '-extfile', extra, '-out', folder / 'managed-server.crt'])
     exceptions = control_exceptions(run)
     stop_server()
+    ccd.write_text(original_ccd + 'iroute 198.18.254.99 255.255.255.255\n')
     try:
-        for protocol in ['tcp', 'udp']:
+        for protocol, provided_dns in [('tcp', True), ('udp', True), ('udp', False)]:
             server = '\n'.join(line for line in original.splitlines() if not line.startswith('server-ipv6 ')) + '\n'
             server = server.replace('proto tcp4-server', 'proto ' + ('tcp4-server' if protocol == 'tcp' else 'udp4'))
             server = server.replace(f'cert {folder}/server.crt', f'cert {folder}/managed-server.crt')
             server = server.replace(f'key {folder}/server.key', f'key {folder}/managed-server.key')
             server += 'tls-version-max 1.2\n'
+            server += 'push "client-nat snat 198.18.254.2 255.255.255.255 198.18.254.99"\n'
+            server += f'push "route {DNS} 255.255.255.255"\npush "route {WEB} 255.255.255.255"\n'
+            if provided_dns:
+                server += f'push "dhcp-option DNS {DNS}"\n'
             config.write_text(server)
             start_server()
             client = profile.replace('# VPNNAV_EXPECT_DUAL_STACK\n', '').replace('proto tcp-client', 'proto ' + ('tcp-client' if protocol == 'tcp' else 'udp'))
@@ -121,7 +131,7 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
             profile_path = folder / ('managed-' + protocol + '.ovpn')
             profile_path.write_text(client); profile_path.chmod(0o600)
             with transport(run, folder, port, protocol):
-                for mode in ['Original', 'Full VPN', 'China Direct']:
+                for mode in (['Original', 'Full VPN', 'China Direct'] if provided_dns else ['China Direct']):
                     case = folder / 'managed-case.json'
                     report_path = folder / 'managed-report.json'
                     case.write_text(json.dumps({'profilePath': str(profile_path), 'rulesPath': str(rules),
@@ -131,6 +141,9 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
                     try:
                         result = run([APP, '--vpnnav-local-managed-connect', case], timeout=300)
                         print(result.stdout, end='', flush=True)
+                        metric = re.search(r'METRIC: connection mode=.+ seconds=([0-9.]+)', result.stdout)
+                        assert metric, 'Connection timing evidence missing'
+                        timings.setdefault(mode, []).append(float(metric[1]))
                         report = json.loads(report_path.read_text())
                         assert report['state'] == 'connected' and report['routingMode'] == mode
                         server_tunnel, client_tunnel = tunnel_interfaces(run)
@@ -144,7 +157,9 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
                             if mode == 'China Direct':
                                 assert journal.count('"committed"') >= 4096, 'Large rule plan was not actually installed'
                         run(['sudo', '-n', 'cp', probe_approval, MANIFEST])
-                        data_echo(run, probe, server_tunnel, client_tunnel, aliases)
+                        with web_fixture(run, folder, server_tunnel, upstream) as counts:
+                            verify_web(run, probe, counts, client_tunnel, fallback=not provided_dns)
+                            data_echo(run, probe, server_tunnel, client_tunnel, aliases)
                         run(['sudo', '-n', 'cp', app_approval, MANIFEST])
                         exercise_quit(run, cleanup_timeout=240)
                         print('PASS: ' + protocol.upper() + ' / ' + mode + ': real application connect, kernel route selection, bidirectional encrypted payload, watchdog stability and actual Quit cleanup.', flush=True)
@@ -156,8 +171,11 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
         fields = lambda text: dict(re.findall(r'^\s*(gateway|interface):\s*(\S+)', text, re.M))
         assert fields(after) == fields(before_default), 'Managed test did not restore the physical default'
         print('PASS: six real TCP/UDP mode combinations and live switch round trips; physical default restored.', flush=True)
+        print('PASS: missing server DNS uses VPN-only fallback and still resolves and loads the IPv4 webpage.', flush=True)
+        print('Connection times (seconds, real app connect before watchdog/switch/quit): ' + json.dumps(timings), flush=True)
     finally:
         stop_server()
         config.write_text(original)
+        ccd.write_text(original_ccd)
         run(['sudo', '-n', 'cp', probe_approval, MANIFEST])
         start_server()

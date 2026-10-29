@@ -95,7 +95,9 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
     # this into a handful of routes. Exceeds the reported failure at ~2,542.
     rules.write_text(''.join(f'11.65.{i // 128}.{(i % 128) * 2}/32\n' for i in range(4096)))
     extra = folder / 'managed-server.ext'
-    extra.write_text('extendedKeyUsage=serverAuth\n')
+    # Keep the same server identity/purpose constraints as the established RSA
+    # fixture. remote-cert-tls intentionally rejects a certificate without KU.
+    extra.write_text((folder / 'server.ext').read_text())
     run(['env', 'OPENSSL_CONF=/dev/null', openssl, 'req', '-new', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes',
          '-subj', '/CN=vpnnav-ci-server', '-keyout', folder / 'managed-server.key', '-out', folder / 'managed-server.csr'])
     run(['env', 'OPENSSL_CONF=/dev/null', openssl, 'x509', '-req', '-in', folder / 'managed-server.csr', '-CA', folder / 'ca.crt',

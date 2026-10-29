@@ -4,6 +4,13 @@ import Foundation
 /// Prefer server DNS. Without a global server resolver, use public resolvers
 /// through the allocated VPN family; Original mode is never changed.
 public enum ManagedDNSPolicy {
+    public static func hookExitStatus(in line: String) -> Int? {
+        let text = line.lowercased(), marker = "dns up command exited with status "
+        guard let range = text.range(of: marker),
+              let status = Int(text[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)),
+              (-1...65535).contains(status) else { return nil }
+        return status
+    }
     public static func servers(provided: [String], has4: Bool, has6: Bool) throws -> [String] {
         guard provided.count <= 16 else { throw CustomRouteError.tooMany }
         let source = provided.isEmpty

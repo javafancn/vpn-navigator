@@ -63,12 +63,6 @@ jobs:
           if env dev=utun4 script_type=dns-up dns_search_domain_1='a;malicious'               /bin/bash "$hook" --check-dns-vars; then
             echo 'Unsafe inherited DNS variable was accepted' >&2; exit 1
           fi
-          env dev=utun4 script_type=up foreign_option_1='dhcp-option DNS 10.8.0.1' \
-            foreign_option_2='dhcp-option DOMAIN corp.test' /bin/bash "$hook" --check-dns-vars
-          if env dev=utun4 script_type=up foreign_option_1='dhcp-option DNS $(touch /tmp/unsafe-dns)' \
-            /bin/bash "$hook" --check-dns-vars; then
-            echo 'Unsafe legacy DHCP DNS variable was accepted' >&2; exit 1
-          fi
       - name: Build reviewed-format sources for the declared minimum macOS
         run: |
           python3 -m unittest discover -s scripts/tests -p 'test_*.py'

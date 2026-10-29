@@ -54,13 +54,16 @@ final class RouteExecutor {
         try install(route)
     }
 
-    func apply(_ routes: [RouteTarget]) throws {
+    func apply(_ routes: [RouteTarget], inheriting: Set<RouteTarget> = []) throws {
         guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
         let snapshot = try run("/usr/sbin/netstat", ["-rn", "-f", "inet"])
         let occupied = Self.occupiedIPv4(snapshot)
         do {
             for route in routes {
                 if occupied.contains(route.prefix) {
+                    if inheriting.contains(route), route.prefix.prefix == 32,
+                       case .interface(let name) = route.destination, DNSRecoveryPolicy.validTunnel(name),
+                       try observe(route).isExactly(route) { continue }
                     throw RouteExecutionError.existingRoute(route.prefix.description)
                 }
                 try install(route)
@@ -185,7 +188,7 @@ final class RouteExecutor {
         }
     }
 
-    func applyIPv6(_ routes: [IPv6RouteTarget]) throws {
+    func applyIPv6(_ routes: [IPv6RouteTarget], inheriting: Set<IPv6RouteTarget> = []) throws {
         guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
         let snapshot = try run("/usr/sbin/netstat", ["-rn", "-f", "inet6"])
         let occupied = Set(snapshot.components(separatedBy: .newlines).compactMap { line -> String? in
@@ -196,7 +199,12 @@ final class RouteExecutor {
         })
         for route in routes {
             guard !shouldCancel() else { throw CancellationError() }
-            guard !occupied.contains(route.prefix.description) else { throw RouteExecutionError.existingRoute(route.prefix.description) }
+            if occupied.contains(route.prefix.description) {
+                if inheriting.contains(route), route.prefix.prefix == 128,
+                   case .interface(let name) = route.destination, DNSRecoveryPolicy.validTunnel(name),
+                   try observe6(route).isExactly(route) { continue }
+                throw RouteExecutionError.existingRoute(route.prefix.description)
+            }
             let mutation = IPv6RouteMutation(action: .add, route: route)
             try append(IPv6RouteLedgerEvent(phase: .begun, ipv6Mutation: mutation)); ambiguous = true
             _ = try run("/sbin/route", route.arguments(adding: true))

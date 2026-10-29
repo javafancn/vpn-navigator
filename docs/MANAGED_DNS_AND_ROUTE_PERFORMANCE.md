@@ -6,15 +6,17 @@ are selected for the address families actually allocated to the VPN. Corporate
 supplemental DNS dictionaries remain intact and their resolver paths are also
 pinned to the tunnel. The routing page states the fallback policy.
 
-The bundled adapter supports traditional `dhcp-option DNS`/`DNS6`/search-domain
-environment data as well as modern OpenVPN 2.7 DNS variables. Inputs are parsed
-as data, never sourced or evaluated. Modern hooks run with an isolated
-environment; the adapter obtains the pinned service UUID using a typed root
-journal operation instead of relying on inherited variables. Modern DNS takes
-precedence if both server formats are present.
+OpenVPN 2.7 converts traditional DHCP DNS into its DNS hook variables, including
+when a server provides both legacy and modern forms. The adapter parses those
+variables as data and calls a fixed native helper operation. All dynamic-store
+keys come from the protected journal; isolated hook environments do not need
+inherited service identifiers. Native dictionaries replace scutil output parsing.
+A nonzero DNS up-hook result fails the connection instead of becoming a silent
+fallback. Native and installed tests cover both server formats.
 
 Resolver /32 and /128 routes take precedence over country and custom direct
-rules. Their host prefixes are subtracted from the physical allow list as well,
+rules. Existing OpenVPN-owned resolver host routes on the verified tunnel may be used
+without journaling or deleting them. Their host prefixes are subtracted from the physical allow list as well,
 so protection and the actual route plan agree. A DNS resolver conflicting with
 the transport endpoint or current LAN is rejected instead of silently breaking
 the endpoint's physical path. Live mode changes retain the same resolver pins.

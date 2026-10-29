@@ -219,11 +219,6 @@ final class ManagedTunnel {
         // Trusted binary and DNS hook were verified before the runtime profile
         // was created. Never leave a false orphan marker on signature errors.
         options += ["--script-security", "2", "--dns-updown", try OpenVPNCommand.quotedExecutable(dnsHook.path)]
-        // OpenVPN 2.7's dns-updown handles --dns; traditional DHCP DNS options
-        // are exposed to ordinary up/down scripts instead. Only this trusted
-        // bundled adapter runs, never a command supplied by a profile/server.
-        options += ["--up", try OpenVPNCommand.quotedExecutable(dnsHook.path),
-                    "--down", try OpenVPNCommand.quotedExecutable(dnsHook.path), "--up-restart"]
         let task = Process()
         task.executableURL = URL(fileURLWithPath: binary)
         task.arguments = options
@@ -232,8 +227,6 @@ final class ManagedTunnel {
         try dnsRecovery.begin()
         var environment = ProcessInfo.processInfo.environment
         environment["VPNNAV_PRIMARY_SERVICE_UUID"] = dnsRecovery.primaryService
-        environment["VPNNAV_JOURNALED_DNS"] = "1"
-        environment["VPNNAV_DNS_SOURCE"] = "modern"
         environment["OPENSSL_CONF"] = "/dev/null"
         task.environment = environment
         let output = Pipe()
@@ -436,6 +429,15 @@ final class ManagedTunnel {
         while let end = outputBuffer.firstIndex(of: 10) {
             let line = String(decoding: outputBuffer[..<end], as: UTF8.self)
             outputBuffer.removeSubrange(...end)
+#if VPNNAV_LOCAL_TEST
+            CIDNSHookTrace.record(line)
+#endif
+            if let status = ManagedDNSPolicy.hookExitStatus(in: line), status != 0 {
+                let reason = DiagnosticCode.dns.summary + " (hook status \(status))"
+                stop(); lastError = reason; state = .failed; message = reason
+                failureCode = .dns; eventStore.append(.dns)
+                return
+            }
             if let code = OpenVPNLogClassifier.classify(line) { eventStore.append(code); failureCode = code }
         }
     }
@@ -525,7 +527,7 @@ final class ManagedTunnel {
                 mode: activeMode, country4: rules, country6: rules6, custom: custom, dnsServers: dnsServers)
             let executor = RouteExecutor(journal: workdir.appendingPathComponent("routes.journal"), shouldCancel: { [weak self] in self?.cancellationRequested == true || self?.attemptExpired == true })
             routing = executor
-            try executor.apply(plan.ipv4); try executor.applyIPv6(plan.ipv6)
+            try executor.apply(plan.ipv4, inheriting: Set(plan.dns4)); try executor.applyIPv6(plan.ipv6, inheriting: Set(plan.dns6))
             try verifyManagedRoutes(plan: plan, allCustom: true)
             if let policy = try policy(for: plan) {
                 try packetGuard.replaceRules(policy.rules(tunnel: utun)); guardPolicy = policy

@@ -135,6 +135,9 @@ def verify_web(run, probe, counts, client_tunnel, fallback=False):
     resolver = '1.1.1.1' if fallback else DNS
     path = run(['/sbin/route', '-n', 'get', resolver]).stdout
     assert re.search(r'^\s*interface:\s*' + re.escape(client_tunnel) + r'\s*$', path, re.M), 'DNS bypassed the VPN: ' + path
+    receipt = run(['/usr/sbin/scutil', '--dns']).stdout.split('resolver #2', 1)[0]
+    active = re.findall(r'nameserver\[[0-9]+\]\s*:\s*([0-9.]+)', receipt)
+    assert active and (set(active) == {'1.1.1.1', '9.9.9.9'} if fallback else active == [DNS]), 'Server DNS was not actually applied: ' + receipt
     before = json.loads(run([probe, '--traffic']).stdout)
     result = None
     for _ in range(3):

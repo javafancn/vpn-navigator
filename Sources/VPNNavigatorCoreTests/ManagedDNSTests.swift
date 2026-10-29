@@ -2,6 +2,14 @@ import XCTest
 @testable import VPNNavigatorCore
 
 final class ManagedDNSTests: XCTestCase {
+    func testFailedHookIsNotSilentFallback() {
+        XCTAssertEqual(ManagedDNSPolicy.hookExitStatus(in: "dns up command exited with status 0"), 0)
+        XCTAssertEqual(ManagedDNSPolicy.hookExitStatus(in: "2026-10-29 dns up command exited with status 1"), 1)
+        XCTAssertEqual(ManagedDNSPolicy.hookExitStatus(in: "dns up command exited with status -1"), -1)
+        XCTAssertEqual(ManagedDNSPolicy.hookExitStatus(in: "dns up command exited with status 256"), 256)
+        XCTAssertNil(ManagedDNSPolicy.hookExitStatus(in: "dns down command exited with status 1"))
+        XCTAssertNil(ManagedDNSPolicy.hookExitStatus(in: "dns up command exited with status unknown"))
+    }
     func testServerResolversAndSupportedFamilyFallback() throws {
         XCTAssertEqual(try ManagedDNSPolicy.servers(provided: ["223.5.5.5", "10.8.0.1", "223.5.5.5"], has4: true, has6: false), ["223.5.5.5", "10.8.0.1"])
         XCTAssertEqual(try ManagedDNSPolicy.servers(provided: [], has4: true, has6: false), ["1.1.1.1", "9.9.9.9"])

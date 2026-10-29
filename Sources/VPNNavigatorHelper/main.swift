@@ -2,29 +2,26 @@ import Foundation
 import Darwin
 import VPNNavigatorCore
 
-// Internal DNS-hook operation: fixed journal, typed tunnel, root only. It
-// cannot launch OpenVPN, accept a path or run an arbitrary command.
+// Typed internal DNS operations. Fixed protected journal, root only; no path
+// arguments, shell commands, profile content or arbitrary dynamic-store keys.
 if CommandLine.arguments.dropFirst().first == "--commit-dns" {
-    guard getuid() == 0, [3, 4].contains(CommandLine.arguments.count),
+    guard getuid() == 0, CommandLine.arguments.count == 3,
           DNSRecoveryPolicy.validTunnel(CommandLine.arguments[2]) else { exit(1) }
-    let source = CommandLine.arguments.count == 4 ? CommandLine.arguments[3] : "modern"
-    do { try DNSRecoveryJournal().commit(tunnel: CommandLine.arguments[2], source: source); exit(0) }
+    do { try DNSRecoveryJournal().commit(tunnel: CommandLine.arguments[2]); exit(0) }
     catch { exit(1) }
 }
-if CommandLine.arguments.dropFirst().first == "--legacy-dns-needed" {
-    guard getuid() == 0, CommandLine.arguments.count == 3, DNSRecoveryPolicy.validTunnel(CommandLine.arguments[2]) else { exit(1) }
-    do { exit(try DNSRecoveryJournal().legacyNeeded(tunnel: CommandLine.arguments[2]) ? 0 : 3) }
-    catch { exit(1) }
-}
-if CommandLine.arguments.dropFirst().first == "--dns-context" {
-    guard getuid() == 0, CommandLine.arguments.count == 3, DNSRecoveryPolicy.validTunnel(CommandLine.arguments[2]) else { exit(1) }
-    do { print(try DNSRecoveryJournal().context(tunnel: CommandLine.arguments[2])); exit(0) }
-    catch { exit(1) }
-}
-if CommandLine.arguments.dropFirst().first == "--deactivate-dns" {
-    guard getuid() == 0, CommandLine.arguments.count == 4, DNSRecoveryPolicy.validTunnel(CommandLine.arguments[2]) else { exit(1) }
-    do { try DNSRecoveryJournal().deactivate(tunnel: CommandLine.arguments[2], source: CommandLine.arguments[3]); exit(0) }
-    catch { exit(1) }
+if CommandLine.arguments.dropFirst().first == "--apply-dns" {
+    guard getuid() == 0, CommandLine.arguments.count == 6,
+          DNSRecoveryPolicy.validTunnel(CommandLine.arguments[2]),
+          CommandLine.arguments.dropFirst(3).allSatisfy({ $0.utf8.count <= 8192 }) else { exit(1) }
+    func values(_ i: Int) -> [String] { CommandLine.arguments[i].split(whereSeparator: { $0.isWhitespace }).map(String.init) }
+    do {
+        try DNSRecoveryJournal().applyProvided(tunnel: CommandLine.arguments[2], servers: values(3), search: values(4), match: values(5))
+        exit(0)
+    } catch {
+        fputs("DNS application failed: \(error.localizedDescription)\n", stderr)
+        exit(1)
+    }
 }
 #if DEBUG
 if CommandLine.arguments.dropFirst().first == "--self-test-route-pressure-legacy" {

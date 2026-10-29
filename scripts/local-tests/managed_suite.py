@@ -109,6 +109,11 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
          '-CAkey', folder / 'ca.key', '-CAcreateserial', '-days', '1', '-extfile', extra, '-out', folder / 'managed-server.crt'])
     exceptions = control_exceptions(run)
     stop_server()
+    trace_marker = Path('/var/run/vpn-navigator/ci-managed-trace')
+    trace_log = Path('/var/run/vpn-navigator/ci-managed-dns.log')
+    marker_source = folder / 'ci-managed-trace'
+    marker_source.write_text('vpnnav-public-synthetic-dns-fixture\n')
+    run(['sudo', '-n', '/usr/bin/install', '-m', '600', marker_source, trace_marker])
     ccd.write_text(original_ccd + 'iroute 198.18.254.99 255.255.255.255\n')
     try:
         for protocol, dns_kind in [('tcp', 'legacy'), ('udp', 'legacy'), ('udp', 'none'), ('udp', 'modern')]:
@@ -182,7 +187,12 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
         print('PASS: missing server DNS uses VPN-only fallback and still resolves and loads the IPv4 webpage.', flush=True)
         print('PASS: modern isolated-environment DNS hook and legacy DHCP DNS both resolve and load IPv4 webpages through the VPN.', flush=True)
         print('Connection times (seconds, real app connect before watchdog/switch/quit): ' + json.dumps(timings), flush=True)
+    except BaseException:
+        trace = run(['sudo', '-n', '/usr/bin/tail', '-n', '100', trace_log], ok=False)
+        print('Synthetic DNS adapter trace:\n' + trace.stdout, flush=True)
+        raise
     finally:
+        run(['sudo', '-n', '/bin/rm', '-f', trace_marker, trace_log])
         stop_server()
         config.write_text(original)
         ccd.write_text(original_ccd)

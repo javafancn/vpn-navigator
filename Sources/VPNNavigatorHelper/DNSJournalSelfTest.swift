@@ -19,8 +19,13 @@ enum DNSJournalSelfTest {
         let journal = DNSRecoveryJournal(file: folder.appendingPathComponent("dns.journal"))
         guard SCDynamicStoreSetValue(store, key, original) else { throw DNSJournalError.unavailable }
         try journal.begin(serviceOverride: id)
+        guard try journal.context(tunnel: "utun9999") == id,
+              try journal.legacyNeeded(tunnel: "utun9999") else { throw DNSJournalError.conflict }
         guard SCDynamicStoreSetValue(store, key, applied) else { throw DNSJournalError.unavailable }
         try journal.commit(tunnel: "utun9999")
+        guard try journal.legacyNeeded(tunnel: "utun9999") == false else { throw DNSJournalError.conflict }
+        try journal.deactivate(tunnel: "utun9999", source: "modern")
+        guard try journal.legacyNeeded(tunnel: "utun9999") else { throw DNSJournalError.conflict }
         try journal.confirm(tunnel: "utun9999")
         try journal.restore()
         guard CFEqual(SCDynamicStoreCopyValue(store, key), original), !journal.exists else { throw DNSJournalError.conflict }

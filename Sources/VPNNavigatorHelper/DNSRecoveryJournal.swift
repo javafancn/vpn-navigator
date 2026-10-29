@@ -14,6 +14,7 @@ final class DNSRecoveryJournal {
         var applied: [String: Data]?
         var serverProvided: Bool?
         var previousApplied: [String: Data]?
+        var source: String?
     }
     private let file: URL
     init(file: URL = URL(fileURLWithPath: "/var/run/vpn-navigator/dns.journal")) { self.file = file }
@@ -34,13 +35,33 @@ final class DNSRecoveryJournal {
         try save(.init(service: service, before: try snapshot(keys), tunnel: nil, applied: nil))
         primaryService = service
     }
-    func commit(tunnel: String) throws {
+    func commit(tunnel: String, source: String = "modern") throws {
         guard DNSRecoveryPolicy.validTunnel(tunnel) else { throw DNSJournalError.unavailable }
+        guard ["modern", "legacy"].contains(source) else { throw DNSJournalError.unavailable }
         var record = try load()
         record.tunnel = tunnel
         record.applied = try snapshot(keys(record))
         record.serverProvided = true
+        record.source = source
         try save(record)
+    }
+    func legacyNeeded(tunnel: String) throws -> Bool {
+        guard DNSRecoveryPolicy.validTunnel(tunnel) else { throw DNSJournalError.unavailable }
+        let record = try load()
+        guard record.tunnel == nil || record.tunnel == tunnel else { throw DNSJournalError.conflict }
+        return record.source != "modern"
+    }
+    func context(tunnel: String) throws -> String {
+        guard DNSRecoveryPolicy.validTunnel(tunnel) else { throw DNSJournalError.unavailable }
+        let record = try load()
+        guard record.tunnel == nil || record.tunnel == tunnel else { throw DNSJournalError.conflict }
+        return record.service
+    }
+    func deactivate(tunnel: String, source: String) throws {
+        guard DNSRecoveryPolicy.validTunnel(tunnel), ["modern", "legacy"].contains(source) else { throw DNSJournalError.unavailable }
+        var record = try load()
+        guard record.tunnel == nil || record.tunnel == tunnel else { throw DNSJournalError.conflict }
+        if record.source == source { record.source = nil; try save(record) }
     }
     /// Pin the managed global resolver policy, retaining split-DNS dictionaries.
     /// Record both known-owned values before modifying the dynamic store so a

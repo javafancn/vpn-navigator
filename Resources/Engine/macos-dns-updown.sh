@@ -26,6 +26,48 @@
 #   dns_server_1_sni dns.mycorp.in
 #
 
+# Legacy DHCP options are data, never shell input. Modern --dns hooks run
+# first in OpenVPN 2.7; keep them authoritative when both forms are present.
+if [[ "${script_type:-}" == "up" || "${script_type:-}" == "down" ]]; then
+    [[ "${dev:-}" =~ ^(utun|tun)[0-9]{1,4}$ ]] || exit 1
+    VPNNAV_DNS_SOURCE=legacy
+    if [[ "$script_type" == "down" && "${VPNNAV_JOURNALED_DNS:-0}" == "1" && "${1:-}" != "--check-dns-vars" ]]; then
+        "${BASH_SOURCE[0]%/*}/VPNNavigatorHelper" --deactivate-dns "$dev" legacy || exit 1
+        exit 0
+    fi
+    if [[ "$script_type" == "up" && "${1:-}" != "--check-dns-vars" ]]; then
+        if "${BASH_SOURCE[0]%/*}/VPNNavigatorHelper" --legacy-dns-needed "$dev"; then :
+        else
+            result=$?
+            [[ "$result" == "3" ]] && exit 0
+            exit 1
+        fi
+    fi
+    dns_index=0
+    domain_index=0
+    legacy_count=0
+    while IFS= read -r legacy_key; do
+        [[ "$legacy_key" =~ ^foreign_option_[0-9]+$ ]] || continue
+        (( ++legacy_count <= 128 )) || exit 1
+        read -r legacy_option legacy_kind legacy_value legacy_extra <<< "${!legacy_key}"
+        [[ "$legacy_option" == "dhcp-option" ]] || continue
+        case "$legacy_kind" in
+            DNS|DNS6)
+                [[ -z "$legacy_extra" && ${#legacy_value} -le 64 && "$legacy_value" =~ ^[0-9A-Fa-f:.]+$ ]] || exit 1
+                (( ++dns_index <= 16 )) || exit 1
+                printf -v "dns_server_1_address_${dns_index}" '%s' "$legacy_value"
+                ;;
+            DOMAIN|DOMAIN-SEARCH)
+                [[ -z "$legacy_extra" && ${#legacy_value} -le 253 && "$legacy_value" =~ ^[A-Za-z0-9_.-]+$ ]] || exit 1
+                (( ++domain_index <= 32 )) || exit 1
+                printf -v "dns_search_domain_${domain_index}" '%s' "$legacy_value"
+                ;;
+        esac
+    done < <(compgen -A variable foreign_option_)
+    (( dns_index > 0 )) || exit 0
+    [[ "$script_type" == "up" ]] && script_type=dns-up || script_type=dns-down
+fi
+
 # OpenVPN 2.7 writes DNS hook variables as plain NAME=value lines.
 # NEVER source that file: DNS names can originate from a VPN server, and
 # evaluating them as shell commands in a root hook is unacceptable.
@@ -84,6 +126,13 @@ validate_dns_values || { echo "invalid OpenVPN DNS value" >&2; exit 1; }
 if [[ "${1:-}" == "--check-dns-vars" ]]; then
     exit 0
 fi
+
+# Modern OpenVPN DNS hooks use an isolated environment, so parent environment
+# variables are not a reliable context channel. Read only the pinned service
+# UUID from the protected journal through the typed root helper operation.
+VPNNAV_PRIMARY_SERVICE_UUID="$("${BASH_SOURCE[0]%/*}/VPNNavigatorHelper" --dns-context "$dev")" || exit 1
+[[ "$VPNNAV_PRIMARY_SERVICE_UUID" =~ ^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$ ]] || exit 1
+VPNNAV_JOURNALED_DNS=1
 
 
 # Lockfiles for a root DNS modifier must never live in a shared 1777
@@ -359,12 +408,12 @@ if [ "$script_type" = "dns-up" ]; then
     set_dns
     # Record precisely the DNS values this trusted hook just applied. If the
     # helper crashed before CONNECTED, ownership is still available for recovery.
-    "${BASH_SOURCE[0]%/*}/VPNNavigatorHelper" --commit-dns "$dev" || exit 1
+    "${BASH_SOURCE[0]%/*}/VPNNavigatorHelper" --commit-dns "$dev" "${VPNNAV_DNS_SOURCE:-modern}" || exit 1
 else
-    # Managed modes may replace the global resolver while retaining split DNS.
-    # Their journal is the sole restoration owner and restores ALL exact values
-    # after OpenVPN exits. A down-hook must not partially rewrite those values.
-    if [[ "${VPNNAV_MANAGED_DNS:-0}" == "1" ]]; then
+    # The application journal restores exact DNS values after child exit in
+    # every mode. Legacy/modern down-hooks must not partially restore them.
+    if [[ "${VPNNAV_JOURNALED_DNS:-0}" == "1" ]]; then
+        "${BASH_SOURCE[0]%/*}/VPNNavigatorHelper" --deactivate-dns "$dev" "${VPNNAV_DNS_SOURCE:-modern}" || exit 1
         exit 0
     fi
     unset_dns

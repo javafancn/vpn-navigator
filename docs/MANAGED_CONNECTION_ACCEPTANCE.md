@@ -10,6 +10,8 @@ override in the managed connection test.
 
 - TCP and UDP, each with Original, Full VPN and China Direct: six combinations.
 - An additional UDP China Direct connection with no server DNS push.
+- An additional UDP China Direct connection using modern `dns server` pushes,
+  in addition to traditional `dhcp-option DNS` coverage.
 - Bootstrap the bundled rules through normal application loading, and connect
   with the default 60-second connection timeout (no extended test preference).
 - Import an inline-certificate profile into an isolated profile library, persist
@@ -24,7 +26,7 @@ override in the managed connection test.
 - Exchange scoped UDP payloads in both encrypted directions; verify real byte
   counters increase. Scope avoids same-host LOCAL/lo0 shortcuts without replacing
   local host routes.
-- Resolve a unique `.vpnnav.test` name through the macOS system resolver and
+- In managed modes, resolve a unique `.vpnnav.test` name through the macOS system resolver and
   fetch an 8 KB IPv4 HTTP response using ordinary curl (no resolver override).
   The provided resolver lies inside a direct country prefix; its exact route
   must still select the client utun. The no-DNS case must use the managed VPN

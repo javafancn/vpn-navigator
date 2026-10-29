@@ -48,11 +48,8 @@ final class RouteExecutor {
         guard !shouldCancel() else { throw CancellationError() }
         guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
         let output = try run("/usr/sbin/netstat", ["-rn", "-f", "inet"])
-        let prefix = route.prefix.description
-        if output.split(separator: "\n").contains(where: {
-            $0.split(whereSeparator: { $0.isWhitespace }).first.map(String.init) == prefix
-        }) {
-            throw RouteExecutionError.existingRoute(prefix)
+        if Self.occupiedIPv4(output).contains(route.prefix) {
+            throw RouteExecutionError.existingRoute(route.prefix.description)
         }
         try install(route)
     }
@@ -60,12 +57,10 @@ final class RouteExecutor {
     func apply(_ routes: [RouteTarget]) throws {
         guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
         let snapshot = try run("/usr/sbin/netstat", ["-rn", "-f", "inet"])
-        let occupied = Set(snapshot.split(separator: "\n").compactMap {
-            $0.split(whereSeparator: { $0.isWhitespace }).first.map(String.init)
-        })
+        let occupied = Self.occupiedIPv4(snapshot)
         do {
             for route in routes {
-                if occupied.contains(route.prefix.description) {
+                if occupied.contains(route.prefix) {
                     throw RouteExecutionError.existingRoute(route.prefix.description)
                 }
                 try install(route)
@@ -75,6 +70,24 @@ final class RouteExecutor {
             // installed ownership and let ManagedTunnel.stop() do that ordering.
             throw error
         }
+    }
+
+    // netstat omits /32 on host routes and abbreviates network addresses.
+    // Normalize once, before any WAL intent, rather than discovering EEXIST
+    // after recording a mutation that must then be treated as uncertain.
+    private static func occupiedIPv4(_ snapshot: String) -> Set<IPv4CIDR> {
+        Set(snapshot.split(separator: "\n").compactMap { row in
+            let fields = row.split(whereSeparator: { $0.isWhitespace })
+            guard let first = fields.first else { return nil }
+            let destination = String(first)
+            if destination == "default" { return try? IPv4CIDR("0.0.0.0/0") }
+            if destination.contains("/") { return try? IPv4CIDR(destination) }
+            var octets = destination.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+            guard (1...4).contains(octets.count), octets.allSatisfy({ UInt8($0) != nil }) else { return nil }
+            let bits = fields.count > 2 && fields[2].contains("H") ? 32 : octets.count * 8
+            while octets.count < 4 { octets.append("0") }
+            return try? IPv4CIDR(octets.joined(separator: ".") + "/\(bits)")
+        })
     }
 
     private func install(_ route: RouteTarget) throws {
@@ -176,8 +189,9 @@ final class RouteExecutor {
         guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
         let snapshot = try run("/usr/sbin/netstat", ["-rn", "-f", "inet6"])
         let occupied = Set(snapshot.components(separatedBy: .newlines).compactMap { line -> String? in
-            guard let first = line.split(whereSeparator: { $0.isWhitespace }).first,
-                  let prefix = try? IPv6CIDR(String(first)) else { return nil }
+            guard let first = line.split(whereSeparator: { $0.isWhitespace }).first else { return nil }
+            let destination = String(first)
+            guard let prefix = try? IPv6CIDR(destination.contains("/") ? destination : destination + "/128") else { return nil }
             return prefix.description
         })
         for route in routes {

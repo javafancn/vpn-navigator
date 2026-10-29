@@ -5,9 +5,25 @@ import VPNNavigatorCore
 // Internal DNS-hook operation: fixed journal, typed tunnel, root only. It
 // cannot launch OpenVPN, accept a path or run an arbitrary command.
 if CommandLine.arguments.dropFirst().first == "--commit-dns" {
-    guard getuid() == 0, CommandLine.arguments.count == 3,
+    guard getuid() == 0, [3, 4].contains(CommandLine.arguments.count),
           DNSRecoveryPolicy.validTunnel(CommandLine.arguments[2]) else { exit(1) }
-    do { try DNSRecoveryJournal().commit(tunnel: CommandLine.arguments[2]); exit(0) }
+    let source = CommandLine.arguments.count == 4 ? CommandLine.arguments[3] : "modern"
+    do { try DNSRecoveryJournal().commit(tunnel: CommandLine.arguments[2], source: source); exit(0) }
+    catch { exit(1) }
+}
+if CommandLine.arguments.dropFirst().first == "--legacy-dns-needed" {
+    guard getuid() == 0, CommandLine.arguments.count == 3, DNSRecoveryPolicy.validTunnel(CommandLine.arguments[2]) else { exit(1) }
+    do { exit(try DNSRecoveryJournal().legacyNeeded(tunnel: CommandLine.arguments[2]) ? 0 : 3) }
+    catch { exit(1) }
+}
+if CommandLine.arguments.dropFirst().first == "--dns-context" {
+    guard getuid() == 0, CommandLine.arguments.count == 3, DNSRecoveryPolicy.validTunnel(CommandLine.arguments[2]) else { exit(1) }
+    do { print(try DNSRecoveryJournal().context(tunnel: CommandLine.arguments[2])); exit(0) }
+    catch { exit(1) }
+}
+if CommandLine.arguments.dropFirst().first == "--deactivate-dns" {
+    guard getuid() == 0, CommandLine.arguments.count == 4, DNSRecoveryPolicy.validTunnel(CommandLine.arguments[2]) else { exit(1) }
+    do { try DNSRecoveryJournal().deactivate(tunnel: CommandLine.arguments[2], source: CommandLine.arguments[3]); exit(0) }
     catch { exit(1) }
 }
 #if DEBUG

@@ -111,18 +111,14 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
     stop_server()
     ccd.write_text(original_ccd + 'iroute 198.18.254.99 255.255.255.255\n')
     try:
-        for protocol, provided_dns in [('tcp', True), ('udp', True), ('udp', False)]:
+        for protocol, dns_kind in [('tcp', 'legacy'), ('udp', 'legacy'), ('udp', 'none'), ('udp', 'modern')]:
+            provided_dns = dns_kind != 'none'
             server = '\n'.join(line for line in original.splitlines() if not line.startswith('server-ipv6 ')) + '\n'
             server = server.replace('proto tcp4-server', 'proto ' + ('tcp4-server' if protocol == 'tcp' else 'udp4'))
             server = server.replace(f'cert {folder}/server.crt', f'cert {folder}/managed-server.crt')
             server = server.replace(f'key {folder}/server.key', f'key {folder}/managed-server.key')
             server += 'tls-version-max 1.2\n'
             server += 'push "client-nat snat 198.18.254.2 255.255.255.255 198.18.254.99"\n'
-            server += f'push "route {DNS} 255.255.255.255"\npush "route {WEB} 255.255.255.255"\n'
-            if provided_dns:
-                server += f'push "dhcp-option DNS {DNS}"\n'
-            config.write_text(server)
-            start_server()
             client = profile.replace('# VPNNAV_EXPECT_DUAL_STACK\n', '').replace('proto tcp-client', 'proto ' + ('tcp-client' if protocol == 'tcp' else 'udp'))
             client = client.replace('remote 127.0.0.1 ', 'remote ' + ENDPOINT + ' ')
             client += 'auth SHA256\ncipher AES-128-GCM\ntls-client\ntls-cipher TLS-ECDHE-ECDSA-WITH-AES-128-GCM-SHA256\n'
@@ -131,7 +127,17 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
             profile_path = folder / ('managed-' + protocol + '.ovpn')
             profile_path.write_text(client); profile_path.chmod(0o600)
             with transport(run, folder, port, protocol):
-                for mode in (['Original', 'Full VPN', 'China Direct'] if provided_dns else ['China Direct']):
+                for mode in (['Original', 'Full VPN', 'China Direct'] if dns_kind == 'legacy' else ['China Direct']):
+                    # Original keeps the existing scoped IPv6 payload fixture.
+                    # Shared-host gateway routes would select the server utun.
+                    pushed = ''
+                    if mode != 'Original' and provided_dns:
+                        option = f'dhcp-option DNS {DNS}' if dns_kind == 'legacy' else f'dns server 0 address {DNS}'
+                        pushed = 'push "' + option + '"\n'
+                        if dns_kind == 'modern':
+                            pushed += 'push "dhcp-option DNS 223.5.5.5"\n'
+                    config.write_text(server + pushed)
+                    start_server()
                     case = folder / 'managed-case.json'
                     report_path = folder / 'managed-report.json'
                     case.write_text(json.dumps({'profilePath': str(profile_path), 'rulesPath': str(rules),
@@ -157,21 +163,24 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
                             if mode == 'China Direct':
                                 assert journal.count('"committed"') >= 4096, 'Large rule plan was not actually installed'
                         run(['sudo', '-n', 'cp', probe_approval, MANIFEST])
-                        with web_fixture(run, folder, server_tunnel, upstream) as counts:
-                            verify_web(run, probe, counts, client_tunnel, fallback=not provided_dns)
-                            data_echo(run, probe, server_tunnel, client_tunnel, aliases)
+                        if mode != 'Original':
+                            with web_fixture(run, folder, server_tunnel, upstream) as counts:
+                                verify_web(run, probe, counts, client_tunnel, fallback=not provided_dns)
+                        data_echo(run, probe, server_tunnel, client_tunnel, aliases)
                         run(['sudo', '-n', 'cp', app_approval, MANIFEST])
                         exercise_quit(run, cleanup_timeout=240)
                         print('PASS: ' + protocol.upper() + ' / ' + mode + ': real application connect, kernel route selection, bidirectional encrypted payload, watchdog stability and actual Quit cleanup.', flush=True)
                     finally:
                         run(['sudo', '-n', 'cp', probe_approval, MANIFEST])
                         run([probe, '--disconnect'], ok=False, timeout=240)
+                        stop_server()
             stop_server()
         after = run(['/sbin/route', '-n', 'get', 'default']).stdout
         fields = lambda text: dict(re.findall(r'^\s*(gateway|interface):\s*(\S+)', text, re.M))
         assert fields(after) == fields(before_default), 'Managed test did not restore the physical default'
         print('PASS: six real TCP/UDP mode combinations and live switch round trips; physical default restored.', flush=True)
         print('PASS: missing server DNS uses VPN-only fallback and still resolves and loads the IPv4 webpage.', flush=True)
+        print('PASS: modern isolated-environment DNS hook and legacy DHCP DNS both resolve and load IPv4 webpages through the VPN.', flush=True)
         print('Connection times (seconds, real app connect before watchdog/switch/quit): ' + json.dumps(timings), flush=True)
     finally:
         stop_server()

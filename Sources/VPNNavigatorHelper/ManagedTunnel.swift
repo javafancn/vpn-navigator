@@ -219,6 +219,11 @@ final class ManagedTunnel {
         // Trusted binary and DNS hook were verified before the runtime profile
         // was created. Never leave a false orphan marker on signature errors.
         options += ["--script-security", "2", "--dns-updown", try OpenVPNCommand.quotedExecutable(dnsHook.path)]
+        // OpenVPN 2.7's dns-updown handles --dns; traditional DHCP DNS options
+        // are exposed to ordinary up/down scripts instead. Only this trusted
+        // bundled adapter runs, never a command supplied by a profile/server.
+        options += ["--up", try OpenVPNCommand.quotedExecutable(dnsHook.path),
+                    "--down", try OpenVPNCommand.quotedExecutable(dnsHook.path), "--up-restart"]
         let task = Process()
         task.executableURL = URL(fileURLWithPath: binary)
         task.arguments = options
@@ -227,7 +232,8 @@ final class ManagedTunnel {
         try dnsRecovery.begin()
         var environment = ProcessInfo.processInfo.environment
         environment["VPNNAV_PRIMARY_SERVICE_UUID"] = dnsRecovery.primaryService
-        environment["VPNNAV_MANAGED_DNS"] = mode == .original ? "0" : "1"
+        environment["VPNNAV_JOURNALED_DNS"] = "1"
+        environment["VPNNAV_DNS_SOURCE"] = "modern"
         environment["OPENSSL_CONF"] = "/dev/null"
         task.environment = environment
         let output = Pipe()

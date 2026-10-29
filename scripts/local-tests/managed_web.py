@@ -43,6 +43,9 @@ def web_fixture(run, folder, server_tunnel, upstream):
     class DNSHandler(socketserver.BaseRequestHandler):
         def handle(self):
             packet, udp = self.request
+            if self.client_address[0] != CLIENT_ALIAS:
+                counts['wrong_source'] += 1
+                return
             try:
                 end, labels = 12, []
                 while packet[end]:
@@ -55,9 +58,6 @@ def web_fixture(run, folder, server_tunnel, upstream):
                 end += 4
                 name = '.'.join(labels).lower()
                 if name.endswith('.vpnnav.test'):
-                    if self.client_address[0] != CLIENT_ALIAS:
-                        counts['wrong_source'] += 1
-                        return
                     counts['dns'] += 1
                     answer = b''
                     if kind == 1:

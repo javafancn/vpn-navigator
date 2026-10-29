@@ -6,6 +6,13 @@ are selected for the address families actually allocated to the VPN. Corporate
 supplemental DNS dictionaries remain intact and their resolver paths are also
 pinned to the tunnel. The routing page states the fallback policy.
 
+The bundled adapter supports traditional `dhcp-option DNS`/`DNS6`/search-domain
+environment data as well as modern OpenVPN 2.7 DNS variables. Inputs are parsed
+as data, never sourced or evaluated. Modern hooks run with an isolated
+environment; the adapter obtains the pinned service UUID using a typed root
+journal operation instead of relying on inherited variables. Modern DNS takes
+precedence if both server formats are present.
+
 Resolver /32 and /128 routes take precedence over country and custom direct
 rules. Their host prefixes are subtracted from the physical allow list as well,
 so protection and the actual route plan agree. A DNS resolver conflicting with
@@ -15,7 +22,7 @@ Route explanations identify these resolver exceptions explicitly.
 
 The DNS journal records both known-owned values before publishing a managed
 resolver change. Recovery accepts either recorded value and still refuses an
-unknown external change. For managed modes the trusted down-hook leaves DNS
+unknown external change. The trusted down-hook leaves DNS
 restoration to the journal after child exit, avoiding two restoration owners.
 
 Bulk IPv4 gateway changes now reuse a close-on-exec Darwin routing socket,

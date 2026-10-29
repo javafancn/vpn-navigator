@@ -11,6 +11,9 @@ when a server provides both legacy and modern forms. The adapter parses those
 variables as data and calls a fixed native helper operation. All dynamic-store
 keys come from the protected journal; isolated hook environments do not need
 inherited service identifiers. Native dictionaries replace scutil output parsing.
+The `--dns-updown` filename is passed as one raw process argument. Shell-style
+quotes are not part of the filename: embedded quotes caused exec status 127
+when the installed path contained spaces.
 A nonzero DNS up-hook result fails the connection instead of becoming a silent
 fallback. Native and installed tests cover both server formats.
 

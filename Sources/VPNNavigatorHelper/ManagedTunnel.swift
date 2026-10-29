@@ -218,7 +218,10 @@ final class ManagedTunnel {
 
         // Trusted binary and DNS hook were verified before the runtime profile
         // was created. Never leave a false orphan marker on signature errors.
-        options += ["--script-security", "2", "--dns-updown", try OpenVPNCommand.quotedExecutable(dnsHook.path)]
+        // dns-updown accepts a single filename, not an up-script command string.
+        // Process.arguments already preserves spaces; embedded quotes become
+        // literal filename characters and make execve fail with status 127.
+        options += ["--script-security", "2", "--dns-updown", dnsHook.path]
         let task = Process()
         task.executableURL = URL(fileURLWithPath: binary)
         task.arguments = options

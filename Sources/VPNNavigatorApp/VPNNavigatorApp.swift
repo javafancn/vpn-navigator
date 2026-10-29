@@ -196,6 +196,8 @@ final class AppModel: ObservableObject {
         let initialStatus = helper.installationStatus
         helperStateVerified = initialStatus != .enabled && !(BuildChannel.isLocal && initialStatus == .requiresApproval)
         installationIssue = helper.localInstallationIssue
+        if BuildChannel.isLocal, ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
+           ProcessInfo.processInfo.arguments.contains("--vpnnav-local-managed-connect") { profileOpenReady = true; return }
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-local-quit-rejection-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-overview-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-status-bar-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-localization-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-workspace-accessibility-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-public-egress-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-connection-history-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-health-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-backup-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-smart-connection-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-network-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-health-check") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-services-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-local-installation-state") || ProcessInfo.processInfo.arguments.contains("--vpnnav-quick-access-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-transfer-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-mode-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-recovery-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-profile-library-self-test") || ProcessInfo.processInfo.arguments.contains("--vpnnav-routing-tools-self-test") { profileOpenReady = true; return }
         // CI-only in-memory composition fixture for checking the populated
         // inspector against the design. Never written to ProfileStore, never
@@ -995,7 +997,7 @@ final class AppModel: ObservableObject {
         installationIssue = helper.localInstallationIssue
         helperStatus = displayHelperStatus(installationStatus)
         if installationStatus == .enabled {
-            if let report = await helper.sessionReport() {
+            if let report = await helper.sessionReport(timeout: connecting ? TimeInterval(sessionPreferences.connectionTimeout + 15) : 12) {
                 guard capturedEpoch == statusEpoch, !routingModeSwitching else { return }
                 applyVerifiedSessionReport(report)
             } else {
@@ -1474,6 +1476,14 @@ struct VPNNavigatorApp: App {
         let initialModel = WorkspaceAccessibilitySelfTest.applicationModel()
         _model = StateObject(wrappedValue: initialModel)
         appDelegate.model = initialModel
+#if VPNNAV_LOCAL_TEST
+        if ProcessInfo.processInfo.arguments.contains("--vpnnav-local-managed-connect") {
+            Task {
+                do { try await ManagedConnectionSelfTest.run(); Darwin.exit(0) }
+                catch { print("Installed application managed connection failed: \(error.localizedDescription)"); Darwin.exit(1) }
+            }
+        }
+#endif
         if ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true", ProcessInfo.processInfo.arguments.contains(where: { $0.hasSuffix("self-test") }) {
             FileHandle.standardError.write(Data("UI application init reached\n".utf8))
         }

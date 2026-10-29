@@ -252,7 +252,7 @@ struct MainView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 10) {
                 BrandMark(size: 42)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("VPN Navigator").font(.system(size: 16, weight: .semibold))

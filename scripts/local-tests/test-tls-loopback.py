@@ -95,15 +95,14 @@ def main():
 
     def start_server():
         nonlocal server, log
+        offset = (folder / 'server.log').stat().st_size if (folder / 'server.log').exists() else 0
         log = (folder / 'server.log').open('a')
         server = subprocess.Popen(['sudo', '-n', str(ENGINE), '--config', str(config)], stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         for _ in range(60):
             assert server.poll() is None, 'TLS fixture server exited'
-            try:
-                with socket.create_connection((transport_host, port), timeout=0.2):
-                    return
-            except OSError:
-                time.sleep(0.1)
+            if 'Initialization Sequence Completed' in (folder / 'server.log').read_text()[offset:]:
+                return
+            time.sleep(0.1)
         raise AssertionError('TLS fixture did not start')
     try:
         def ssl(*args):
@@ -197,6 +196,11 @@ verb 3
         from quit_fixture import exercise_quit
         app_approval = folder / 'app-quit-approval.json'
         app_approval.write_bytes(original)
+        from managed_suite import exercise_managed
+        run([probe, '--disconnect'])
+        exercise_managed(run, folder, probe, config, profile, port, start_server, stop_server,
+                         app_approval, temporary, openssl, lambda pairs: fixture_link_local_aliases(pairs))
+        run([probe, '--connect-only', valid])
         # The TLS probe temporarily occupies the approved app role. Restore
         # the real app identity for actual NSApplication/XPC lifecycle checks,
         # then restore the probe identity for the remaining network fixtures.

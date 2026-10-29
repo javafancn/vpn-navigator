@@ -1,0 +1,22 @@
+name: Managed connection transport fixture
+on:
+  push:
+    branches: [fix/managed-connection-audit]
+  pull_request:
+    paths:
+      - 'scripts/local-tests/managed_transport.py'
+      - '.github/workflows/managed-transport.yml'
+permissions:
+  contents: read
+jobs:
+  transport:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-14, macos-15, macos-15-intel, macos-26]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify isolated TCP and UDP transport without application hooks
+        run: python3 scripts/local-tests/managed_transport.py

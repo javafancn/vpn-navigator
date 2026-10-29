@@ -100,6 +100,11 @@
     "en": "DNS lookup"
   },
   {
+    "key": "DNS 解析通过 VPN，优先于地区和自定义直连规则。",
+    "zh": "DNS 解析通过 VPN，优先于地区和自定义直连规则。",
+    "en": "DNS resolution uses the VPN, ahead of country and custom direct rules."
+  },
+  {
     "key": "DNS 配置",
     "zh": "DNS 配置",
     "en": "DNS configuration"
@@ -2538,6 +2543,11 @@
     "key": "打开主窗口",
     "zh": "打开主窗口",
     "en": "Open main window"
+  },
+  {
+    "key": "托管模式优先使用服务器 DNS；未提供全局 DNS 时，通过 VPN 使用 Cloudflare／Quad9。DNS 地址优先走隧道，原始配置不受此策略影响。",
+    "zh": "托管模式优先使用服务器 DNS；未提供全局 DNS 时，通过 VPN 使用 Cloudflare／Quad9。DNS 地址优先走隧道，原始配置不受此策略影响。",
+    "en": "Managed modes prefer server DNS. Without global DNS, Cloudflare/Quad9 are used through the VPN. Resolver addresses take precedence over direct rules. Original mode keeps its own DNS policy."
   },
   {
     "key": "指定 Wi-Fi 名称",

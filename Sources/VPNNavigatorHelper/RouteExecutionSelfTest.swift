@@ -34,6 +34,24 @@ enum RouteExecutionSelfTest {
         })
         do { try cancelled.apply(first); throw RouteExecutionError.journalFailure }
         catch is CancellationError { }
+        let hostJournal = folder.appendingPathComponent("occupied-host")
+        let host = RouteTarget(try IPv4CIDR("223.5.5.5/32"), .interface("utun4"))
+        let hostExecutor = RouteExecutor(journal: hostJournal, run: { executable, _ in
+            guard executable == "/usr/sbin/netstat" else { throw RouteExecutionError.disallowedExecutable }
+            return "Internet:\nDestination Gateway Flags Netif\n223.5.5.5 192.168.1.1 UGHS en0\n"
+        })
+        do { try hostExecutor.apply([host]); throw RouteExecutionError.journalFailure }
+        catch RouteExecutionError.existingRoute { }
+        guard hostExecutor.installed.isEmpty, !FileManager.default.fileExists(atPath: hostJournal.path) else { throw RouteExecutionError.journalFailure }
+        let inherited = RouteExecutor(journal: hostJournal, run: { executable, args in
+            if executable == "/usr/sbin/netstat" {
+                return "Internet:\nDestination Gateway Flags Netif\n223.5.5.5 link#5 UH utun4\n"
+            }
+            guard args.contains("get") else { throw RouteExecutionError.disallowedExecutable }
+            return "destination: 223.5.5.5\ninterface: utun4\n"
+        })
+        try inherited.apply([host], inheriting: [host])
+        guard inherited.installed.isEmpty, !FileManager.default.fileExists(atPath: hostJournal.path) else { throw RouteExecutionError.journalFailure }
     }
 }
 #endif

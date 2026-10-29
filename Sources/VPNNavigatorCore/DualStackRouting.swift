@@ -89,6 +89,8 @@ public struct DualStackRoutePlan: Sendable {
     public let endpoint6: IPv6RouteTarget?
     public let direct4: [RouteTarget]
     public let direct6: [IPv6RouteTarget]
+    public let dns4: [RouteTarget]
+    public let dns6: [IPv6RouteTarget]
     public let defaults4: [RouteTarget]
     public let defaults6: [IPv6RouteTarget]
     public let path4: PhysicalIPPath?
@@ -97,12 +99,12 @@ public struct DualStackRoutePlan: Sendable {
     public let endpoint: String
     public let local4: [IPv4CIDR]
     public let local6: [IPv6CIDR]
-    public var ipv4: [RouteTarget] { (endpoint4.map { [$0] } ?? []) + direct4 + defaults4 }
-    public var ipv6: [IPv6RouteTarget] { (endpoint6.map { [$0] } ?? []) + direct6 + defaults6 }
+    public var ipv4: [RouteTarget] { (endpoint4.map { [$0] } ?? []) + direct4 + dns4 + defaults4 }
+    public var ipv6: [IPv6RouteTarget] { (endpoint6.map { [$0] } ?? []) + direct6 + dns6 + defaults6 }
     public var stack: TunnelIPStack { defaults4.isEmpty ? .ipv6 : defaults6.isEmpty ? .ipv4 : .dual }
     public static func build(endpoint: String, tunnel: String, has4: Bool, has6: Bool,
         path4: PhysicalIPPath?, path6: PhysicalIPPath?, local4: [IPv4CIDR], local6: [IPv6CIDR],
-        mode: RoutingMode, country4: RuleSet?, country6: IPv6RuleSet?, custom: CustomRuleSet) throws -> Self {
+        mode: RoutingMode, country4: RuleSet?, country6: IPv6RuleSet?, custom: CustomRuleSet, dnsServers: [String] = []) throws -> Self {
         guard DNSRecoveryPolicy.validTunnel(tunnel), let endpoint = IPAddress.canonical(endpoint), has4 || has6 else { throw DualStackError.missingTunnel }
         if let ip4 = IPv4CIDR.parseAddress(endpoint), (ip4 >> 24 == 0 || ip4 >> 24 == 127 || ip4 >> 24 >= 224) { throw RoutePlanningError.blockedServerAddress }
         if let ip6 = IPv6CIDR.parseAddress(endpoint), ip6 == [UInt8](repeating: 0, count: 16) || endpoint == "::1" || ip6.first == 255 || endpoint.hasPrefix("fe80:") || endpoint.hasPrefix("::ffff:") { throw RoutePlanningError.blockedServerAddress }
@@ -117,12 +119,19 @@ public struct DualStackRoutePlan: Sendable {
         if mode == .chinaDirect && has4 && country4 == nil { throw CompilerError.missingRules }
         if mode == .chinaDirect && has6 && country6 == nil { throw DualStackError.missingRules }
         if !has4 && custom.active.contains(where: { !$0.cidr.contains(":") }) || !has6 && custom.active.contains(where: { $0.cidr.contains(":") }) { throw DualStackError.missingTunnel }
-        let prefixes4 = try custom.directPrefixes(country: has4 && mode == .chinaDirect ? country4 : nil, local: local4, endpoint: endpoint)
-        let prefixes6 = try custom.directPrefixes6(country: has6 && mode == .chinaDirect ? country6 : nil, local: local6, endpoint: endpoint)
+        let dns = dnsServers.isEmpty ? [] : try ManagedDNSPolicy.servers(provided: dnsServers, has4: has4, has6: has6)
+        let dns4 = try dns.filter { !IPAddress.isIPv6($0) }.map { try IPv4CIDR($0 + "/32") }
+        let dns6 = try dns.filter { IPAddress.isIPv6($0) }.map { try IPv6CIDR($0 + "/128") }
+        guard !dns.contains(endpoint), !dns4.contains(where: { item in local4.contains { $0.overlaps(item) } }),
+              !dns6.contains(where: { item in local6.contains { $0.overlaps(item) } }) else { throw CustomRouteError.protectedNetwork }
+        let prefixes4 = try custom.directPrefixes(country: has4 && mode == .chinaDirect ? country4 : nil, local: local4, endpoint: endpoint, protectedVPN: dns4)
+        let prefixes6 = try custom.directPrefixes6(country: has6 && mode == .chinaDirect ? country6 : nil, local: local6, endpoint: endpoint, protectedVPN: dns6)
         guard prefixes4.isEmpty || path4 != nil, prefixes6.isEmpty || path6 != nil else { throw DualStackError.missingPhysical }
         return try .init(endpoint4: endpoint4, endpoint6: endpoint6,
             direct4: prefixes4.map { RouteTarget($0, .viaGateway(path4!.gateway)) },
             direct6: prefixes6.map { IPv6RouteTarget($0, .viaGateway(path6!.gateway)) },
+            dns4: dns4.map { RouteTarget($0, .interface(tunnel)) },
+            dns6: dns6.map { IPv6RouteTarget($0, .interface(tunnel)) },
             defaults4: has4 ? [RouteTarget(IPv4CIDR("0.0.0.0/1"), .interface(tunnel)), RouteTarget(IPv4CIDR("128.0.0.0/1"), .interface(tunnel))] : [],
             defaults6: has6 ? [IPv6RouteTarget(IPv6CIDR("::/1"), .interface(tunnel)), IPv6RouteTarget(IPv6CIDR("8000::/1"), .interface(tunnel))] : [],
             path4: path4, path6: path6, tunnel: tunnel, endpoint: endpoint, local4: local4, local6: local6)

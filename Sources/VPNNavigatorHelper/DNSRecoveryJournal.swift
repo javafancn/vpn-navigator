@@ -12,6 +12,8 @@ final class DNSRecoveryJournal {
         let before: [String: Data]
         var tunnel: String?
         var applied: [String: Data]?
+        var serverProvided: Bool?
+        var previousApplied: [String: Data]?
     }
     private let file: URL
     init(file: URL = URL(fileURLWithPath: "/var/run/vpn-navigator/dns.journal")) { self.file = file }
@@ -37,7 +39,99 @@ final class DNSRecoveryJournal {
         var record = try load()
         record.tunnel = tunnel
         record.applied = try snapshot(keys(record))
+        record.serverProvided = true
         try save(record)
+    }
+    /// Apply server DNS through typed native dictionaries. OpenVPN 2.7 already
+    /// converts legacy DHCP DNS to these modern hook variables. No scutil text
+    /// parsing or inherited parent environment is required.
+    func applyProvided(tunnel: String, servers: [String], search: [String], match: [String]) throws {
+        guard !servers.isEmpty else { throw DNSJournalError.unavailable }
+        let addresses = try ManagedDNSPolicy.servers(provided: servers, has4: true, has6: true)
+        func domains(_ values: [String]) throws -> [String] {
+            guard values.count <= 32, values.allSatisfy({ value in
+                !value.isEmpty && value.utf8.count <= 253 &&
+                value.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "._-".contains($0)) }
+            }) else { throw DNSJournalError.unavailable }
+            var result: [String] = []
+            for value in values where !result.contains(value) { result.append(value) }
+            return result
+        }
+        let search = try domains(search), match = try domains(match)
+        try confirm(tunnel: tunnel)
+        var record = try load()
+        let primary = primaryKey(record.service)
+        let scoped = "State:/Network/Service/openvpn-\(tunnel)/DNS"
+        func dictionary(_ data: Data?) throws -> [String: Any] {
+            guard let data else { return [:] }
+            return try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] ?? [:]
+        }
+        var global = try dictionary(record.before[primary])
+        var set: [String: Any] = [:], remove: [String] = []
+        let supplemental = !match.isEmpty && !match.contains(".")
+        if supplemental {
+            set[scoped] = ["ServerAddresses": addresses, "SupplementalMatchDomains": match,
+                           "SupplementalMatchDomainsNoSearch": 1]
+            var searches = search
+            for value in global["SearchDomains"] as? [String] ?? [] where !searches.contains(value) { searches.append(value) }
+            if !searches.isEmpty { global["SearchDomains"] = searches }
+        } else {
+            global["ServerAddresses"] = addresses
+            global["SearchOrder"] = 5000
+            if !search.isEmpty { global["SearchDomains"] = search }
+            if let old = record.before[scoped] { set[scoped] = try dictionary(old) }
+            else { remove.append(scoped) }
+        }
+        if global.isEmpty { remove.append(primary) } else { set[primary] = global }
+        let previous = try snapshot(keys(record))
+        var planned = previous
+        for (key, value) in set { planned[key] = try PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0) }
+        for key in remove { planned.removeValue(forKey: key) }
+        record.previousApplied = previous
+        record.applied = planned
+        record.serverProvided = true
+        try save(record)
+        let current = try snapshot(keys(record))
+        for key in keys(record) {
+            guard try equal(current[key], previous[key]) else { throw DNSJournalError.conflict }
+        }
+        guard let store, SCDynamicStoreSetMultiple(store, set as CFDictionary, remove as CFArray, nil) else { throw DNSJournalError.unavailable }
+        try confirm(tunnel: tunnel)
+        record.previousApplied = nil
+        try save(record)
+    }
+
+    /// Pin the managed global resolver policy, retaining split-DNS dictionaries.
+    /// Record both known-owned values before modifying the dynamic store so a
+    /// crash on either side of the write remains recoverable without guessing.
+    func prepareManaged(tunnel: String, has4: Bool, has6: Bool) throws -> [String] {
+        try confirm(tunnel: tunnel)
+        var record = try load()
+        let primary = primaryKey(record.service)
+        func dictionary(_ data: Data?) throws -> [String: Any] {
+            guard let data else { return [:] }
+            return try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] ?? [:]
+        }
+        let scoped = try dictionary(record.applied?["State:/Network/Service/openvpn-\(tunnel)/DNS"])
+        var global = try dictionary(record.applied?[primary])
+        let split = !(scoped["SupplementalMatchDomains"] as? [String] ?? []).isEmpty
+        let provided = record.serverProvided == true && !split ? global["ServerAddresses"] as? [String] ?? [] : []
+        let servers = try ManagedDNSPolicy.servers(provided: provided, has4: has4, has6: has6)
+        let scopedServers = split ? try ManagedDNSPolicy.servers(provided: scoped["ServerAddresses"] as? [String] ?? [], has4: has4, has6: has6) : []
+        if global["ServerAddresses"] as? [String] != servers {
+            global["ServerAddresses"] = servers
+            global["SearchOrder"] = 5000
+            let next = try PropertyListSerialization.data(fromPropertyList: global, format: .binary, options: 0)
+            record.previousApplied = record.applied
+            record.applied?[primary] = next
+            try save(record)
+            guard let store, SCDynamicStoreSetValue(store, primary as CFString, global as CFDictionary) else { throw DNSJournalError.unavailable }
+            try confirm(tunnel: tunnel)
+            record.previousApplied = nil
+            try save(record)
+            _ = try RouteExecutor.command("/usr/bin/dscacheutil", ["-flushcache"])
+        }
+        return Array(Set(servers + scopedServers)).sorted()
     }
     func confirm(tunnel: String) throws {
         guard DNSRecoveryPolicy.validTunnel(tunnel) else { throw DNSJournalError.unavailable }
@@ -66,8 +160,9 @@ final class DNSRecoveryJournal {
         var set: [String: Any] = [:], remove: [String] = []
         for key in keys {
             let original = record.before[key], applied = record.applied?[key], now = current[key]
+            let previousMatches = try record.previousApplied.map { try equal(now, $0[key]) } ?? false
             let decision = DNSRecoveryPolicy.decide(currentMatchesOriginal: try equal(now, original),
-                currentMatchesApplied: try equal(now, applied), committed: record.applied != nil)
+                currentMatchesApplied: try equal(now, applied) || previousMatches, committed: record.applied != nil)
             switch decision {
             case .unchanged: continue
             case .conflict: throw DNSJournalError.conflict
@@ -121,7 +216,8 @@ final class DNSRecoveryJournal {
         guard DNSRecoveryPolicy.validServiceID(record.service),
               record.tunnel.map(DNSRecoveryPolicy.validTunnel) ?? true else { throw DNSJournalError.unavailable }
         let allowed = Set(keys(record))
-        guard Set(record.applied?.keys.map { $0 } ?? []).isSubset(of: allowed), record.before.count < 130 else {
+        guard Set(record.applied?.keys.map { $0 } ?? []).isSubset(of: allowed),
+              Set(record.previousApplied?.keys.map { $0 } ?? []).isSubset(of: allowed), record.before.count < 130 else {
             throw DNSJournalError.unavailable
         }
         return record

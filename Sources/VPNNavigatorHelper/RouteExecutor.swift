@@ -12,11 +12,15 @@ final class RouteExecutor {
     private var ambiguous = false
     private let shouldCancel: () -> Bool
     private let run: (String, [String]) throws -> String
+    private let usesKernelWriter: Bool
+    private var kernelWriter: KernelRouteWriter?
+    private var journalHandle: FileHandle?
 
-    init(journal: URL, shouldCancel: @escaping () -> Bool = { false }, run: @escaping (String, [String]) throws -> String = RouteExecutor.command) {
+    init(journal: URL, shouldCancel: @escaping () -> Bool = { false }, run: ((String, [String]) throws -> String)? = nil) {
         self.journal = journal
         self.shouldCancel = shouldCancel
-        self.run = run
+        self.run = run ?? RouteExecutor.command
+        usesKernelWriter = run == nil
         guard let data = try? Data(contentsOf: journal) else { return }
         let replay = RouteLedgerReplay(data: data)
         installed = replay.installed
@@ -31,28 +35,35 @@ final class RouteExecutor {
         }
     }
 
+    deinit { try? journalHandle?.close() }
+
+    private func mutate(_ route: RouteTarget, adding: Bool) throws {
+        if usesKernelWriter, case .viaGateway = route.destination {
+            if kernelWriter == nil { kernelWriter = try KernelRouteWriter() }
+            try kernelWriter!.apply(route, adding: adding)
+        } else { _ = try run("/sbin/route", route.arguments(adding: adding)) }
+    }
+
     func apply(_ route: RouteTarget) throws {
         guard !shouldCancel() else { throw CancellationError() }
         guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
         let output = try run("/usr/sbin/netstat", ["-rn", "-f", "inet"])
-        let prefix = route.prefix.description
-        if output.split(separator: "\n").contains(where: {
-            $0.split(whereSeparator: { $0.isWhitespace }).first.map(String.init) == prefix
-        }) {
-            throw RouteExecutionError.existingRoute(prefix)
+        if Self.occupiedIPv4(output).contains(route.prefix) {
+            throw RouteExecutionError.existingRoute(route.prefix.description)
         }
         try install(route)
     }
 
-    func apply(_ routes: [RouteTarget]) throws {
+    func apply(_ routes: [RouteTarget], inheriting: Set<RouteTarget> = []) throws {
         guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
         let snapshot = try run("/usr/sbin/netstat", ["-rn", "-f", "inet"])
-        let occupied = Set(snapshot.split(separator: "\n").compactMap {
-            $0.split(whereSeparator: { $0.isWhitespace }).first.map(String.init)
-        })
+        let occupied = Self.occupiedIPv4(snapshot)
         do {
             for route in routes {
-                if occupied.contains(route.prefix.description) {
+                if occupied.contains(route.prefix) {
+                    if inheriting.contains(route), route.prefix.prefix == 32,
+                       case .interface(let name) = route.destination, DNSRecoveryPolicy.validTunnel(name),
+                       try observe(route).isExactly(route) { continue }
                     throw RouteExecutionError.existingRoute(route.prefix.description)
                 }
                 try install(route)
@@ -64,12 +75,30 @@ final class RouteExecutor {
         }
     }
 
+    // netstat omits /32 on host routes and abbreviates network addresses.
+    // Normalize once, before any WAL intent, rather than discovering EEXIST
+    // after recording a mutation that must then be treated as uncertain.
+    private static func occupiedIPv4(_ snapshot: String) -> Set<IPv4CIDR> {
+        Set(snapshot.split(separator: "\n").compactMap { row in
+            let fields = row.split(whereSeparator: { $0.isWhitespace })
+            guard let first = fields.first else { return nil }
+            let destination = String(first)
+            if destination == "default" { return try? IPv4CIDR("0.0.0.0/0") }
+            if destination.contains("/") { return try? IPv4CIDR(destination) }
+            var octets = destination.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+            guard (1...4).contains(octets.count), octets.allSatisfy({ UInt8($0) != nil }) else { return nil }
+            let bits = fields.count > 2 && fields[2].contains("H") ? 32 : octets.count * 8
+            while octets.count < 4 { octets.append("0") }
+            return try? IPv4CIDR(octets.joined(separator: ".") + "/\(bits)")
+        })
+    }
+
     private func install(_ route: RouteTarget) throws {
         guard !shouldCancel() else { throw CancellationError() }
         let mutation = RouteMutation(action: .add, route: route)
         try append(RouteLedgerEvent(phase: .begun, mutation: mutation))
         ambiguous = true
-        _ = try run("/sbin/route", route.arguments(adding: true))
+        try mutate(route, adding: true)
         try append(RouteLedgerEvent(phase: .committed, mutation: mutation))
         installed.append(route)
         ambiguous = false
@@ -101,6 +130,7 @@ final class RouteExecutor {
             }
         }
         if !ambiguous && installed.isEmpty && installed6.isEmpty {
+            try? journalHandle?.close(); journalHandle = nil
             try? FileManager.default.removeItem(at: journal)
         }
     }
@@ -125,7 +155,7 @@ final class RouteExecutor {
         try append(RouteLedgerEvent(phase: .begun, mutation: mutation))
         ambiguous = true
         if deleteSystemRoute {
-            _ = try run("/sbin/route", route.arguments(adding: false))
+            try mutate(route, adding: false)
         }
         try append(RouteLedgerEvent(phase: .committed, mutation: mutation))
         installed.removeAll { $0 == route }
@@ -142,31 +172,39 @@ final class RouteExecutor {
         try autoreleasepool {
         var data = try JSONEncoder().encode(event)
         data.append(10)
-        if !FileManager.default.fileExists(atPath: journal.path) {
-            guard FileManager.default.createFile(atPath: journal.path, contents: Data(),
-                                                  attributes: [.posixPermissions: 0o600]) else {
-                throw RouteExecutionError.journalFailure
+        if journalHandle == nil {
+            let descriptor = open(journal.path, O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
+            guard descriptor >= 0 else { throw RouteExecutionError.journalFailure }
+            var info = stat()
+            guard fstat(descriptor, &info) == 0, info.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
+                  info.st_uid == getuid(), info.st_mode & 0o077 == 0, info.st_nlink == 1 else {
+                close(descriptor); throw RouteExecutionError.journalFailure
             }
+            journalHandle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
         }
-        let handle = try FileHandle(forWritingTo: journal)
-        defer { try? handle.close() }
-        try handle.seekToEnd()
+        guard let handle = journalHandle else { throw RouteExecutionError.journalFailure }
         try handle.write(contentsOf: data)
         try handle.synchronize()
         }
     }
 
-    func applyIPv6(_ routes: [IPv6RouteTarget]) throws {
+    func applyIPv6(_ routes: [IPv6RouteTarget], inheriting: Set<IPv6RouteTarget> = []) throws {
         guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
         let snapshot = try run("/usr/sbin/netstat", ["-rn", "-f", "inet6"])
         let occupied = Set(snapshot.components(separatedBy: .newlines).compactMap { line -> String? in
-            guard let first = line.split(whereSeparator: { $0.isWhitespace }).first,
-                  let prefix = try? IPv6CIDR(String(first)) else { return nil }
+            guard let first = line.split(whereSeparator: { $0.isWhitespace }).first else { return nil }
+            let destination = String(first)
+            guard let prefix = try? IPv6CIDR(destination.contains("/") ? destination : destination + "/128") else { return nil }
             return prefix.description
         })
         for route in routes {
             guard !shouldCancel() else { throw CancellationError() }
-            guard !occupied.contains(route.prefix.description) else { throw RouteExecutionError.existingRoute(route.prefix.description) }
+            if occupied.contains(route.prefix.description) {
+                if inheriting.contains(route), route.prefix.prefix == 128,
+                   case .interface(let name) = route.destination, DNSRecoveryPolicy.validTunnel(name),
+                   try observe6(route).isExactly(route) { continue }
+                throw RouteExecutionError.existingRoute(route.prefix.description)
+            }
             let mutation = IPv6RouteMutation(action: .add, route: route)
             try append(IPv6RouteLedgerEvent(phase: .begun, ipv6Mutation: mutation)); ambiguous = true
             _ = try run("/sbin/route", route.arguments(adding: true))
@@ -250,10 +288,13 @@ final class RouteExecutor {
 enum RouteExecutionError: Error, LocalizedError {
     case existingRoute(String), commandFailed(String), routeOwnershipLost(String)
     case commandLaunchFailed(Int)
+    case kernelRouteFailed(Int)
     case ambiguousJournal, journalFailure, disallowedExecutable, commandOutputTooLarge
 
     var errorDescription: String? {
         switch self {
+        case .kernelRouteFailed(let code):
+            return "Kernel routing operation failed (errno \(code)); recovery evidence has been preserved."
         case .existingRoute(let prefix):
             return "An existing system route already covers \(prefix)."
         case .commandLaunchFailed(let code):

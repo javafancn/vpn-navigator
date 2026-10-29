@@ -85,282 +85,57 @@ if [[ "${1:-}" == "--check-dns-vars" ]]; then
     exit 0
 fi
 
+# A down-hook does not compete with the helper's compare-before-restore journal.
+# OpenVPN may supply an isolated environment: all service context is read from
+# the protected journal by the native operation, never inherited shell state.
+[[ "$script_type" == "dns-down" ]] && exit 0
 
-# Lockfiles for a root DNS modifier must never live in a shared 1777
-# directory. The helper created this root-owned 0700 runtime directory
-# before launching OpenVPN. Refuse to run if it is not trustworthy.
-lockdir=/var/run/vpn-navigator
-[[ -d "$lockdir" && ! -L "$lockdir" ]] || exit 1
-lockowner=$(/usr/bin/stat -f %u "$lockdir") || exit 1
-lockmode=$(/usr/bin/stat -f %Lp "$lockdir") || exit 1
-[[ "$lockowner" == "$EUID" && "$lockmode" =~ ^[0-7]{3,4}$ ]] || exit 1
-(( (8#$lockmode & 0077) == 0 )) || exit 1
+runtime=/var/run/vpn-navigator
+[[ -d "$runtime" && ! -L "$runtime" ]] || exit 1
+owner=$(/usr/bin/stat -f %u "$runtime") || exit 1
+mode=$(/usr/bin/stat -f %Lp "$runtime") || exit 1
+[[ "$owner" == "$EUID" && "$mode" =~ ^[0-7]{3,4}$ ]] || exit 1
+(( (8#$mode & 0077) == 0 )) || exit 1
 
-i=1
-lockfile="${lockdir}/openvpn-dns-updown.lock"
-while ! /usr/bin/shlock -f $lockfile -p $$; do
-    if [ $((++i)) -gt 10 ]; then
-        echo "dns-updown failed, could not acquire lock"
-        exit 1
-    fi
-    sleep 0.2
+standard_ports() {
+    local profile="$1" i=1 address port
+    while (( i <= 16 )); do
+        address="dns_server_${profile}_address_${i}"
+        [[ -n "${!address}" ]] || return 0
+        port="dns_server_${profile}_port_${i}"
+        [[ -z "${!port}" || "${!port}" == "53" ]] || return 1
+        i=$((i+1))
+    done
+}
+profile=1
+while (( profile <= 16 )); do
+    address="dns_server_${profile}_address_1"
+    [[ -n "${!address}" ]] || { echo "DNS application failed: no compatible resolver" >&2; exit 1; }
+    transport="dns_server_${profile}_transport"
+    dnssec="dns_server_${profile}_dnssec"
+    if [[ -z "${!transport}" || "${!transport}" == "plain" ]] &&
+       [[ -z "${!dnssec}" || "${!dnssec}" == "no" ]] && standard_ports "$profile"; then break; fi
+    profile=$((profile+1))
 done
-trap "/bin/rm -f ${lockfile}" EXIT
-
-itf_dns_key="State:/Network/Service/openvpn-${dev}/DNS"
-
-function primary_dns_key {
-    # The helper pins the service before OpenVPN starts. A Wi-Fi switch must
-    # never make a down-hook restore this tunnel's DNS onto another service.
-    local uuid="${VPNNAV_PRIMARY_SERVICE_UUID:-}"
-    [[ "$uuid" =~ ^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$ ]] || return 1
-    echo "Setup:/Network/Service/${uuid}/DNS"
-}
-
-function dns_backup_key {
-    local key="$(echo "list State:/Network/Service/openvpn-.*/DnsBackup" | /usr/sbin/scutil | cut -d= -f2 | xargs)"
-    if [[ "${key}" =~ no\ key ]]; then
-        echo "State:/Network/Service/openvpn-${dev}/DnsBackup"
-    else
-        echo "${key}"
-    fi
-}
-
-function property_value {
-    local key="$1"
-    local prop="$2"
-
-    [ -n "${key}" -a -n "${prop}" ] || return
-
-    local match_prop="${prop} : (.*)"
-    local match_array_start="${prop} : <array>"
-    local match_array_elem="[0-9]* : (.*)"
-    local match_array_end="}"
-    local in_array=false
-    local values=""
-
-    echo "show ${key}" | /usr/sbin/scutil | while read line; do
-        if [ "${in_array}" = false ] && [[ "${line}" =~ "${match_array_start}" ]]; then
-            in_array=true
-        elif [ "${in_array}" = true ] && [[ "${line}" =~ ${match_array_elem} ]]; then
-            values+="${BASH_REMATCH[1]} "
-        elif [ "${in_array}" = true ] && [[ "${line}" =~ "${match_array_end}" ]]; then
-            echo "${values}"
-            break
-        elif [[ "${line}" =~ ${match_prop} ]]; then
-            echo "${BASH_REMATCH[1]}"
-            break
-        fi
-    done
-}
-
-function only_standard_server_ports {
-    local i=1
-    while :; do
-        local addr_var=dns_server_${n}_address_${i}
-        [ -n "${!addr_var}" ] || return 0
-
-        local port_var=dns_server_${n}_port_${i}
-        [ -z "${!port_var}" -o "${!port_var}" = "53" ] || return 1
-
-        i=$((i+1))
-    done
-}
-
-function find_compat_profile {
-    local n=1
-    while :; do
-        local addr_var=dns_server_${n}_address_1
-        [ -n "${!addr_var}" ] || {
-            echo "setting DNS failed, no compatible server profile"
-            exit 1
-        }
-
-        # Skip server profiles which require DNSSEC,
-        # secure transport or use a custom port
-        local dnssec_var=dns_server_${n}_dnssec
-        local transport_var=dns_server_${n}_transport
-        [ -z "${!transport_var}" -o "${!transport_var}" = "plain" ] \
-            && [ -z "${!dnssec_var}" -o "${!dnssec_var}" = "no" ] \
-            && only_standard_server_ports && break
-
-        n=$((n+1))
-    done
-    echo $n
-}
-
-function get_search_domains {
-    property_value State:/Network/Global/DNS SearchDomains
-}
-
-function get_server_addresses {
-    property_value "$(primary_dns_key)" ServerAddresses
-}
-
-function set_search_domains {
-    [ -n "$1" ] || return
-    local dns_key=$(primary_dns_key)
-    local dns_backup_key="$(dns_backup_key)"
-    local search_domains="${1}$(get_search_domains)"
-
-    local cmds=""
-    cmds+="get ${dns_key}\n"
-    cmds+="d.add SearchDomains * ${search_domains}\n"
-    cmds+="set ${dns_key}\n"
-
-    if ! [[ "${dns_backup_key}" =~ ${dev}/ ]]; then
-        # Add the domains to the backup in case the default goes down
-        local existing="$(property_value ${dns_backup_key} SearchDomains)"
-        cmds+="get ${dns_backup_key}\n"
-        cmds+="d.add SearchDomains * ${search_domains} ${existing}\n"
-        cmds+="set ${dns_backup_key}\n"
-    fi
-
-    echo -e "${cmds}" | /usr/sbin/scutil
-}
-
-function unset_search_domains {
-    [ -n "$1" ] || return
-    local dns_key=$(primary_dns_key)
-    local dns_backup_key="$(dns_backup_key)"
-    local search_domains="$(get_search_domains)"
-    search_domains=$(echo $search_domains | sed -e "s/$1//")
-
-    local cmds=""
-    cmds+="get ${dns_key}\n"
-    cmds+="d.add SearchDomains * ${search_domains}\n"
-    cmds+="set ${dns_key}\n"
-
-    if ! [[ "${dns_backup_key}" =~ ${dev}/ ]]; then
-        # Remove the domains from the backup for when the default goes down
-        search_domains="$(property_value ${dns_backup_key} SearchDomains)"
-        search_domains=$(echo $search_domains | sed -e "s/$1//")
-        cmds+="get ${dns_backup_key}\n"
-        cmds+="d.add SearchDomains * ${search_domains}\n"
-        cmds+="set ${dns_backup_key}\n"
-    fi
-
-    echo -e "${cmds}" | /usr/sbin/scutil
-}
-
-function addresses_string {
-    local n=$1
-    local i=1
-    local addresses=""
-    while :; do
-        local addr_var=dns_server_${n}_address_${i}
-        local addr="${!addr_var}"
-        [ -n "$addr" ] || break
-        addresses+="${addr} "
-        i=$((i+1))
-    done
-    echo "$addresses"
-}
-
-function search_domains_string {
-    local n=$1
-    local i=1
-    local search_domains=""
-    while :; do
-        domain_var=dns_search_domain_${i}
-        [ -n "${!domain_var}" ] || break
-        # Add as search domain, if it doesn't already exist
-        [[ "$search_domains" =~ (^| )${!domain_var}( |$) ]] \
-            || search_domains+="${!domain_var} "
-        i=$((i+1))
-    done
-    echo "$search_domains"
-}
-
-function match_domains_string {
-    local n=$1
-    local i=1
-    local match_domains=""
-    while :; do
-        domain_var=dns_server_${n}_resolve_domain_${i}
-        [ -n "${!domain_var}" ] || break
-        # Add as match domain, if it doesn't already exist
-        [[ "$match_domains" =~ (^| )${!domain_var}( |$) ]] \
-            || match_domains+="${!domain_var} "
-        i=$((i+1))
-    done
-    echo "$match_domains"
-}
-
-function set_dns {
-    primary_dns_key >/dev/null || { echo "missing pinned DNS service" >&2; exit 1; }
-    local n="$(find_compat_profile)"
-    local addresses="$(addresses_string $n)"
-    local search_domains="$(search_domains_string $n)"
-    local match_domains="$(match_domains_string $n)"
-
-    if [ -n "$match_domains" ]; then
-        local cmds=""
-        cmds+="d.init\n"
-        cmds+="d.add ServerAddresses * ${addresses}\n"
-        cmds+="d.add SupplementalMatchDomains * ${match_domains}\n"
-        cmds+="d.add SupplementalMatchDomainsNoSearch # 1\n"
-        cmds+="add ${itf_dns_key}\n"
-        echo -e "${cmds}" | /usr/sbin/scutil
-        set_search_domains "$search_domains"
-    else
-        local dns_backup_key="$(dns_backup_key)"
-        [[ "${dns_backup_key}" =~ ${dev}/ ]] || {
-            echo "setting DNS failed, already redirecting to another tunnel"
-            exit 1
-        }
-
-        local cmds=""
-        cmds+="get $(primary_dns_key)\n"
-        cmds+="set ${dns_backup_key}\n"
-        cmds+="d.init\n"
-        cmds+="d.add ServerAddresses * ${addresses}\n"
-        cmds+="d.add SearchDomains * ${search_domains}\n"
-        cmds+="d.add SearchOrder # 5000\n"
-        cmds+="set $(primary_dns_key)\n"
-        echo -e "${cmds}" | /usr/sbin/scutil
-    fi
-
-    /usr/bin/dscacheutil -flushcache
-}
-
-function unset_dns {
-    primary_dns_key >/dev/null || { echo "missing pinned DNS service" >&2; exit 1; }
-    local n="$(find_compat_profile)"
-    local match_domains="$(match_domains_string $n)"
-
-    if [ -n "$match_domains" ]; then
-        local search_domains="$(search_domains_string $n)"
-        echo "remove ${itf_dns_key}" | /usr/sbin/scutil
-        unset_search_domains "$search_domains"
-    else
-        # Do not unset if this tunnel did not set/backup DNS before
-        local dns_backup_key="$(dns_backup_key)"
-        [[ "${dns_backup_key}" =~ ${dev}/ ]] || return
-
-        local cmds=""
-        local servers="$(get_server_addresses)"
-        local addresses="$(addresses_string $n)"
-        # Only restore backup if the server addresses match
-        if [ "${servers}" = "${addresses}" ]; then
-            cmds+="get ${dns_backup_key}\n"
-            cmds+="set $(primary_dns_key)\n"
-        else
-            echo "not restoring global DNS configuration, server addresses have changed"
-        fi
-        cmds+="remove ${dns_backup_key}\n"
-        echo -e "${cmds}" | /usr/sbin/scutil
-    fi
-
-    /usr/bin/dscacheutil -flushcache
-}
-
-if [ "$script_type" = "dns-up" ]; then
-    set_dns
-    # Record precisely the DNS values this trusted hook just applied. If the
-    # helper crashed before CONNECTED, ownership is still available for recovery.
-    "${BASH_SOURCE[0]%/*}/VPNNavigatorHelper" --commit-dns "$dev" || exit 1
-else
-    unset_dns
-fi
-
+(( profile <= 16 )) || exit 1
+addresses=""
+search=""
+match=""
+for ((i=1; i<=16; i++)); do
+    key="dns_server_${profile}_address_${i}"
+    [[ -n "${!key}" ]] || break
+    addresses+="${!key} "
+done
+for ((i=1; i<=32; i++)); do
+    key="dns_search_domain_${i}"
+    [[ -n "${!key}" ]] || break
+    search+="${!key} "
+done
+for ((i=1; i<=32; i++)); do
+    key="dns_server_${profile}_resolve_domain_${i}"
+    [[ -n "${!key}" ]] || break
+    match+="${!key} "
+done
+if [[ -f "$runtime/ci-managed-trace" ]]; then echo "VPNNAV DNS adapter phase=$script_type profile=$profile"; fi
+"${BASH_SOURCE[0]%/*}/VPNNavigatorHelper" --apply-dns "$dev" "$addresses" "$search" "$match" || exit 1
+/usr/bin/dscacheutil -flushcache

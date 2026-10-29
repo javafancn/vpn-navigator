@@ -76,17 +76,18 @@ public struct CustomRuleSet: Sendable {
     }
     /// Remove VPN exceptions from the *physical allow list*. Explicit utun
     /// routes inside a broad physical route would leave PF permission too broad.
-    public func directPrefixes(country: RuleSet?, local: [IPv4CIDR], endpoint: String?) throws -> [IPv4CIDR] {
+    public func directPrefixes(country: RuleSet?, local: [IPv4CIDR], endpoint: String?, protectedVPN: [IPv4CIDR] = []) throws -> [IPv4CIDR] {
         try validateEnvironment(endpoint: endpoint, local: local)
         let host = endpoint.flatMap { try? IPv4CIDR($0 + "/32") }
         let base = (country?.routes ?? []).filter { value in !local.contains(where: { $0.overlaps(value) }) && value != host }
-        if active.isEmpty { return base }
+        if active.isEmpty && protectedVPN.isEmpty { return base }
         typealias Interval = (lo: UInt64, hi: UInt64)
         func interval(_ prefix: IPv4CIDR) -> Interval {
             (UInt64(prefix.network), UInt64(prefix.network) + (UInt64(1) << (32 - prefix.prefix)) - 1)
         }
         let additions = try active.filter { $0.action == .direct && !$0.cidr.contains(":") }.map { try Self.prefix($0.cidr) }
-        let cuts = try active.filter { $0.action == .vpn && !$0.cidr.contains(":") }.map { interval(try Self.prefix($0.cidr)) }.sorted { $0.lo < $1.lo }
+        let customCuts = try active.filter { $0.action == .vpn && !$0.cidr.contains(":") }.map { try Self.prefix($0.cidr) }
+        let cuts = (customCuts + protectedVPN).map(interval).sorted { $0.lo < $1.lo }
         var source: [Interval] = []
         for prefix in base + additions { source.append(interval(prefix)) }
         source.sort { left, right in
@@ -134,7 +135,7 @@ extension CustomRuleSet {
         guard prefix.prefix >= 16 else { throw CustomRouteError.invalidPrefix }
         return prefix
     }
-    public func directPrefixes6(country: IPv6RuleSet?, local: [IPv6CIDR], endpoint: String?) throws -> [IPv6CIDR] {
+    public func directPrefixes6(country: IPv6RuleSet?, local: [IPv6CIDR], endpoint: String?, protectedVPN: [IPv6CIDR] = []) throws -> [IPv6CIDR] {
         let active6 = active.filter { $0.cidr.contains(":") }
         for rule in active6 {
             let value = try Self.prefix6(rule.cidr)
@@ -143,7 +144,7 @@ extension CustomRuleSet {
         let host = endpoint.flatMap { try? IPv6CIDR($0 + "/128") }
         let base = (country?.routes ?? []).filter { value in !local.contains(where: { $0.overlaps(value) }) && value != host }
         let additions = try active6.filter { $0.action == .direct }.map { try Self.prefix6($0.cidr) }
-        let cuts = try active6.filter { $0.action == .vpn }.map { try Self.prefix6($0.cidr) }
+        let cuts = try active6.filter { $0.action == .vpn }.map { try Self.prefix6($0.cidr) } + protectedVPN
         var source: [IPv6CIDR] = []
         for value in Set(base + additions).sorted(by: { $0.prefix == $1.prefix ? $0 < $1 : $0.prefix < $1.prefix }) {
             if !source.contains(where: { $0.prefix <= value.prefix && $0.overlaps(value) }) { source.append(value) }

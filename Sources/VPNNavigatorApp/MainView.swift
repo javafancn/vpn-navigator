@@ -252,18 +252,18 @@ struct MainView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 10) {
-                BrandMark(size: 42)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("VPN Navigator").font(.system(size: 16, weight: .semibold))
+            VStack(spacing: 10) {
+                BrandMark(size: 52)
+                VStack(spacing: 3) {
+                    Text("VPN Navigator").font(.system(size: 15, weight: .semibold))
                         .lineLimit(1)
-                    Text(L10n.text("网络连接控制台")).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(L10n.text("网络连接控制台")).font(.system(size: 10.5)).foregroundStyle(.secondary)
                 }
             }
-            .padding(.leading, 18)
-            .padding(.trailing, 8)
-            .padding(.top, 42)
-            .padding(.bottom, 30)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 16)
+            .padding(.top, 30)
+            .padding(.bottom, 28)
 
             Text(L10n.text("工作区"))
                 .font(.system(size: 11, weight: .medium))
@@ -640,6 +640,9 @@ private struct RoutingWorkspace: View {
                     Text(L10n.text("路由模式")).font(.system(size: 20, weight: .semibold))
                     ForEach(RoutingMode.allCases) { mode in routeOption(mode) }
                     Spacer(minLength: 8)
+                    Text(L10n.text("托管模式优先使用服务器 DNS；未提供全局 DNS 时，通过 VPN 使用 Cloudflare／Quad9。DNS 地址优先走隧道，原始配置不受此策略影响。"))
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(L10n.text("规则与全局直接切换，不主动重连。原始配置需先断开；收紧断线保护会重置网络连接。"))
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

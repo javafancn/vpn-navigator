@@ -53,3 +53,5 @@ jobs:
 
       - name: Verify real management authentication and cancellation
         run: 'python3 scripts/test-management-socket.py "$(swift build --show-bin-path)/VPNNavigatorHelper"'
+      - name: Verify delayed management startup, early exits, cancellation and deadline
+        run: 'sudo -n env GITHUB_ACTIONS=true "$(swift build --show-bin-path)/VPNNavigatorHelper" --self-test-management-startup'

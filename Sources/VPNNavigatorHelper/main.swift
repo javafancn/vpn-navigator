@@ -24,6 +24,11 @@ if CommandLine.arguments.dropFirst().first == "--apply-dns" {
     }
 }
 #if DEBUG
+if CommandLine.arguments.dropFirst().first == "--self-test-management-startup" {
+    guard CommandLine.arguments.count == 2 else { exit(1) }
+    do { try ManagementStartupSelfTest.run(); exit(0) }
+    catch { fputs("Management startup self-test failed: \(error)\n", stderr); exit(1) }
+}
 if CommandLine.arguments.dropFirst().first == "--self-test-route-pressure-legacy" {
     do { try RouteCommandPressureSelfTest.run(legacy: true); exit(0) }
     catch { fputs("Legacy resource observation stopped: \(error.localizedDescription)\n", stderr); exit(2) }

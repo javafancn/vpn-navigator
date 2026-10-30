@@ -9,7 +9,7 @@ import Glibc
 /// addresses, domain names, profile paths and authentication values are excluded.
 public enum DiagnosticCode: String, Codable, Sendable {
     case starting, connected, stopped, cancelled, timeout, authentication, certificate
-    case tls, dns, transport, cipher, route, networkChanged, unexpectedExit, recovery
+    case tls, dns, transport, cipher, route, networkChanged, unexpectedExit, recovery, configuration
     public var summary: String {
         switch self {
         case .starting: return L10n.text("正在启动 OpenVPN")
@@ -27,6 +27,7 @@ public enum DiagnosticCode: String, Codable, Sendable {
         case .networkChanged: return L10n.text("网络路径发生变化，会话已停止")
         case .unexpectedExit: return L10n.text("OpenVPN 异常退出，请检查诊断及服务端状态")
         case .recovery: return L10n.text("已执行安全网络恢复检查")
+        case .configuration: return L10n.text("OpenVPN 配置参数无效或与内置引擎不兼容，请检查配置健康报告")
         }
     }
 }
@@ -46,7 +47,8 @@ public enum OpenVPNLogClassifier {
         // Malformed/terminal failures are logged by the management callback.
         if text.contains("AUTH_FAILED") && text.contains("CRV1:") { return nil }
         if text.contains("AUTH_FAILED") || text.contains("AUTHENTICATION FAILED") { return .authentication }
-        if text.contains("VERIFY ERROR") || text.contains("CANNOT LOAD PRIVATE KEY") || text.contains("CERTIFICATE HAS EXPIRED") { return .certificate }
+        if text.contains("VERIFY ERROR") || text.contains("CANNOT LOAD PRIVATE KEY") || text.contains("CERTIFICATE HAS EXPIRED") || text.contains("CANNOT LOAD CERTIFICATE") || text.contains("CANNOT LOAD CA CERTIFICATE") || text.contains("CA MD TOO WEAK") || text.contains("EE KEY TOO SMALL") || text.contains("CA KEY TOO SMALL") { return .certificate }
+        if text.contains("OPTIONS ERROR:") || text.contains("UNRECOGNIZED OPTION") || text.contains("ERROR OPENING CONFIGURATION FILE") { return .configuration }
         if text.contains("TLS ERROR") || text.contains("TLS KEY NEGOTIATION FAILED") { return .tls }
         if text.contains("RESOLVE: CANNOT RESOLVE") || text.contains("DNS-UPDOWN FAILED") { return .dns }
         if text.contains("CIPHER NEGOTIATION FAILED") || text.contains("FAILED TO NEGOTIATE CIPHER") { return .cipher }

@@ -10,7 +10,7 @@ Supports managed IPv4/IPv6 dual-stack routing, IPv6 server endpoints, dual-stack
 
 Closing the main window keeps the VPN and background services running and hides the Dock icon. Choose **Open Main Window** in the menu bar to restore the window and Dock icon; choose **Quit** to exit completely. The menu bar displays the navigation logo and VPN tunnel download/upload rates, sampled approximately once per second while connected, with automatic B/s, KB/s, and MB/s units. Missing or stale samples display **—**. These rates measure the VPN tunnel, not all traffic on your Mac.
 
-Current development version: **0.8.9**. Three build channels are available: development preview, local test, and Developer ID distribution. Local-test builds include the engine and use administrator approval to pin code identity without a paid developer certificate. Real-network and user-Mac installation acceptance are still required. Production distribution requires signing, notarization, and release acceptance.
+Current development version: **0.8.10**. Three build channels are available: development preview, local test, and Developer ID distribution. Local-test builds include the engine and use administrator approval to pin code identity without a paid developer certificate. Real-network and user-Mac installation acceptance are still required. Production distribution requires signing, notarization, and release acceptance.
 
 ## Implemented features
 
@@ -47,6 +47,8 @@ Profile filtering, sorting, and reusable groups are described in [Profile librar
 Private local index backups and confirmed recovery after corruption are described in [Profile index recovery](docs/PROFILE_INDEX_RECOVERY.md).
 
 For custom rules, route explanations, and one-click troubleshooting, see [Routing tools](docs/ROUTING_TOOLS.md).
+
+OpenVPN startup uses the configured connection deadline, including cold launches. Early engine exits report a bounded, redacted failure category and exit status instead of a generic management-socket timeout. See [Startup diagnostics](docs/OPENVPN_STARTUP.md).
 
 ## Smart connection and live traffic
 

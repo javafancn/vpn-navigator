@@ -36,8 +36,8 @@ enum GlassSurface {
     static let mist = Color.white
     static let sidebar = Color.white
     static let panel = Color.white
-    static let windowOpacity = 0.045
-    static let cardOpacity = 0.16
+    static let windowOpacity = 0.025
+    static let cardOpacity = 0.12
 }
 
 struct GlassAtmosphere: View {
@@ -115,7 +115,7 @@ struct ReferenceWorkspaceSurface: ViewModifier {
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         content
-            .background(shape.fill(Color.white.opacity(0.035)))
+            .background(shape.fill(Color.white.opacity(0.02)))
             .overlay(shape.strokeBorder(GlassAccessibility.increasedContrast(contrast) ? Color.primary.opacity(0.55) : Color.white.opacity(0.30), lineWidth: GlassAccessibility.increasedContrast(contrast) ? 1.5 : 0.75)
                 .allowsHitTesting(false))
     }

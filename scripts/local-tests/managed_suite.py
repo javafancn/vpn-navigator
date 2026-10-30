@@ -116,6 +116,28 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
     run(['sudo', '-n', '/usr/bin/install', '-m', '600', marker_source, trace_marker])
     ccd.write_text(original_ccd + 'iroute 198.18.254.99 255.255.255.255\n')
     try:
+        # A lexically valid/allowed profile with an invalid TLS version
+        # parameter exits before management initialization. Use the real app,
+        # bundled engine and normal validation in all three routing modes.
+        bad_profile = folder / 'startup-options-error.ovpn'
+        bad_profile.write_text(profile + '\ntls-version-min 9.9\n'); bad_profile.chmod(0o600)
+        for mode in ['Original', 'Full VPN', 'China Direct']:
+            case = folder / 'startup-failure-case.json'
+            report_path = folder / 'startup-failure-report.json'
+            case.write_text(json.dumps({'profilePath': str(bad_profile), 'rulesPath': str(rules),
+                'reportPath': str(report_path), 'mode': mode, 'customRules': exceptions,
+                'switchRoundTrip': False, 'expectStartupFailure': True})); case.chmod(0o600)
+            run(['sudo', '-n', 'cp', app_approval, MANIFEST])
+            try:
+                result = run([APP, '--vpnnav-local-managed-connect', case], timeout=90)
+                print(result.stdout, end='', flush=True)
+                report = json.loads(report_path.read_text())
+                assert report['state'] == 'failed' and report['failureCode'] == 'configuration'
+                for name in ['active.ovpn', 'openvpn-child.json', 'management.sock', 'routes.journal']:
+                    assert run(['sudo', '-n', '/bin/test', '!', '-e', '/var/run/vpn-navigator/' + name], ok=False).returncode == 0
+            finally:
+                run(['sudo', '-n', 'cp', probe_approval, MANIFEST])
+                run([probe, '--disconnect'], timeout=240)
         for protocol, dns_kind in [('tcp', 'legacy'), ('udp', 'legacy'), ('udp', 'none'), ('udp', 'modern')]:
             provided_dns = dns_kind != 'none'
             server = '\n'.join(line for line in original.splitlines() if not line.startswith('server-ipv6 ')) + '\n'

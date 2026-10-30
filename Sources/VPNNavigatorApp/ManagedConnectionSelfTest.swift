@@ -14,6 +14,7 @@ enum ManagedConnectionSelfTest {
         let mode: RoutingMode
         let customRules: [CustomRouteRule]
         let switchRoundTrip: Bool
+        let expectStartupFailure: Bool?
     }
     static func run() async throws {
         guard BuildChannel.isLocal, ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
@@ -54,6 +55,19 @@ enum ManagedConnectionSelfTest {
         guard model.selected?.mode == request.mode, model.message == nil else { throw Failure.check("persist routing mode: " + (model.message ?? "mode mismatch")) }
         let started = ProcessInfo.processInfo.systemUptime
         await model.connectSelected()
+        if request.expectStartupFailure == true {
+            guard let message = model.message, message.contains(DiagnosticCode.configuration.summary),
+                  !message.contains("management socket is unavailable"),
+                  let report = await HelperClient.shared.sessionReport(), report.state == .failed,
+                  report.failureCode == .configuration, report.activeProfileID == nil,
+                  !report.requiresNetworkRecovery, !report.firewallActive,
+                  ProcessInfo.processInfo.systemUptime - started < 15 else {
+                throw Failure.check("early startup failure classification and cleanup")
+            }
+            try ProfileFileIO.write(JSONEncoder().encode(report), to: URL(fileURLWithPath: request.reportPath))
+            print("PASS: real engine early startup failure is classified and cleaned in " + request.mode.rawValue)
+            return
+        }
         let deadline = ProcessInfo.processInfo.systemUptime + 180
         while !model.connected && ProcessInfo.processInfo.systemUptime < deadline {
             await model.refreshConnectionStatus()

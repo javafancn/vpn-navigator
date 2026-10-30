@@ -54,12 +54,13 @@ public enum TroubleshootingChecklist {
         let sorted = events.sorted { $0.date < $1.date }
         let boundary = sorted.lastIndex { [.starting, .connected, .cancelled].contains($0.code) }.map { $0 + 1 } ?? 0
         let failures: [DiagnosticCode] = [.timeout, .authentication, .certificate, .tls, .dns, .transport,
-            .cipher, .route, .networkChanged, .unexpectedExit]
+            .cipher, .route, .networkChanged, .unexpectedExit, .configuration]
         guard let event = sorted.dropFirst(boundary).last(where: { failures.contains($0.code) }), Date().timeIntervalSince(event.date) >= 0,
               Date().timeIntervalSince(event.date) < 86_400 else { return nil }
         let suggestion: String
         switch event.code {
         case .authentication: suggestion = L10n.text("核对账户与认证方式，必要时更新保存的凭据。")
+        case .configuration: suggestion = L10n.text("检查配置参数及内嵌证书，必要时通过配置更新向导替换文件。")
         case .certificate, .tls, .cipher: suggestion = L10n.text("检查证书有效期、加密兼容性及服务端配置。")
         case .route, .networkChanged: suggestion = L10n.text("检查其它 VPN 与网络切换情况，断开后核验网络恢复结果。")
         case .dns: suggestion = L10n.text("检查服务器域名和系统解析器，避免直接覆盖企业 DNS。")

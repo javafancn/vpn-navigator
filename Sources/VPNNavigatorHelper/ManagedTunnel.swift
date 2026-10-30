@@ -233,13 +233,21 @@ final class ManagedTunnel {
         environment["OPENSSL_CONF"] = "/dev/null"
         task.environment = environment
         let output = Pipe()
+        let startupOutput = OpenVPNStartupOutput()
         outputPipe = output
         outputBuffer.removeAll(keepingCapacity: false)
         task.standardOutput = output
         task.standardError = output
         output.fileHandleForReading.readabilityHandler = { [weak self, weak task] handle in
             let bytes = handle.availableData
-            guard !bytes.isEmpty else { handle.readabilityHandler = nil; return }
+            guard !bytes.isEmpty else {
+                startupOutput.finish()
+                handle.readabilityHandler = nil
+                return
+            }
+            // Startup waits on the session queue. Classify here, before
+            // dispatching, so an early exit cannot hide its actual cause.
+            startupOutput.receive(bytes)
             self?.queue.async { [weak self, weak task] in
                 guard let self, let task, self.process === task else { return }
                 self.consumeLog(bytes)
@@ -345,15 +353,22 @@ final class ManagedTunnel {
             // The private listener exists before child launch. A lost controller
             // connection makes OpenVPN terminate itself, without signaling a
             // numeric PID after a helper crash. Accept is bounded/cancellable.
-            var success = false
-            for _ in 0..<50 {
-                try ensureAttempt()
-                if (try? socket.accept(from: listener)) == true { success = true; break }
-                Thread.sleep(forTimeInterval: 0.1)
-            }
-            guard success else { throw TunnelError.managementUnavailable }
+            try ManagementStartup.wait(socket: socket, listener: listener,
+                process: task, output: startupOutput, check: { try self.ensureAttempt() })
         } catch {
+            // stop() deliberately clears old failures for an explicit
+            // disconnect. Preserve this attempt's startup cause AFTER cleanup,
+            // while retaining any more serious unresolved recovery state.
             stop()
+            if let startup = error as? OpenVPNStartupError {
+                failureCode = startup.code
+                eventStore.append(startup.code)
+                if state == .disconnected {
+                    lastError = startup.localizedDescription
+                    state = .failed
+                    message = startup.localizedDescription
+                }
+            }
             throw error
         }
     }

@@ -253,7 +253,7 @@ struct MainView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(spacing: 10) {
-                BrandMark(size: 52)
+                BrandMark(size: 64)
                 VStack(spacing: 3) {
                     Text("VPN Navigator").font(.system(size: 15, weight: .semibold))
                         .lineLimit(1)
@@ -337,7 +337,7 @@ struct MainView: View {
 
         }
         .background {
-            GlassSurface.sidebar.opacity(0.04)
+            GlassSurface.sidebar.opacity(0.025)
         }
         .animation(GlassMotion.selection(reduceMotion), value: tab)
         .overlay(alignment: .trailing) {

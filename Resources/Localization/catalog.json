@@ -240,6 +240,11 @@
     "zh": "OpenVPN 配置超过大小限制。"
   },
   {
+    "key": "OpenVPN exited before its control channel was ready (status {0}). {1}",
+    "en": "OpenVPN exited before its control channel was ready (status {0}). {1}",
+    "zh": "OpenVPN 在控制通道就绪前退出（状态码 {0}）。{1}"
+  },
+  {
     "key": "OpenVPN 异常退出，请检查诊断及服务端状态",
     "zh": "OpenVPN 异常退出，请检查诊断及服务端状态",
     "en": "OpenVPN exited unexpectedly. Check diagnostics and server state"
@@ -248,6 +253,11 @@
     "key": "OpenVPN 引擎",
     "zh": "OpenVPN 引擎",
     "en": "OpenVPN engine"
+  },
+  {
+    "key": "OpenVPN 配置参数无效或与内置引擎不兼容，请检查配置健康报告",
+    "zh": "OpenVPN 配置参数无效或与内置引擎不兼容，请检查配置健康报告",
+    "en": "OpenVPN configuration is invalid or incompatible with the bundled engine. Check the profile health report."
   },
   {
     "key": "Original 使用 OpenVPN 内部重连；受管模式仅在已启用并核验断线保护时，才允许额外重试。",
@@ -3483,6 +3493,11 @@
     "key": "检查配置",
     "zh": "检查配置",
     "en": "Check profile"
+  },
+  {
+    "key": "检查配置参数及内嵌证书，必要时通过配置更新向导替换文件。",
+    "zh": "检查配置参数及内嵌证书，必要时通过配置更新向导替换文件。",
+    "en": "Check configuration options and embedded certificates. Replace the profile with the update wizard if needed."
   },
   {
     "key": "检查配置编辑器、外部材料和重叠规则，保留原始文件后修正。",

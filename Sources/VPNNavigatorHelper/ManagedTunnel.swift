@@ -356,12 +356,19 @@ final class ManagedTunnel {
             try ManagementStartup.wait(socket: socket, listener: listener,
                 process: task, output: startupOutput, check: { try self.ensureAttempt() })
         } catch {
+            // stop() deliberately clears old failures for an explicit
+            // disconnect. Preserve this attempt's startup cause AFTER cleanup,
+            // while retaining any more serious unresolved recovery state.
+            stop()
             if let startup = error as? OpenVPNStartupError {
                 failureCode = startup.code
-                lastError = startup.localizedDescription
                 eventStore.append(startup.code)
+                if state == .disconnected {
+                    lastError = startup.localizedDescription
+                    state = .failed
+                    message = startup.localizedDescription
+                }
             }
-            stop()
             throw error
         }
     }

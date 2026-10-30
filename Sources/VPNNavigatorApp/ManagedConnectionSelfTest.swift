@@ -56,9 +56,13 @@ enum ManagedConnectionSelfTest {
         let started = ProcessInfo.processInfo.systemUptime
         await model.connectSelected()
         if request.expectStartupFailure == true {
+            let observed = await HelperClient.shared.sessionReport()
+            print("Startup failure observation: state=" + (observed?.state.rawValue ?? "unavailable") +
+                " category=" + (observed?.failureCode?.rawValue ?? "none") +
+                " recovery=" + String(observed?.requiresNetworkRecovery ?? true))
             guard let message = model.message, message.hasPrefix("ERROR:"), message.contains("OpenVPN"),
                   !message.contains("management socket is unavailable"),
-                  let report = await HelperClient.shared.sessionReport(), report.state == .failed,
+                  let report = observed, report.state == .failed,
                   report.failureCode == .configuration, report.activeProfileID == nil,
                   !report.requiresNetworkRecovery, !report.firewallActive,
                   ProcessInfo.processInfo.systemUptime - started < 15 else {

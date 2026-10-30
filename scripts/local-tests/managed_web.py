@@ -4,11 +4,13 @@ The isolated server pushes ordinary client-nat and iroute for a non-local source
 Only server-side packets are redirected to disposable DNS/HTTP responders. The
 client must select its real VPN routes; curl uses the system resolver unchanged.
 """
+import base64
 import contextlib
 import http.server
 import ipaddress
 import json
 import os
+import plistlib
 import re
 import socket
 import socketserver
@@ -138,7 +140,16 @@ def verify_web(run, probe, counts, client_tunnel, fallback=False, split=False):
     receipt = run(['/usr/sbin/scutil', '--dns']).stdout.split('resolver #2', 1)[0]
     active = re.findall(r'nameserver\[[0-9]+\]\s*:\s*([0-9.]+)', receipt)
     if split:
-        assert active == ['127.0.0.1'] and re.search(r'port\s*:\s*[1-9][0-9]+', receipt), 'Loopback split DNS was not actually applied: ' + receipt
+        # Some macOS scutil versions display the uint16 port as signed.
+        # Compare the actual 16 bits with the native dictionary recorded before
+        # publication, rather than assuming that display text is positive.
+        journal = json.loads(run(['sudo', '-n', 'cat', '/var/run/vpn-navigator/dns.journal']).stdout)
+        key = 'Setup:/Network/Service/' + journal['service'] + '/DNS'
+        published = plistlib.loads(base64.b64decode(journal['applied'][key], validate=True))
+        shown = re.search(r'port\s*:\s*(-?[0-9]+)', receipt)
+        assert active == ['127.0.0.1'] and published['ServerAddresses'] == active and shown and \
+            1023 < published['ServerPort'] <= 65535 and (int(shown[1]) & 65535) == published['ServerPort'], \
+            'Loopback split DNS was not actually applied: ' + receipt
         for server in ['223.5.5.5', '223.6.6.6']:
             direct = run(['/sbin/route', '-n', 'get', server]).stdout
             assert re.search(r'^\s*interface:\s*en[0-9]+\s*$', direct, re.M), 'Domestic DNS did not use physical route: ' + direct

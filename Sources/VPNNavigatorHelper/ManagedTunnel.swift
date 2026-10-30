@@ -38,6 +38,7 @@ final class ManagedTunnel {
     private var routing: RouteExecutor?
     private let dnsRecovery = DNSRecoveryJournal()
     private var splitDNS: SplitDNSProxy?
+    private var chinaDNSDomains: ChinaDNSDomains?
     private var domesticDNSServers: [String] = []
     private var managedDNSServers: [String] = []
     private let packetGuard = PacketFilterGuard()
@@ -575,16 +576,19 @@ final class ManagedTunnel {
     }
     private func configureSplitDNS(mode: RoutingMode, tunnel: String) throws {
         if mode == .chinaDirect {
-            let proxy = SplitDNSProxy(domains: try ChinaDNSRules.load(),
+            if let splitDNS { try splitDNS.verify(); return }
+            if chinaDNSDomains == nil { chinaDNSDomains = try ChinaDNSRules.load() }
+            guard let domains = chinaDNSDomains else { throw DNSJournalError.unavailable }
+            let proxy = SplitDNSProxy(domains: domains,
                 domestic: domesticDNSServers.map { .init(address: $0) },
                 vpn: try dnsRecovery.managedGlobalServers().map { .init(address: $0) })
             try proxy.start()
             do { try dnsRecovery.publishManagedResolver(tunnel: tunnel, port: proxy.port) }
             catch { proxy.stop(); throw error }
             splitDNS?.stop(); splitDNS = proxy
-        } else {
+        } else if let splitDNS {
             try dnsRecovery.publishManagedResolver(tunnel: tunnel, port: nil)
-            splitDNS?.stop(); splitDNS = nil
+            splitDNS.stop(); self.splitDNS = nil
         }
     }
     private func physicalPaths(endpoint: String) throws -> (PhysicalIPPath?, PhysicalIPPath?) {

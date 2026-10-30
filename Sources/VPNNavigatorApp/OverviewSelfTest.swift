@@ -81,6 +81,7 @@ enum OverviewSelfTest {
         while !ended {
             model.applyVerifiedSessionReport(stale)
             await model.refreshConnectionStatus()
+            if ended { break }
             guard model.disconnectRequestInFlight, model.stopping, !model.overviewRecoveryNeeded, model.message == nil else { throw Failure.check }
             try await Task.sleep(nanoseconds: 200_000_000)
         }

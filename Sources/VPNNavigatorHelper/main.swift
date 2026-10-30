@@ -55,6 +55,9 @@ if CommandLine.arguments.dropFirst().first == "--self-test-pf-release" {
     guard getuid() == 0 else { exit(1) }
     do { try PacketFilterGuard().release(); exit(0) } catch { exit(1) }
 }
+if CommandLine.arguments.dropFirst().first == "--self-test-split-dns" {
+    do { try SplitDNSSelfTest.run(); exit(0) } catch { fputs("Split DNS fixture failed: \(error)\n", stderr); exit(1) }
+}
 if CommandLine.arguments.dropFirst().first == "--self-test-dns-journal" {
     do { try DNSJournalSelfTest.run(); print("DNS journal ownership and conflict checks passed."); exit(0) }
     catch { fputs("DNS journal self-test failed.\n", stderr); exit(1) }

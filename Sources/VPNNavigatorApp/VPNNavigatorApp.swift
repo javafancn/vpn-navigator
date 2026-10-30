@@ -156,6 +156,7 @@ final class AppModel: ObservableObject {
     var routingModeSwitching: Bool { routingModeTarget != nil }
     private var routingRevision: UUID?
     private var statusEpoch: UInt64 = 0
+    @Published private(set) var disconnectRequestInFlight = false
     // Negotiation and routing can fail after the initial request succeeds.
     var pendingManualFailureAttempt: UUID?
     private let routingModeService: RoutingModeService
@@ -958,6 +959,7 @@ final class AppModel: ObservableObject {
         } catch { message = L10n.format("Helper registration failed: {0}", [String(describing: error.localizedDescription)]) }
     }
     func applyVerifiedSessionReport(_ report: SessionReport, at date: Date = Date(), uptime: Double = ProcessInfo.processInfo.systemUptime) {
+        guard !disconnectRequestInFlight else { return }
         menuTraffic.observe(report, at: date, uptime: uptime)
         if !(busy && connectionAttempt != nil && sessionState == .connecting && report.state == .disconnected) {
             connectionHistory.observe(.report(.init(report)), at: date, uptime: uptime)
@@ -990,7 +992,7 @@ final class AppModel: ObservableObject {
         smartConnection.observe(report)
     }
     func refreshConnectionStatus() async {
-        guard !helperPollingPaused else { return }
+        guard !helperPollingPaused, !disconnectRequestInFlight else { return }
         let capturedEpoch = statusEpoch
         guard !routingModeSwitching else { return }
         let installationStatus = helper.installationStatus
@@ -998,10 +1000,10 @@ final class AppModel: ObservableObject {
         helperStatus = displayHelperStatus(installationStatus)
         if installationStatus == .enabled {
             if let report = await helper.sessionReport(timeout: connecting ? TimeInterval(sessionPreferences.connectionTimeout + 15) : 12) {
-                guard capturedEpoch == statusEpoch, !routingModeSwitching else { return }
+                guard capturedEpoch == statusEpoch, !routingModeSwitching, !disconnectRequestInFlight else { return }
                 applyVerifiedSessionReport(report)
             } else {
-                guard capturedEpoch == statusEpoch, !routingModeSwitching else { return }
+                guard capturedEpoch == statusEpoch, !routingModeSwitching, !disconnectRequestInFlight else { return }
                 activeRoutingMode = nil; routingRevision = nil; activeCustomRuleDigest = nil; activeCustomRuleCount = nil; activeIPStack = nil
                 helperStateVerified = false
                 menuTraffic.reset()
@@ -1206,14 +1208,17 @@ final class AppModel: ObservableObject {
         if pauseAutomatic { smartConnection.pauseForManualDisconnect() }
         else { smartConnection.cancelPending(); smartConnection.expectDisconnect() }
         connectionHistory.observe(.userStop)
+        guard !stopping, !disconnectRequestInFlight else { return }
         statusEpoch &+= 1
-        guard !stopping else { return }
+        disconnectRequestInFlight = true
         let cancelledAttempt = connectionAttempt ?? helperAttemptID
         connectionAttempt = nil
         if connecting { localEvents.append(.cancelled) }
         connectionStatus = L10n.text("stopping: 正在停止连接并恢复网络")
         busy = true
         let response = await helper.disconnect(attemptID: cancelledAttempt)
+        statusEpoch &+= 1
+        disconnectRequestInFlight = false
         busy = maintenanceInProgress
         if response.hasPrefix("ERROR:") { message = response }
         localEvents.append(.stopped)

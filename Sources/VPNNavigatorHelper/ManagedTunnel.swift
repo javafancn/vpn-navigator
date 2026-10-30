@@ -37,6 +37,9 @@ final class ManagedTunnel {
     private(set) var challenge: AuthenticationChallenge?
     private var routing: RouteExecutor?
     private let dnsRecovery = DNSRecoveryJournal()
+    private var splitDNS: SplitDNSProxy?
+    private var domesticDNSServers: [String] = []
+    private var managedDNSServers: [String] = []
     private let packetGuard = PacketFilterGuard()
     private var guardPolicy: LeakGuardPolicy?
     private var releaseProtectionOnExit = false
@@ -543,9 +546,12 @@ final class ManagedTunnel {
             }
             let paths = try physicalPaths(endpoint: remote), local = try localNetworks(paths: paths)
             let dnsServers = try dnsRecovery.prepareManaged(tunnel: utun, has4: has4, has6: has6)
+            managedDNSServers = dnsServers
+            domesticDNSServers = SplitDNSPolicy.domesticServers(path4: paths.0 != nil, path6: paths.1 != nil, protectedVPN: dnsServers + [remote])
             let plan = try DualStackRoutePlan.build(endpoint: remote, tunnel: utun, has4: has4, has6: has6,
                 path4: paths.0, path6: paths.1, local4: local.0, local6: local.1,
-                mode: activeMode, country4: rules, country6: rules6, custom: custom, dnsServers: dnsServers)
+                mode: activeMode, country4: rules, country6: rules6, custom: custom, dnsServers: dnsServers,
+                directDNSServers: activeMode == .chinaDirect ? domesticDNSServers : [])
             let executor = RouteExecutor(journal: workdir.appendingPathComponent("routes.journal"), shouldCancel: { [weak self] in self?.cancellationRequested == true || self?.attemptExpired == true })
             routing = executor
             try executor.apply(plan.ipv4, inheriting: Set(plan.dns4)); try executor.applyIPv6(plan.ipv6, inheriting: Set(plan.dns6))
@@ -554,6 +560,7 @@ final class ManagedTunnel {
                 try packetGuard.replaceRules(policy.rules(tunnel: utun)); guardPolicy = policy
                 try packetGuard.verify()
             }
+            try configureSplitDNS(mode: activeMode, tunnel: utun)
             activePlan = plan; protectedLocalNetworks = local.0
             protectedPhysicalInterface = (IPAddress.isIPv6(remote) ? paths.1 : paths.0)?.interface
             protectedVPNInterface = utun
@@ -564,6 +571,20 @@ final class ManagedTunnel {
             let failure = "Routing failed; VPN stopped for safety: \(error.localizedDescription)"
             stop(); lastError = failure; state = .failed; message = failure
             failureCode = .route; eventStore.append(.route)
+        }
+    }
+    private func configureSplitDNS(mode: RoutingMode, tunnel: String) throws {
+        if mode == .chinaDirect {
+            let proxy = SplitDNSProxy(domains: try ChinaDNSRules.load(),
+                domestic: domesticDNSServers.map { .init(address: $0) },
+                vpn: try dnsRecovery.managedGlobalServers().map { .init(address: $0) })
+            try proxy.start()
+            do { try dnsRecovery.publishManagedResolver(tunnel: tunnel, port: proxy.port) }
+            catch { proxy.stop(); throw error }
+            splitDNS?.stop(); splitDNS = proxy
+        } else {
+            try dnsRecovery.publishManagedResolver(tunnel: tunnel, port: nil)
+            splitDNS?.stop(); splitDNS = nil
         }
     }
     private func physicalPaths(endpoint: String) throws -> (PhysicalIPPath?, PhysicalIPPath?) {
@@ -643,7 +664,7 @@ final class ManagedTunnel {
             try ensureAttempt()
             let ip = rule.cidr.contains(":") ? try CustomRuleSet.prefix6(rule.cidr).address : IPv4CIDR.parseAddressString(try CustomRuleSet.prefix(rule.cidr).network)
             let protectedDNS = plan.dns4.contains { $0.prefix.contains(IPv4CIDR.parseAddress(ip) ?? 0) } || plan.dns6.contains { $0.prefix.contains(ip) }
-            try verify(ip, vpn: protectedDNS || rule.action == .vpn)
+            try verify(ip, vpn: protectedDNS || (rule.action == .vpn && !(activeMode == .chinaDirect && domesticDNSServers.contains(ip))))
         }
     }
     func explainRoute(_ request: RouteLookupRequest) throws -> RouteLookupResult {
@@ -654,6 +675,7 @@ final class ManagedTunnel {
             local: plan?.local4 ?? [], endpoint: plan?.endpoint, effectiveDirect: plan?.direct4.map(\.prefix),
             country6: rules6, local6: plan?.local6 ?? [], effectiveDirect6: plan?.direct6.map(\.prefix),
             available: plan.map { v6 ? !$0.defaults6.isEmpty : !$0.defaults4.isEmpty },
+            directDNS: activeMode == .chinaDirect ? domesticDNSServers : [],
             protectedDNS: (plan?.dns4.map { $0.prefix.description.split(separator: "/")[0].description } ?? []) + (plan?.dns6.map { $0.prefix.address } ?? []))
         let args = ["-n", "get"] + (v6 ? ["-inet6"] : []) + [request.ip]
         let raw = decision.path == .blocked ? (try? RouteExecutor.command("/sbin/route", args)) ?? "" : try RouteExecutor.command("/sbin/route", args)
@@ -671,6 +693,7 @@ final class ManagedTunnel {
     private func verifyManagedEnvironment() throws {
         guard let plan = activePlan else { throw TunnelError.noActiveRoutePlan }
         try dnsRecovery.confirm(tunnel: plan.tunnel)
+        try splitDNS?.verify()
         if packetGuard.active { try packetGuard.verify() }
         else { if plan.defaults6.isEmpty { try checkIPv6Bypass() }; if plan.defaults4.isEmpty { throw DualStackError.unsafeFallback } }
         for (v6, path) in [(false, plan.path4), (true, plan.path6)] {
@@ -701,10 +724,11 @@ final class ManagedTunnel {
     }
 
     func verifyPhysicalNetwork() {
-        guard state == .connected, activeMode != .original else { return }
+        guard state == .connected, activeMode != .original, !cancellationRequested else { return }
         do {
             try verifyManagedEnvironment()
         } catch {
+            if cancellationRequested { stop(releaseProtection: true); return }
             eventStore.append(.networkChanged)
             failureCode = .networkChanged
             if scheduleGuardedReconnect() { return }
@@ -804,7 +828,7 @@ final class ManagedTunnel {
         let plan = try DualStackRoutePlan.build(endpoint: old.endpoint, tunnel: old.tunnel,
             has4: !old.defaults4.isEmpty, has6: !old.defaults6.isEmpty, path4: old.path4, path6: old.path6,
             local4: old.local4, local6: old.local6, mode: mode, country4: next4, country6: next6, custom: custom,
-            dnsServers: old.dns4.map { IPv4CIDR.parseAddressString($0.prefix.network) } + old.dns6.map { $0.prefix.address })
+            dnsServers: managedDNSServers, directDNSServers: mode == .chinaDirect ? domesticDNSServers : [])
         let nextProtection = try policy(for: plan)
         do {
             try ensureAttempt(); try verifyManagedEnvironment()
@@ -812,6 +836,7 @@ final class ManagedTunnel {
                 if let nextProtection { try self.packetGuard.replaceRules(nextProtection.rules(tunnel: plan.tunnel), resetExistingStates: tightens); self.guardPolicy = nextProtection }
             }, verify: { try self.ensureAttempt(); try self.verifyManagedRoutes(plan: plan, allCustom: true) })
             try ensureAttempt(); guard process?.isRunning == true else { throw RoutingModeSwitchError.stale }
+            try configureSplitDNS(mode: mode, tunnel: plan.tunnel)
             activePlan = plan; rules = next4; rules6 = next6; activeMode = mode; routingRevision = UUID()
             if let context = reconnectContext { reconnectContext = ReconnectContext(profile: context.profile, profileID: context.profileID,
                 attemptID: context.attemptID, mode: mode, username: context.username, password: context.password) }
@@ -910,6 +935,8 @@ final class ManagedTunnel {
         eventStore.append(.stopped)
         do { try dnsRecovery.restore() }
         catch { lastError = error.localizedDescription; eventStore.append(.dns) }
+        splitDNS?.stop(); splitDNS = nil
+        domesticDNSServers = []; managedDNSServers = []
         routing?.rollback()
         routing = nil
         activePlan = nil; ipStack = nil

@@ -169,7 +169,8 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
                     report_path = folder / 'managed-report.json'
                     case.write_text(json.dumps({'profilePath': str(profile_path), 'rulesPath': str(rules),
                         'reportPath': str(report_path), 'mode': mode, 'customRules': exceptions,
-                        'switchRoundTrip': mode == 'Full VPN'})); case.chmod(0o600)
+                        'switchRoundTrip': mode == 'Full VPN',
+                        'disconnectRoundTrip': protocol == 'udp' and dns_kind == 'legacy' and mode == 'China Direct'})); case.chmod(0o600)
                     run(['sudo', '-n', 'cp', app_approval, MANIFEST])
                     try:
                         result = run([APP, '--vpnnav-local-managed-connect', case], timeout=300)
@@ -192,7 +193,7 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
                         run(['sudo', '-n', 'cp', probe_approval, MANIFEST])
                         if mode != 'Original':
                             with web_fixture(run, folder, server_tunnel, upstream) as counts:
-                                verify_web(run, probe, counts, client_tunnel, fallback=not provided_dns)
+                                verify_web(run, probe, counts, client_tunnel, fallback=not provided_dns, split=mode == 'China Direct')
                         data_echo(run, probe, server_tunnel, client_tunnel, aliases)
                         run(['sudo', '-n', 'cp', app_approval, MANIFEST])
                         exercise_quit(run, cleanup_timeout=240)

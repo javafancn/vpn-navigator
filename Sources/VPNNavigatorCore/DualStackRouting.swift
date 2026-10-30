@@ -104,7 +104,7 @@ public struct DualStackRoutePlan: Sendable {
     public var stack: TunnelIPStack { defaults4.isEmpty ? .ipv6 : defaults6.isEmpty ? .ipv4 : .dual }
     public static func build(endpoint: String, tunnel: String, has4: Bool, has6: Bool,
         path4: PhysicalIPPath?, path6: PhysicalIPPath?, local4: [IPv4CIDR], local6: [IPv6CIDR],
-        mode: RoutingMode, country4: RuleSet?, country6: IPv6RuleSet?, custom: CustomRuleSet, dnsServers: [String] = []) throws -> Self {
+        mode: RoutingMode, country4: RuleSet?, country6: IPv6RuleSet?, custom: CustomRuleSet, dnsServers: [String] = [], directDNSServers: [String] = []) throws -> Self {
         guard DNSRecoveryPolicy.validTunnel(tunnel), let endpoint = IPAddress.canonical(endpoint), has4 || has6 else { throw DualStackError.missingTunnel }
         if let ip4 = IPv4CIDR.parseAddress(endpoint), (ip4 >> 24 == 0 || ip4 >> 24 == 127 || ip4 >> 24 >= 224) { throw RoutePlanningError.blockedServerAddress }
         if let ip6 = IPv6CIDR.parseAddress(endpoint), ip6 == [UInt8](repeating: 0, count: 16) || endpoint == "::1" || ip6.first == 255 || endpoint.hasPrefix("fe80:") || endpoint.hasPrefix("::ffff:") { throw RoutePlanningError.blockedServerAddress }
@@ -124,8 +124,19 @@ public struct DualStackRoutePlan: Sendable {
         let dns6 = try dns.filter { IPAddress.isIPv6($0) }.map { try IPv6CIDR($0 + "/128") }
         guard !dns.contains(endpoint), !dns4.contains(where: { item in local4.contains { $0.overlaps(item) } }),
               !dns6.contains(where: { item in local6.contains { $0.overlaps(item) } }) else { throw CustomRouteError.protectedNetwork }
-        let prefixes4 = try custom.directPrefixes(country: has4 && mode == .chinaDirect ? country4 : nil, local: local4, endpoint: endpoint, protectedVPN: dns4)
-        let prefixes6 = try custom.directPrefixes6(country: has6 && mode == .chinaDirect ? country6 : nil, local: local6, endpoint: endpoint, protectedVPN: dns6)
+        let directDNS = directDNSServers.isEmpty ? [] : try ManagedDNSPolicy.servers(provided: directDNSServers, has4: path4 != nil, has6: path6 != nil)
+        guard mode == .chinaDirect || directDNS.isEmpty, Set(directDNS).isDisjoint(with: dns), !directDNS.contains(endpoint) else { throw CustomRouteError.protectedNetwork }
+        let directDNS4 = try directDNS.filter { !IPAddress.isIPv6($0) }.map { try IPv4CIDR($0 + "/32") }
+        let directDNS6 = try directDNS.filter { IPAddress.isIPv6($0) }.map { try IPv6CIDR($0 + "/128") }
+        guard !directDNS4.contains(where: { item in local4.contains { $0.overlaps(item) } }),
+              !directDNS6.contains(where: { item in local6.contains { $0.overlaps(item) } }) else { throw CustomRouteError.protectedNetwork }
+        let compiled4 = try custom.directPrefixes(country: has4 && mode == .chinaDirect ? country4 : nil, local: local4, endpoint: endpoint, protectedVPN: dns4 + directDNS4)
+        let compiled6 = try custom.directPrefixes6(country: has6 && mode == .chinaDirect ? country6 : nil, local: local6, endpoint: endpoint, protectedVPN: dns6 + directDNS6)
+        // Carve fixed physical resolver hosts out of all other direct prefixes
+        // before adding them. This avoids duplicate routes and lets these DNS
+        // paths override custom VPN ranges without changing application traffic.
+        let prefixes4 = (compiled4 + directDNS4).sorted()
+        let prefixes6 = (compiled6 + directDNS6).sorted()
         guard prefixes4.isEmpty || path4 != nil, prefixes6.isEmpty || path6 != nil else { throw DualStackError.missingPhysical }
         return try .init(endpoint4: endpoint4, endpoint6: endpoint6,
             direct4: prefixes4.map { RouteTarget($0, .viaGateway(path4!.gateway)) },

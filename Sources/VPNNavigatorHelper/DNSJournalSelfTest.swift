@@ -32,6 +32,27 @@ enum DNSJournalSelfTest {
         try journal.restore()
         guard CFEqual(SCDynamicStoreCopyValue(store, key), original) else { throw DNSJournalError.conflict }
 
+        // Session loopback port publication must be reversible on a live
+        // mode switch and an external DNS edit must still be refused.
+        try journal.begin(serviceOverride: id)
+        try journal.applyProvided(tunnel: "utun9999", servers: ["10.8.0.53"], search: [], match: [])
+        _ = try journal.prepareManaged(tunnel: "utun9999", has4: true, has6: false)
+        try journal.publishManagedResolver(tunnel: "utun9999", port: 54321)
+        let proxyDNS = SCDynamicStoreCopyValue(store, key) as? [String: Any]
+        guard proxyDNS?["ServerAddresses"] as? [String] == ["127.0.0.1"], proxyDNS?["ServerPort"] as? Int == 54321,
+              try journal.managedGlobalServers() == ["10.8.0.53"] else { throw DNSJournalError.conflict }
+        try journal.publishManagedResolver(tunnel: "utun9999", port: nil)
+        let fullDNS = SCDynamicStoreCopyValue(store, key) as? [String: Any]
+        guard fullDNS?["ServerAddresses"] as? [String] == ["10.8.0.53"], fullDNS?["ServerPort"] == nil else { throw DNSJournalError.conflict }
+        try journal.publishManagedResolver(tunnel: "utun9999", port: 54322)
+        SCDynamicStoreSetValue(store, key, other)
+        do { try journal.restore(); throw DNSJournalError.unavailable }
+        catch DNSJournalError.conflict { }
+        guard journal.exists, CFEqual(SCDynamicStoreCopyValue(store, key), other) else { throw DNSJournalError.conflict }
+        SCDynamicStoreSetValue(store, key, ["ServerAddresses": ["127.0.0.1"], "ServerPort": 54322, "SearchOrder": 5000] as CFDictionary)
+        try journal.restore()
+        guard CFEqual(SCDynamicStoreCopyValue(store, key), original), !journal.exists else { throw DNSJournalError.conflict }
+
         // No DNS push: managed modes publish a VPN-family resolver and undo
         // their own write exactly, without touching an existing network service.
         try journal.begin(serviceOverride: id)

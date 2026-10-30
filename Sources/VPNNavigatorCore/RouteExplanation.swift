@@ -14,7 +14,10 @@ public struct RouteExplanation: Codable, Equatable, Sendable {
     public static func decide(ip: String, mode: RoutingMode, country: RuleSet?, custom: CustomRuleSet,
                               local: [IPv4CIDR] = [], endpoint: String? = nil, effectiveDirect: [IPv4CIDR]? = nil,
                               country6: IPv6RuleSet? = nil, local6: [IPv6CIDR] = [], effectiveDirect6: [IPv6CIDR]? = nil,
-                              available: Bool? = nil, protectedDNS: [String] = []) throws -> Self {
+                              available: Bool? = nil, directDNS: [String] = [], protectedDNS: [String] = []) throws -> Self {
+        if mode == .chinaDirect, directDNS.contains(ip) {
+            return .init(ip: ip, path: .direct, reason: L10n.text("国内域名解析专用直连 DNS，优先于地区和自定义规则。"), matchedPrefix: ip + (IPAddress.isIPv6(ip) ? "/128" : "/32"))
+        }
         if mode != .original, protectedDNS.contains(ip) {
             return .init(ip: ip, path: .vpn, reason: L10n.text("DNS 解析通过 VPN，优先于地区和自定义直连规则。"), matchedPrefix: ip + (IPAddress.isIPv6(ip) ? "/128" : "/32"))
         }

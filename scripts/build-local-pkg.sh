@@ -12,7 +12,7 @@ uname -m > "$INSTALL_SCRIPTS/architecture"
 mkdir -p "$STAGING/Applications" "$STAGING/Library/Application Support/VPNNavigator/Local/Payload"
 ditto "$APP" "$STAGING/Applications/VPN Navigator.app"
 PAYLOAD="$STAGING/Library/Application Support/VPNNavigator/Local/Payload"
-for entry in VPNNavigatorHelper VPNNavigatorRuleAgent openvpn VPNNavigatorLocalSetup macos-dns-updown.sh; do
+for entry in VPNNavigatorHelper VPNNavigatorRuleAgent openvpn VPNNavigatorLocalSetup macos-dns-updown.sh china-dns-domains.txt; do
   cp "$APP/Contents/Resources/$entry" "$PAYLOAD/$entry"
 done
 cp scripts/local-uninstall-scripts/* "$UNINSTALL_SCRIPTS/"

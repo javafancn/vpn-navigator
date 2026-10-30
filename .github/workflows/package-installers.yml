@@ -14,6 +14,9 @@ on:
     paths:
       - '.github/workflows/package-installers.yml'
       - 'scripts/package-local-artifacts.py'
+      - 'scripts/release-manifest.py'
+      - 'Resources/Rules/china-dns-domains.txt'
+      - 'Sources/VPNNavigatorHelper/ChinaDNSRules.swift'
       - 'scripts/tests/test_package_local_artifacts.py'
 
 permissions:

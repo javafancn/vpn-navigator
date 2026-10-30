@@ -50,9 +50,18 @@ def main():
             raise RuntimeError(f"{path.name} requires macOS {versions}, above app minimum {minimum}; build a compatible engine")
         binaries.append({"path": str(path.relative_to(app)), "architectures": archs, "minimum_macos": versions,
                          "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+    domains = app / "Contents/Resources/china-dns-domains.txt"
+    source = pathlib.Path(__file__).resolve().parents[1] / "Sources/VPNNavigatorHelper/ChinaDNSRules.swift"
+    expected = re.search(r'static let sha256 = "([0-9a-f]{64})"', source.read_text())[1]
+    domain_bytes = domains.read_bytes()
+    if domains.is_symlink() or len(domain_bytes) > 4_000_000 or hashlib.sha256(domain_bytes).hexdigest() != expected:
+        raise RuntimeError("Bundled DNS domains do not match the helper's pinned snapshot")
+    if not (app / "Contents/Resources/LICENSES/DNSMASQ_CHINA_LIST_NOTICE.txt").is_file():
+        raise RuntimeError("DNS domain attribution is missing")
     source_files = sorted((app / "Contents/Resources/Sources").glob("*.tar.gz"))
     manifest = {"version": info["CFBundleShortVersionString"], "build": info["CFBundleVersion"],
                 "architecture": architecture, "minimum_macos": minimum, "build_channel": info.get("VPNNavigatorBuildChannel", "legacy"), "binaries": binaries,
+                "dns_domains": {"sha256": expected, "entries": len(domain_bytes.splitlines())},
                 "sources": [{"name": p.name, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in source_files]}
     output.write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"Architecture and minimum macOS verified: {architecture}, {minimum}")

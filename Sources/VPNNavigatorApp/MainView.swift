@@ -640,7 +640,7 @@ private struct RoutingWorkspace: View {
                     Text(L10n.text("路由模式")).font(.system(size: 20, weight: .semibold))
                     ForEach(RoutingMode.allCases) { mode in routeOption(mode) }
                     Spacer(minLength: 8)
-                    Text(L10n.text("托管模式优先使用服务器 DNS；未提供全局 DNS 时，通过 VPN 使用 Cloudflare／Quad9。DNS 地址优先走隧道，原始配置不受此策略影响。"))
+                    Text(L10n.text("规则模式：已收录的国内域名由国内 DNS 直连解析，其它域名通过 VPN 解析。全局模式的 DNS 通过 VPN，优先使用服务器 DNS，缺省使用 Cloudflare／Quad9。原始配置沿用配置文件。"))
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(L10n.text("规则与全局直接切换，不主动重连。原始配置需先断开；收紧断线保护会重置网络连接。"))

@@ -10,7 +10,7 @@ Supports managed IPv4/IPv6 dual-stack routing, IPv6 server endpoints, dual-stack
 
 Closing the main window keeps the VPN and background services running and hides the Dock icon. Choose **Open Main Window** in the menu bar to restore the window and Dock icon; choose **Quit** to exit completely. The menu bar displays the navigation logo and VPN tunnel download/upload rates, sampled approximately once per second while connected, with automatic B/s, KB/s, and MB/s units. Missing or stale samples display **—**. These rates measure the VPN tunnel, not all traffic on your Mac.
 
-Current development version: **0.8.11**. Three build channels are available: development preview, local test, and Developer ID distribution. Local-test builds include the engine and use administrator approval to pin code identity without a paid developer certificate. Real-network and user-Mac installation acceptance are still required. Production distribution requires signing, notarization, and release acceptance.
+Current development version: **0.8.12**. Three build channels are available: development preview, local test, and Developer ID distribution. Local-test builds include the engine and use administrator approval to pin code identity without a paid developer certificate. Real-network and user-Mac installation acceptance are still required. Production distribution requires signing, notarization, and release acceptance.
 
 ## Implemented features
 
@@ -47,6 +47,10 @@ Profile filtering, sorting, and reusable groups are described in [Profile librar
 Private local index backups and confirmed recovery after corruption are described in [Profile index recovery](docs/PROFILE_INDEX_RECOVERY.md).
 
 For custom rules, route explanations, and one-click troubleshooting, see [Routing tools](docs/ROUTING_TOOLS.md).
+
+Rule mode now resolves listed domestic domains through direct AliDNS routes; other names use VPN DNS. The session-owned loopback UDP/TCP resolver avoids sending domestic DNS across the VPN and preserves corporate supplemental DNS. Global mode retains VPN DNS. The pinned domain snapshot ships with the app and requires no connection-time download. See [DNS splitting and disconnect recovery](docs/SPLIT_DNS_AND_DISCONNECT.md).
+
+Manual disconnect keeps the UI in “Stopping and restoring” until the authenticated cleanup receipt arrives; short status polls no longer misreport a long route rollback as a connection failure.
 
 Installed DNS hooks use a trusted working directory and a whitespace-free command, fixing engine startup failures caused by spaces in the application installation path.
 

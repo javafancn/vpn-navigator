@@ -14,6 +14,7 @@ final class DNSRecoveryJournal {
         var applied: [String: Data]?
         var serverProvided: Bool?
         var previousApplied: [String: Data]?
+        var managedGlobal: Data?
     }
     private let file: URL
     init(file: URL = URL(fileURLWithPath: "/var/run/vpn-navigator/dns.journal")) { self.file = file }
@@ -76,6 +77,7 @@ final class DNSRecoveryJournal {
             for value in global["SearchDomains"] as? [String] ?? [] where !searches.contains(value) { searches.append(value) }
             if !searches.isEmpty { global["SearchDomains"] = searches }
         } else {
+            global.removeValue(forKey: "ServerPort")
             global["ServerAddresses"] = addresses
             global["SearchOrder"] = 5000
             if !search.isEmpty { global["SearchDomains"] = search }
@@ -118,7 +120,8 @@ final class DNSRecoveryJournal {
         let provided = record.serverProvided == true && !split ? global["ServerAddresses"] as? [String] ?? [] : []
         let servers = try ManagedDNSPolicy.servers(provided: provided, has4: has4, has6: has6)
         let scopedServers = split ? try ManagedDNSPolicy.servers(provided: scoped["ServerAddresses"] as? [String] ?? [], has4: has4, has6: has6) : []
-        if global["ServerAddresses"] as? [String] != servers {
+        if global["ServerAddresses"] as? [String] != servers || global["ServerPort"] != nil {
+            global.removeValue(forKey: "ServerPort")
             global["ServerAddresses"] = servers
             global["SearchOrder"] = 5000
             let next = try PropertyListSerialization.data(fromPropertyList: global, format: .binary, options: 0)
@@ -131,7 +134,38 @@ final class DNSRecoveryJournal {
             try save(record)
             _ = try RouteExecutor.command("/usr/bin/dscacheutil", ["-flushcache"])
         }
+        record = try load()
+        record.managedGlobal = record.applied?[primary]
+        try save(record)
         return Array(Set(servers + scopedServers)).sorted()
+    }
+    func managedGlobalServers() throws -> [String] {
+        let record = try load()
+        guard let data = record.managedGlobal,
+              let value = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
+              let servers = value["ServerAddresses"] as? [String], !servers.isEmpty else { throw DNSJournalError.unavailable }
+        return servers
+    }
+    /// Publish only after both loopback transports and all resolver routes are
+    /// ready. Port is per-session; no /etc/resolver files or privileged port 53.
+    func publishManagedResolver(tunnel: String, port: UInt16?) throws {
+        try confirm(tunnel: tunnel)
+        var record = try load()
+        let key = primaryKey(record.service)
+        guard let saved = record.managedGlobal,
+              var value = try PropertyListSerialization.propertyList(from: saved, options: [], format: nil) as? [String: Any] else { throw DNSJournalError.unavailable }
+        if let port {
+            guard port > 1023 else { throw DNSJournalError.unavailable }
+            value["ServerAddresses"] = ["127.0.0.1"]
+            value["ServerPort"] = Int(port)
+        }
+        record.previousApplied = record.applied
+        record.applied?[key] = try PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0)
+        try save(record)
+        guard let store, SCDynamicStoreSetValue(store, key as CFString, value as CFDictionary) else { throw DNSJournalError.unavailable }
+        try confirm(tunnel: tunnel)
+        record.previousApplied = nil; try save(record)
+        _ = try RouteExecutor.command("/usr/bin/dscacheutil", ["-flushcache"])
     }
     func confirm(tunnel: String) throws {
         guard DNSRecoveryPolicy.validTunnel(tunnel) else { throw DNSJournalError.unavailable }

@@ -4,11 +4,13 @@ The isolated server pushes ordinary client-nat and iroute for a non-local source
 Only server-side packets are redirected to disposable DNS/HTTP responders. The
 client must select its real VPN routes; curl uses the system resolver unchanged.
 """
+import base64
 import contextlib
 import http.server
 import ipaddress
 import json
 import os
+import plistlib
 import re
 import socket
 import socketserver
@@ -131,13 +133,28 @@ def web_fixture(run, folder, server_tunnel, upstream):
         assert pf('-sr').stdout == before, 'Root PF rules changed'
 
 
-def verify_web(run, probe, counts, client_tunnel, fallback=False):
+def verify_web(run, probe, counts, client_tunnel, fallback=False, split=False):
     resolver = '1.1.1.1' if fallback else DNS
     path = run(['/sbin/route', '-n', 'get', resolver]).stdout
     assert re.search(r'^\s*interface:\s*' + re.escape(client_tunnel) + r'\s*$', path, re.M), 'DNS bypassed the VPN: ' + path
     receipt = run(['/usr/sbin/scutil', '--dns']).stdout.split('resolver #2', 1)[0]
     active = re.findall(r'nameserver\[[0-9]+\]\s*:\s*([0-9.]+)', receipt)
-    assert active and (set(active) == {'1.1.1.1', '9.9.9.9'} if fallback else active == [DNS]), 'Server DNS was not actually applied: ' + receipt
+    if split:
+        # Some macOS scutil versions display the uint16 port as signed.
+        # Compare the actual 16 bits with the native dictionary recorded before
+        # publication, rather than assuming that display text is positive.
+        journal = json.loads(run(['sudo', '-n', 'cat', '/var/run/vpn-navigator/dns.journal']).stdout)
+        key = 'Setup:/Network/Service/' + journal['service'] + '/DNS'
+        published = plistlib.loads(base64.b64decode(journal['applied'][key], validate=True))
+        shown = re.search(r'port\s*:\s*(-?[0-9]+)', receipt)
+        assert active == ['127.0.0.1'] and published['ServerAddresses'] == active and shown and \
+            1023 < published['ServerPort'] <= 65535 and (int(shown[1]) & 65535) == published['ServerPort'], \
+            'Loopback split DNS was not actually applied: ' + receipt
+        for server in ['223.5.5.5', '223.6.6.6']:
+            direct = run(['/sbin/route', '-n', 'get', server]).stdout
+            assert re.search(r'^\s*interface:\s*en[0-9]+\s*$', direct, re.M), 'Domestic DNS did not use physical route: ' + direct
+    else:
+        assert active and (set(active) == {'1.1.1.1', '9.9.9.9'} if fallback else active == [DNS]), 'Server DNS was not actually applied: ' + receipt
     before = json.loads(run([probe, '--traffic']).stdout)
     result = None
     for _ in range(3):

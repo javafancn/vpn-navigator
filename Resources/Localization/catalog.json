@@ -5548,5 +5548,15 @@
     "key": "；未纳入服务器端点、当前局域网及其它系统路由。",
     "zh": "；未纳入服务器端点、当前局域网及其它系统路由。",
     "en": "; excludes server endpoints, current local networks and other system routes."
+  },
+  {
+    "key": "国内域名解析专用直连 DNS，优先于地区和自定义规则。",
+    "zh": "国内域名解析专用直连 DNS，优先于地区和自定义规则。",
+    "en": "Dedicated direct DNS for listed domestic domains, ahead of country and custom rules."
+  },
+  {
+    "key": "规则模式：已收录的国内域名由国内 DNS 直连解析，其它域名通过 VPN 解析。全局模式的 DNS 通过 VPN，优先使用服务器 DNS，缺省使用 Cloudflare／Quad9。原始配置沿用配置文件。",
+    "zh": "规则模式：已收录的国内域名由国内 DNS 直连解析，其它域名通过 VPN 解析。全局模式的 DNS 通过 VPN，优先使用服务器 DNS，缺省使用 Cloudflare／Quad9。原始配置沿用配置文件。",
+    "en": "Rule mode resolves listed domestic domains through direct domestic DNS; other names use VPN DNS. Global mode uses VPN DNS, preferring the server and falling back to Cloudflare/Quad9. Original mode follows the profile."
   }
 ]

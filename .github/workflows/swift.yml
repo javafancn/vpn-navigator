@@ -48,6 +48,8 @@ jobs:
           PYTEST
       - name: Unit tests
         run: swift test
+      - name: Verify real split DNS relay and domestic/remote latency separation
+        run: 'python3 scripts/test-split-dns.py "$(swift build --show-bin-path)/VPNNavigatorHelper"'
       - name: Verify route rollback ordering without system mutations
         run: '"$(swift build --show-bin-path)/VPNNavigatorHelper" --self-test-route-ordering'
 

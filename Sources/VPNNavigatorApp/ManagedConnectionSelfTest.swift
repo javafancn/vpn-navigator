@@ -15,6 +15,7 @@ enum ManagedConnectionSelfTest {
         let customRules: [CustomRouteRule]
         let switchRoundTrip: Bool
         let expectStartupFailure: Bool?
+        let disconnectRoundTrip: Bool?
     }
     static func run() async throws {
         guard BuildChannel.isLocal, ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
@@ -93,6 +94,20 @@ enum ManagedConnectionSelfTest {
             await model.setMode(request.mode, for: profile.id)
             try await verify(model, mode: request.mode)
             print("PASS: real application live routing mode round trip preserves the TLS session and validated kernel routes.")
+        }
+        if request.disconnectRoundTrip == true {
+            var finished = false
+            let stop = Task { await model.disconnect(); finished = true }
+            while !finished {
+                await model.refreshConnectionStatus()
+                guard model.sessionState != .failed, model.message == nil else { throw Failure.check("manual disconnect presented a false error") }
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
+            await stop.value
+            guard model.sessionState == .disconnected, !model.networkRecoveryRequired, !model.firewallRecoveryRequired, model.message == nil else { throw Failure.check("manual disconnect recovery receipt") }
+            await model.connectSelected()
+            try await verify(model, mode: request.mode)
+            print("PASS: real manual Disconnect stays in stopping during route recovery, then reconnects cleanly without an error banner.")
         }
         guard let report = await HelperClient.shared.sessionReport(), report.state == .connected,
               report.routingMode == request.mode, !report.requiresNetworkRecovery else { throw Failure.check("final authenticated session report") }

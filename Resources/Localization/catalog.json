@@ -2240,6 +2240,11 @@
     "en": "Applying…"
   },
   {
+    "key": "应用内置 DNS 脚本启动失败，请更新或修复应用安装。",
+    "zh": "应用内置 DNS 脚本启动失败，请更新或修复应用安装。",
+    "en": "The application DNS hook could not start. Update or repair the application installation."
+  },
+  {
     "key": "应用启动后",
     "zh": "应用启动后",
     "en": "App starts"
@@ -5143,6 +5148,11 @@
     "key": "退出尚未完成：后台助手未能安全停止，请检查连接和网络恢复状态后重试。",
     "zh": "退出尚未完成：后台助手未能安全停止，请检查连接和网络恢复状态后重试。",
     "en": "Quit is incomplete: the helper could not stop safely. Check the connection and network recovery status, then retry."
+  },
+  {
+    "key": "退出应用后重新安装最新版本，保留配置文件；无需修改 VPN 服务端参数。",
+    "zh": "退出应用后重新安装最新版本，保留配置文件；无需修改 VPN 服务端参数。",
+    "en": "Quit the app and reinstall the latest version, keeping your profiles. VPN server settings do not need to change."
   },
   {
     "key": "选择 VPN Navigator 加密备份。解密和预览均在本机进行。",

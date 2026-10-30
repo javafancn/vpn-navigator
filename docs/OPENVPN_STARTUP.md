@@ -1,5 +1,25 @@
 # OpenVPN startup and control-channel diagnostics
 
+0.8.11 / Build 31 fixes an application-supplied DNS hook path error. In pinned
+OpenVPN 2.7.8, `options.c:set_user_script` checks the hook via `argv_parse_cmd`,
+while `dns.c:do_run_up_down_command` executes one literal filename. Neither an
+unquoted nor a shell-quoted absolute path containing spaces works in both phases.
+The helper sets the child's cwd to the trusted hook parent and passes the fixed
+whitespace-free `./macos-dns-updown.sh`. All session paths remain absolute and
+imported profiles still cannot change cwd, add scripts or plugins. A hook startup
+failure is categorized as application setup, not invalid user configuration.
+
+`scripts/test-dns-hook-command.py` runs the actual pinned engine with a synthetic
+hook under a spaced directory whose truncated prefix is guaranteed absent. It
+reproduces old exit 1 and verifies the relative launch passes parsing, without
+connecting, applying DNS, or needing root. This runs before local-install builds,
+both package builds and standalone source-engine acceptance. Existing accessible
+prefix directories on runner images cannot mask this regression. Installed real
+DNS/HTTP tests separately verify execution and restoration in all modes.
+
+Primary source: [startup checker](https://github.com/OpenVPN/openvpn/blob/v2.7.8/src/openvpn/options.c)
+and [DNS execution](https://github.com/OpenVPN/openvpn/blob/v2.7.8/src/openvpn/dns.c).
+
 0.8.10 / Build 30 removes the independent five-second control-channel cutoff.
 Cold startup, management attachment and TLS/authentication share the configured
 monotonic connection deadline. Cancellation is checked every 50 ms while waiting

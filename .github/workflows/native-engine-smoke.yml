@@ -80,6 +80,7 @@ jobs:
             ENGINE_OUTPUT_DIR="$RUNNER_TEMP/engine-prefix" bash scripts/build-openvpn-engine.sh
           fi
           OPENVPN_BIN="$RUNNER_TEMP/engine-prefix/sbin/openvpn" zsh scripts/build-app.sh
+          python3 scripts/test-dns-hook-command.py "$RUNNER_TEMP/engine-prefix/sbin/openvpn"
           python3 scripts/release-manifest.py 'dist/VPN Navigator.app' "$RUNNER_TEMP/source-engine-manifest.json"
       - name: Test DNS ownership journal on a synthetic service
         run: |

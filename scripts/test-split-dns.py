@@ -105,7 +105,7 @@ try:
 
     def query(name, tcp=False, kind=1, stream=None):
         ident = os.urandom(2)
-        question = b''.join(bytes([len(s)])+s.encode() for s in name.split('.')) + b'\0' + struct.pack('!HH', kind, 1)
+        question = b''.join(bytes([len(s)])+s.encode() for s in name.strip('.').split('.') if s) + b'\0' + struct.pack('!HH', kind, 1)
         packet = ident + struct.pack('!HHHHH', 0x100, 1, 0, 0, 0) + question
         owned = stream is None
         sock = stream or socket.socket(socket.AF_INET, socket.SOCK_STREAM if tcp else socket.SOCK_DGRAM)
@@ -127,6 +127,7 @@ try:
                 sock.close()
 
     for tcp in [False, True]:
+        assert query('.', tcp)[-1] == 2
         for kind in [1, 28]:
             assert query('www.baidu.com', tcp, kind)[-1] == 1
             assert query('baidu.com.evil.test', tcp, kind)[-1] == 2

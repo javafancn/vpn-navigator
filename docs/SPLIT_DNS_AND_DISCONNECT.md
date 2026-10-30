@@ -20,8 +20,13 @@ root-protected and checked against a compiled SHA-256 before use. Attribution
 and upstream license are included in the app. Updating it requires a reviewed
 application build, not a network request during Connect.
 
-AliDNS endpoints are `223.5.5.5`, `223.6.6.6`, or on an IPv6-only physical path
-`2400:3200::1`, `2400:3200:baba::1`. A transport endpoint or a VPN resolver can
+Primary domestic endpoints are `223.5.5.5`, `223.6.6.6`, or on an IPv6-only physical path
+`2400:3200::1`, `2400:3200:baba::1`. If these overlap a protected server
+resolver, select a non-overlapping Tencent DNSPod alternative (`119.29.29.29`,
+or `2402:4e00::` / `2402:4e00:1::`). At most two physical resolvers are selected;
+if every candidate is protected, domestic queries safely use VPN DNS. See
+[DNSPod's endpoint documentation](https://cloud.tencent.com.cn/document/product/302/110786).
+A transport endpoint or a VPN resolver can
 never become a direct DNS exception. Physical resolver host prefixes take
 precedence over overlapping custom VPN ranges, and are included in PF direct
 allow lists. Other addresses in those ranges retain their original policy.

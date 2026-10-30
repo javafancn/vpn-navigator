@@ -120,7 +120,7 @@ final class DNSRecoveryJournal {
         let provided = record.serverProvided == true && !split ? global["ServerAddresses"] as? [String] ?? [] : []
         let servers = try ManagedDNSPolicy.servers(provided: provided, has4: has4, has6: has6)
         let scopedServers = split ? try ManagedDNSPolicy.servers(provided: scoped["ServerAddresses"] as? [String] ?? [], has4: has4, has6: has6) : []
-        if global["ServerAddresses"] as? [String] != servers {
+        if global["ServerAddresses"] as? [String] != servers || global["ServerPort"] != nil {
             global.removeValue(forKey: "ServerPort")
             global["ServerAddresses"] = servers
             global["SearchOrder"] = 5000

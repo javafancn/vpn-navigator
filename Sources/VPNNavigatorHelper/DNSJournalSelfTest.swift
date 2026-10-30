@@ -53,6 +53,18 @@ enum DNSJournalSelfTest {
         try journal.restore()
         guard CFEqual(SCDynamicStoreCopyValue(store, key), original), !journal.exists else { throw DNSJournalError.conflict }
 
+        // A pre-VPN user port belongs to the original DNS dictionary, not
+        // to a new managed fallback that happens to use the same addresses.
+        let customPort = ["ServerAddresses": ["1.1.1.1", "9.9.9.9"], "ServerPort": 5353] as CFDictionary
+        SCDynamicStoreSetValue(store, key, customPort)
+        try journal.begin(serviceOverride: id)
+        _ = try journal.prepareManaged(tunnel: "utun9999", has4: true, has6: false)
+        let standardDNS = SCDynamicStoreCopyValue(store, key) as? [String: Any]
+        guard standardDNS?["ServerPort"] == nil else { throw DNSJournalError.conflict }
+        try journal.restore()
+        guard CFEqual(SCDynamicStoreCopyValue(store, key), customPort) else { throw DNSJournalError.conflict }
+        SCDynamicStoreSetValue(store, key, original)
+
         // No DNS push: managed modes publish a VPN-family resolver and undo
         // their own write exactly, without touching an existing network service.
         try journal.begin(serviceOverride: id)

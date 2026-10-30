@@ -45,8 +45,8 @@ public struct DNSQuestion: Equatable, Sendable {
             labels.append(String(decoding: b[p..<p+length], as: UTF8.self).lowercased()); p += length
             guard labels.count <= 127 else { return nil }
         }
-        guard !labels.isEmpty, p + 5 <= b.count, b[p] == 0, b[p+3] == 0, b[p+4] == 1 else { return nil }
-        name = labels.joined(separator: "."); type = UInt16(b[p+1]) << 8 | UInt16(b[p+2]); end = p + 5
+        guard p + 5 <= b.count, b[p] == 0, b[p+3] == 0, b[p+4] == 1 else { return nil }
+        name = labels.isEmpty ? "." : labels.joined(separator: "."); type = UInt16(b[p+1]) << 8 | UInt16(b[p+2]); end = p + 5
         guard name.utf8.count <= 253 else { return nil }
     }
     public func accepts(_ response: Data, request: Data) -> Bool {
@@ -65,8 +65,9 @@ public struct DNSQuestion: Equatable, Sendable {
 public enum SplitDNSPolicy {
     /// Only China Direct adds these explicit physical DNS exceptions.
     public static func domesticServers(path4: Bool, path6: Bool, protectedVPN: [String]) -> [String] {
-        let candidates = path4 ? ["223.5.5.5", "223.6.6.6"] : path6 ? ["2400:3200::1", "2400:3200:baba::1"] : []
+        let candidates = path4 ? ["223.5.5.5", "223.6.6.6", "119.29.29.29"]
+            : path6 ? ["2400:3200::1", "2400:3200:baba::1", "2402:4e00::", "2402:4e00:1::"] : []
         let excluded = Set(protectedVPN.compactMap(IPAddress.canonical))
-        return candidates.filter { !excluded.contains($0) }
+        return Array(candidates.filter { !excluded.contains($0) }.prefix(2))
     }
 }

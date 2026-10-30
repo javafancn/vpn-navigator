@@ -26,6 +26,7 @@ final class SplitDNSTests: XCTestCase {
             var changed = query("www.other.com", type: type); changed[2] = 0x81
             XCTAssertFalse(question.accepts(changed, request: packet))
         }
+        XCTAssertEqual(DNSQuestion(query("."))?.name, ".")
         let data = query()
         for length in 0..<data.count { XCTAssertNil(DNSQuestion(data.prefix(length))) }
         for (offset, value): (Int, UInt8) in [(2,0x81), (2,0x09), (5,2), (12,0xc0), (data.count-1,2)] {
@@ -33,7 +34,9 @@ final class SplitDNSTests: XCTestCase {
         }
     }
     func testPhysicalDNSExceptionsNeverOverlapVPNOrFullMode() throws {
-        XCTAssertEqual(SplitDNSPolicy.domesticServers(path4: true, path6: true, protectedVPN: ["223.5.5.5"]), ["223.6.6.6"])
+        XCTAssertEqual(SplitDNSPolicy.domesticServers(path4: true, path6: true, protectedVPN: ["223.5.5.5"]), ["223.6.6.6", "119.29.29.29"])
+        XCTAssertEqual(SplitDNSPolicy.domesticServers(path4: true, path6: false, protectedVPN: ["223.5.5.5", "223.6.6.6"]), ["119.29.29.29"])
+        XCTAssertEqual(SplitDNSPolicy.domesticServers(path4: false, path6: true, protectedVPN: ["2400:3200::1", "2400:3200:baba::1"]), ["2402:4e00::", "2402:4e00:1::"])
         XCTAssertTrue(SplitDNSPolicy.domesticServers(path4: false, path6: false, protectedVPN: []).isEmpty)
         XCTAssertEqual(SplitDNSPolicy.domesticServers(path4: false, path6: true, protectedVPN: []).count, 2)
         let path = try PhysicalIPPath(gateway: "192.168.1.1", interface: "en0")

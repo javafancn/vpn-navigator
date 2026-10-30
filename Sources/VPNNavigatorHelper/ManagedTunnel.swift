@@ -651,6 +651,7 @@ final class ManagedTunnel {
                       (v6 ? IPAddress.gateway6(gateway, interface: iface) == IPAddress.gateway6(path.gateway, interface: iface) : gateway == path.gateway) else { throw TunnelError.routeVerificationFailed }
             }
         }
+        for ip in plan.physicalDNS { try ensureAttempt(); try verify(ip, vpn: false) }
         if let route = plan.direct4.first { try verify(IPv4CIDR.parseAddressString(route.prefix.network), vpn: false) }
         if let route = plan.direct6.first { try verify(route.prefix.address, vpn: false) }
         if !plan.defaults4.isEmpty, let sample = ["8.8.8.8", "1.1.1.1", "9.9.9.9", "208.67.222.222"].first(where: { ip in
@@ -664,7 +665,7 @@ final class ManagedTunnel {
             try ensureAttempt()
             let ip = rule.cidr.contains(":") ? try CustomRuleSet.prefix6(rule.cidr).address : IPv4CIDR.parseAddressString(try CustomRuleSet.prefix(rule.cidr).network)
             let protectedDNS = plan.dns4.contains { $0.prefix.contains(IPv4CIDR.parseAddress(ip) ?? 0) } || plan.dns6.contains { $0.prefix.contains(ip) }
-            try verify(ip, vpn: protectedDNS || (rule.action == .vpn && !(activeMode == .chinaDirect && domesticDNSServers.contains(ip))))
+            try verify(ip, vpn: protectedDNS || (rule.action == .vpn && !plan.physicalDNS.contains(ip)))
         }
     }
     func explainRoute(_ request: RouteLookupRequest) throws -> RouteLookupResult {
@@ -675,7 +676,7 @@ final class ManagedTunnel {
             local: plan?.local4 ?? [], endpoint: plan?.endpoint, effectiveDirect: plan?.direct4.map(\.prefix),
             country6: rules6, local6: plan?.local6 ?? [], effectiveDirect6: plan?.direct6.map(\.prefix),
             available: plan.map { v6 ? !$0.defaults6.isEmpty : !$0.defaults4.isEmpty },
-            directDNS: activeMode == .chinaDirect ? domesticDNSServers : [],
+            directDNS: plan?.physicalDNS ?? [],
             protectedDNS: (plan?.dns4.map { $0.prefix.description.split(separator: "/")[0].description } ?? []) + (plan?.dns6.map { $0.prefix.address } ?? []))
         let args = ["-n", "get"] + (v6 ? ["-inet6"] : []) + [request.ip]
         let raw = decision.path == .blocked ? (try? RouteExecutor.command("/sbin/route", args)) ?? "" : try RouteExecutor.command("/sbin/route", args)

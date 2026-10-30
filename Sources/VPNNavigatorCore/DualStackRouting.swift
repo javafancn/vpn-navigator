@@ -89,6 +89,7 @@ public struct DualStackRoutePlan: Sendable {
     public let endpoint6: IPv6RouteTarget?
     public let direct4: [RouteTarget]
     public let direct6: [IPv6RouteTarget]
+    public let physicalDNS: [String]
     public let dns4: [RouteTarget]
     public let dns6: [IPv6RouteTarget]
     public let defaults4: [RouteTarget]
@@ -141,6 +142,7 @@ public struct DualStackRoutePlan: Sendable {
         return try .init(endpoint4: endpoint4, endpoint6: endpoint6,
             direct4: prefixes4.map { RouteTarget($0, .viaGateway(path4!.gateway)) },
             direct6: prefixes6.map { IPv6RouteTarget($0, .viaGateway(path6!.gateway)) },
+            physicalDNS: directDNS,
             dns4: dns4.map { RouteTarget($0, .interface(tunnel)) },
             dns6: dns6.map { IPv6RouteTarget($0, .interface(tunnel)) },
             defaults4: has4 ? [RouteTarget(IPv4CIDR("0.0.0.0/1"), .interface(tunnel)), RouteTarget(IPv4CIDR("128.0.0.0/1"), .interface(tunnel))] : [],

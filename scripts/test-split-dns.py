@@ -30,7 +30,7 @@ def answer(packet, path, tcp):
     if name.startswith('refused.') and path == 'direct':
         return packet[:2] + struct.pack('!HHHHH', 0x8185, 1, 0, 0, 0) + packet[12:end]
     if name.startswith('spoof.') and path == 'direct':
-        return b'\xff\xff' + struct.pack('!HHHHH', 0x8180, 1, 0, 0, 0) + packet[12:end]
+        return bytes([packet[0] ^ 1, packet[1]]) + struct.pack('!HHHHH', 0x8180, 1, 0, 0, 0) + packet[12:end]
     if name.startswith('truncated.') and not tcp:
         return packet[:2] + struct.pack('!HHHHH', 0x8380, 1, 0, 0, 0) + packet[12:end]
     if path == 'vpn':
@@ -138,6 +138,19 @@ try:
     with socket.create_connection(('127.0.0.1', port), timeout=3) as stream:
         for name in ['www.baidu.com', 'www.google.com', 'www.bilibili.com']:
             assert query(name, tcp=True, stream=stream)[-1] == (2 if 'google' in name else 1)
+    # Model a real system resolver: many pending requests on one UDP flow.
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as shared:
+        shared.connect(('127.0.0.1', port)); shared.settimeout(8)
+        pending = {}
+        for i in range(20):
+            name = ('multiplex' + str(i) + '.baidu.com') if i % 2 else ('multiplex' + str(i) + '.foreign.test')
+            ident = struct.pack('!H', i)
+            question = b''.join(bytes([len(s)]) + s.encode() for s in name.split('.')) + b'\0\0\1\0\1'
+            shared.send(ident + struct.pack('!HHHHH', 0x100, 1, 0, 0, 0) + question)
+            pending[ident] = 1 if i % 2 else 2
+        while pending:
+            response = shared.recv(65535)
+            assert response[-1] == pending.pop(response[:2])
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
         results = list(pool.map(lambda i: query(('a' + str(i) + '.baidu.com') if i % 2 else ('a' + str(i) + '.foreign.test'), tcp=bool(i%3)), range(32)))
         assert [r[-1] for r in results] == [1 if i%2 else 2 for i in range(32)]

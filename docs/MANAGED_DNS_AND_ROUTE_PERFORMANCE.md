@@ -1,7 +1,7 @@
-# Managed DNS and route application (0.8.11 / Build 31)
+# Managed DNS and route application (0.8.12 / Build 32)
 
 Original mode preserves its profile/server DNS behavior. Full VPN and China
-Direct prefer the server's global DNS; when it is absent, Cloudflare and Quad9
+Direct prefer the server's global DNS for non-domestic names; when it is absent, Cloudflare and Quad9
 are selected for the address families actually allocated to the VPN. Corporate
 supplemental DNS dictionaries remain intact and their resolver paths are also
 pinned to the tunnel. The routing page states the fallback policy.
@@ -45,3 +45,7 @@ IPv6 mutations retain the system-tool path.
 Native acceptance and its precise forwarding/isolation limits are specified in
 [MANAGED_CONNECTION_ACCEPTANCE.md](MANAGED_CONNECTION_ACCEPTANCE.md). Connection
 timings are reported separately from deliberate watchdog waits and cleanup.
+
+China Direct now adds a loopback UDP/TCP split resolver and explicit physical
+AliDNS host routes. Only domains in the bundled pinned list use those routes;
+unlisted names never fall back to physical DNS. See [split DNS](SPLIT_DNS_AND_DISCONNECT.md).

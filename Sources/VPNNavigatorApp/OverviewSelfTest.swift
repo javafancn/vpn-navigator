@@ -64,6 +64,31 @@ enum OverviewSelfTest {
         model.applyVerifiedSessionReport(failed)
         guard model.message == nil, model.pendingManualFailureAttempt != nil else { throw Failure.check }
         model.pendingManualFailureAttempt = nil
+        #if DEBUG
+        // Reproduce a route rollback longer than the old 12s poll timeout.
+        // The production status gates run unchanged; only the XPC stop receipt
+        // is delayed synthetically, without starting or stopping a real VPN.
+        model.disconnectTestOperation = { _ in
+            try? await Task.sleep(nanoseconds: 13_000_000_000)
+            return "Disconnected"
+        }
+        var ended = false
+        let disconnect = Task { await model.disconnect(); ended = true }
+        await Task.yield()
+        guard model.disconnectRequestInFlight, model.stopping else { throw Failure.check }
+        let stale = SessionReport(state: .failed, message: "old timed-out status poll", activeProfileID: nil,
+            receivedBytes: nil, sentBytes: nil, networkRecoveryRequired: true)
+        while !ended {
+            model.applyVerifiedSessionReport(stale)
+            await model.refreshConnectionStatus()
+            guard model.disconnectRequestInFlight, model.stopping, !model.overviewRecoveryNeeded, model.message == nil else { throw Failure.check }
+            try await Task.sleep(nanoseconds: 200_000_000)
+        }
+        await disconnect.value
+        model.disconnectTestOperation = nil
+        guard !model.disconnectRequestInFlight, !model.stopping else { throw Failure.check }
+        print("PASS: disconnect exceeds the ordinary poll deadline without a false failure; stale snapshots and overlapping polls cannot overwrite stopping.")
+        #endif
         idle(); guard model.canEditOverviewProtection, !model.overviewRecoveryNeeded else { throw Failure.check }
         print("PASS overview: verified 60-second live graph, measured duration, actual route instead of selection, dual-stack receipt, stale-state expiry, next-connection preference guard, PF recovery and real two-card raster; no VPN requests.")
     }

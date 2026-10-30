@@ -46,6 +46,8 @@ final class SplitDNSTests: XCTestCase {
         let rules = try plan(.chinaDirect, direct: ["223.5.5.5"])
         XCTAssertEqual(rules.direct4.map(\.prefix.description), ["223.5.5.5/32"])
         XCTAssertFalse(rules.direct4.contains { $0.prefix.contains(IPv4CIDR.parseAddress("223.5.5.6")!) })
+        let explanation = try RouteExplanation.decide(ip: "223.5.5.5", mode: .chinaDirect, country: nil, custom: custom, directDNS: rules.physicalDNS)
+        XCTAssertEqual(explanation.path, .direct)
         XCTAssertThrowsError(try plan(.fullVPN, direct: ["223.5.5.5"]))
         XCTAssertThrowsError(try plan(.chinaDirect, direct: ["1.1.1.1"]))
         XCTAssertTrue(try plan(.fullVPN, direct: []).direct4.isEmpty)

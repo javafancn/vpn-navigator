@@ -65,14 +65,19 @@ final class SplitDNSProxy {
         let id = UUID(); clients[id] = connection
         connection.start(queue: queue)
         queue.asyncAfter(deadline: .now() + 10) { [weak self] in self?.close(id) }
-        if tcp { readTCP(connection, id: id) }
-        else {
-            connection.receiveMessage { [weak self] data, _, _, _ in
-                guard let self, let data else { self?.close(id); return }
-                self.query(data, tcp: false) { [weak self] response in
-                    guard let self, self.clients[id] != nil else { return }
-                    connection.send(content: response, completion: .contentProcessed { [weak self] _ in self?.close(id) })
-                }
+        if tcp { readTCP(connection, id: id) } else { readUDP(connection, id: id) }
+    }
+    private func readUDP(_ connection: NWConnection, id: UUID) {
+        connection.receiveMessage { [weak self] data, _, _, error in
+            guard let self, self.clients[id] != nil, let data, error == nil else { self?.close(id); return }
+            // mDNSResponder can multiplex A/AAAA and parallel names on one
+            // source port. Keep receiving while each transaction is pending.
+            self.readUDP(connection, id: id)
+            self.query(data, tcp: false) { [weak self] response in
+                guard let self, self.clients[id] != nil, !response.isEmpty else { return }
+                connection.send(content: response, completion: .contentProcessed { [weak self] error in
+                    if error != nil { self?.close(id) }
+                })
             }
         }
     }

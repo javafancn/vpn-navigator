@@ -157,6 +157,9 @@ final class AppModel: ObservableObject {
     private var routingRevision: UUID?
     private var statusEpoch: UInt64 = 0
     @Published private(set) var disconnectRequestInFlight = false
+    #if DEBUG
+    var disconnectTestOperation: ((UUID?) async -> String)?
+    #endif
     // Negotiation and routing can fail after the initial request succeeds.
     var pendingManualFailureAttempt: UUID?
     private let routingModeService: RoutingModeService
@@ -1216,7 +1219,13 @@ final class AppModel: ObservableObject {
         if connecting { localEvents.append(.cancelled) }
         connectionStatus = L10n.text("stopping: 正在停止连接并恢复网络")
         busy = true
-        let response = await helper.disconnect(attemptID: cancelledAttempt)
+        let response: String
+        #if DEBUG
+        if let operation = disconnectTestOperation { response = await operation(cancelledAttempt) }
+        else { response = await helper.disconnect(attemptID: cancelledAttempt) }
+        #else
+        response = await helper.disconnect(attemptID: cancelledAttempt)
+        #endif
         statusEpoch &+= 1
         disconnectRequestInFlight = false
         busy = maintenanceInProgress

@@ -167,6 +167,7 @@ final class ManagedTunnel {
         // any root-owned session markers or credentials.
         let binary = try ExecutableTrust.trustedOpenVPN().path
         let dnsHook = try ExecutableTrust.trustedDNSUpDown()
+        let dnsLaunch = try OpenVPNCommand.dnsUpDownInvocation(dnsHook.path)
         try FileManager.default.createDirectory(at: workdir, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: workdir.path)
         let configFile = workdir.appendingPathComponent("active.ovpn")
@@ -218,14 +219,16 @@ final class ManagedTunnel {
 
         // Trusted binary and DNS hook were verified before the runtime profile
         // was created. Never leave a false orphan marker on signature errors.
-        // dns-updown accepts a single filename, not an up-script command string.
-        // Process.arguments already preserves spaces; embedded quotes become
-        // literal filename characters and make execve fail with status 127.
-        options += ["--script-security", "2", "--dns-updown", dnsHook.path]
+        // OpenVPN 2.7 splits this value when CHECKING the script but uses
+        // the whole value as a filename when EXECUTING it. Neither raw nor
+        // shell-quoted absolute paths containing spaces work in both phases.
+        // The checked, root-protected hook parent is the child's cwd; every
+        // session/config/socket path remains absolute under the runtime dir.
+        options += ["--script-security", "2", "--dns-updown", dnsLaunch.executable]
         let task = Process()
         task.executableURL = URL(fileURLWithPath: binary)
         task.arguments = options
-        task.currentDirectoryURL = workdir
+        task.currentDirectoryURL = dnsLaunch.directory
         try ensureAttempt()
         try dnsRecovery.begin()
         var environment = ProcessInfo.processInfo.environment

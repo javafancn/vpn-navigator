@@ -2,6 +2,15 @@ import XCTest
 @testable import VPNNavigatorCore
 
 final class OpenVPNStartupLogTests: XCTestCase {
+    func testApplicationDNSHookFailureIsNotBlamedOnUserConfiguration() throws {
+        var log = OpenVPNStartupLog()
+        log.receive(Data("Options error: --dns-updown script fails with '/private/user-secret/DNS': No such file\n".utf8))
+        XCTAssertEqual(log.failure, .engineSetup)
+        let event = DiagnosticEvent(try XCTUnwrap(log.failure))
+        let json = String(decoding: try JSONEncoder().encode(event), as: UTF8.self)
+        XCTAssertFalse(json.contains("user-secret"))
+        XCTAssertFalse(event.code.summary.contains("/private/"))
+    }
     func testFragmentedStartupErrorWithoutFinalNewlineIsClassifiedAndRedacted() {
         var log = OpenVPNStartupLog()
         let text = "Options Error: unknown option /private/user-profile user=secret\r\n"

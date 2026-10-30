@@ -1,4 +1,4 @@
-# Managed DNS and route application (0.8.9 / Build 29)
+# Managed DNS and route application (0.8.11 / Build 31)
 
 Original mode preserves its profile/server DNS behavior. Full VPN and China
 Direct prefer the server's global DNS; when it is absent, Cloudflare and Quad9
@@ -11,9 +11,13 @@ when a server provides both legacy and modern forms. The adapter parses those
 variables as data and calls a fixed native helper operation. All dynamic-store
 keys come from the protected journal; isolated hook environments do not need
 inherited service identifiers. Native dictionaries replace scutil output parsing.
-The `--dns-updown` filename is passed as one raw process argument. Shell-style
-quotes are not part of the filename: embedded quotes caused exec status 127
-when the installed path contained spaces.
+OpenVPN 2.7 checks `--dns-updown` using command-string parsing but executes its
+entire value as a single filename. A raw absolute path containing spaces is
+truncated during checking (options exit 1); quoting fixes that check but causes
+literal quotes during execution (status 127). The helper now uses the already
+verified, protected hook parent as the child working directory and passes only
+`./macos-dns-updown.sh`. Config, management socket and journal paths stay absolute.
+No copied hook, symlink alias, relaxed validation or user-supplied command is used.
 A nonzero DNS up-hook result fails the connection instead of becoming a silent
 fallback. Native and installed tests cover both server formats.
 

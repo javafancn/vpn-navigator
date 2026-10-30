@@ -64,6 +64,7 @@ jobs:
           fi
           export OPENVPN_BIN="$RUNNER_TEMP/engine-prefix/sbin/openvpn"
           export THIRD_PARTY_NOTICES="$RUNNER_TEMP/engine-prefix/share/vpn-navigator/THIRD_PARTY_NOTICES.txt"
+          python3 scripts/test-dns-hook-command.py "$OPENVPN_BIN"
           VPNNAV_CHANNEL=local-test zsh scripts/build-app.sh
           'dist/VPN Navigator.app/Contents/Resources/openvpn' --version
           python3 scripts/release-manifest.py 'dist/VPN Navigator.app' "dist/VPN-Navigator-$EXPECTED_ARCHITECTURE-Local-audit.json"

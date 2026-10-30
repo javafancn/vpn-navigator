@@ -9,7 +9,7 @@ import Glibc
 /// addresses, domain names, profile paths and authentication values are excluded.
 public enum DiagnosticCode: String, Codable, Sendable {
     case starting, connected, stopped, cancelled, timeout, authentication, certificate
-    case tls, dns, transport, cipher, route, networkChanged, unexpectedExit, recovery, configuration
+    case tls, dns, transport, cipher, route, networkChanged, unexpectedExit, recovery, configuration, engineSetup
     public var summary: String {
         switch self {
         case .starting: return L10n.text("正在启动 OpenVPN")
@@ -28,6 +28,7 @@ public enum DiagnosticCode: String, Codable, Sendable {
         case .unexpectedExit: return L10n.text("OpenVPN 异常退出，请检查诊断及服务端状态")
         case .recovery: return L10n.text("已执行安全网络恢复检查")
         case .configuration: return L10n.text("OpenVPN 配置参数无效或与内置引擎不兼容，请检查配置健康报告")
+        case .engineSetup: return L10n.text("应用内置 DNS 脚本启动失败，请更新或修复应用安装。")
         }
     }
 }
@@ -43,6 +44,9 @@ public enum OpenVPNLogClassifier {
     /// Never return the source line: even apparent errors can contain secrets.
     public static func classify(_ line: String) -> DiagnosticCode? {
         let text = line.uppercased()
+        // This option is added by our helper, never by an imported profile.
+        // Do not blame a valid user configuration for our own hook failure.
+        if text.contains("--DNS-UPDOWN SCRIPT FAILS") { return .engineSetup }
         // CRV1 deliberately uses AUTH_FAILED to negotiate the next factor.
         // Malformed/terminal failures are logged by the management callback.
         if text.contains("AUTH_FAILED") && text.contains("CRV1:") { return nil }

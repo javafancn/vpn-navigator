@@ -12,7 +12,7 @@ import statistics
 import threading
 import time
 
-SIZE = 8 * 1024 * 1024
+SIZE = 32 * 1024 * 1024
 SAMPLES = 3
 
 
@@ -45,6 +45,7 @@ def encrypted_bandwidth(run, probe, server_tunnel, client_tunnel, aliases):
                         stream, _ = listener.accept()
                         with stream:
                             stream.settimeout(12)
+                            stream.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                             command = receive(stream, 1)
                             if command == b'D':
                                 for _ in range(SIZE // len(block)):
@@ -62,6 +63,10 @@ def encrypted_bandwidth(run, probe, server_tunnel, client_tunnel, aliases):
                 for _ in range(SAMPLES):
                     for direction, command in [('download', b'D'), ('upload', b'U')]:
                         with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as client:
+                            # The one-byte fixture command is not application
+                            # payload. Nagle/delayed ACK interaction must not
+                            # dominate a short throughput measurement.
+                            client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                             client.setsockopt(socket.IPPROTO_IPV6, bound, cs)
                             client.bind(('fe80::2', 0, 0, cs)); client.settimeout(12)
                             client.connect(('fe80::1', listener.getsockname()[1], 0, cs))

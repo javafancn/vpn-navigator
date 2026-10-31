@@ -17,6 +17,8 @@ on:
       - 'scripts/release-manifest.py'
       - 'Resources/Rules/china-dns-domains.txt'
       - 'Sources/VPNNavigatorHelper/ChinaDNSRules.swift'
+      - 'Sources/VPNNavigatorHelper/SplitDNSProxy.swift'
+      - 'Resources/Info.plist'
       - 'scripts/tests/test_package_local_artifacts.py'
 
 permissions:

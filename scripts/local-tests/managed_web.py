@@ -25,6 +25,17 @@ WEB = '198.19.100.80'
 CLIENT_ALIAS = '198.18.254.99'
 
 
+class IsolatedHTTPServer(http.server.ThreadingHTTPServer):
+    def server_bind(self):
+        # HTTPServer.server_bind calls getfqdn(0.0.0.0), resolving the runner's
+        # unrelated private host name AFTER VPN DNS is installed. That setup
+        # lookup can stall for ~35 s and says nothing about client web latency.
+        # Bind normally and use a fixed synthetic name; client DNS stays real.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = 'vpnnav-fixture'
+        self.server_port = self.server_address[1]
+
+
 def upstream_resolver(run):
     text = run(['/usr/sbin/scutil', '--dns']).stdout
     for ip in re.findall(r'nameserver\[[0-9]+\]\s*:\s*([0-9.]+)', text):
@@ -90,7 +101,7 @@ def web_fixture(run, folder, server_tunnel, upstream):
     class UDP(socketserver.ThreadingUDPServer):
         daemon_threads = True
     dns = UDP(('0.0.0.0', 0), DNSHandler)
-    http_service = http.server.ThreadingHTTPServer(('0.0.0.0', 0), HTTPHandler)
+    http_service = IsolatedHTTPServer(('0.0.0.0', 0), HTTPHandler)
     threads = [threading.Thread(target=s.serve_forever, daemon=True) for s in [dns, http_service]]
     anchor = 'com.apple/zzz.vpnnav-data-' + uuid.uuid4().hex
     def pf(*args, ok=True):
@@ -134,6 +145,7 @@ def web_fixture(run, folder, server_tunnel, upstream):
 
 
 def verify_web(run, probe, counts, client_tunnel, fallback=False, split=False):
+    preflight = time.monotonic()
     resolver = '1.1.1.1' if fallback else DNS
     path = run(['/sbin/route', '-n', 'get', resolver]).stdout
     assert re.search(r'^\s*interface:\s*' + re.escape(client_tunnel) + r'\s*$', path, re.M), 'DNS bypassed the VPN: ' + path
@@ -156,16 +168,23 @@ def verify_web(run, probe, counts, client_tunnel, fallback=False, split=False):
     else:
         assert active and (set(active) == {'1.1.1.1', '9.9.9.9'} if fallback else active == [DNS]), 'Server DNS was not actually applied: ' + receipt
     before = json.loads(run([probe, '--traffic']).stdout)
-    result = None
+    print(f'METRIC: managed web preflight seconds={time.monotonic() - preflight:.3f}', flush=True)
+    timings = []
     for _ in range(3):
         host = uuid.uuid4().hex + '.vpnnav.test'
+        started = time.monotonic()
         result = run(['/usr/bin/curl', '--noproxy', '*', '--fail', '--silent', '--show-error',
-            '--max-time', '12', '--connect-timeout', '6', '--http1.1', 'http://' + host + '/'], ok=False, timeout=20)
-        if result.returncode == 0:
-            assert result.stdout.startswith('vpnnav-managed-web:' + host + ':') and len(result.stdout) > 8192
-            break
-        time.sleep(1)
-    assert result is not None and result.returncode == 0, 'System DNS/HTTP failed: ' + (result.stderr if result else '')
+            '--max-time', '5', '--connect-timeout', '3', '--http1.1', '--write-out', '\n%{json}',
+            'http://' + host + '/'], ok=False, timeout=10)
+        assert result.returncode == 0, 'First-attempt system DNS/HTTP failed: ' + result.stderr
+        body, metrics = result.stdout.rsplit('\n', 1)
+        assert body.startswith('vpnnav-managed-web:' + host + ':') and len(body) > 8192
+        timing = json.loads(metrics)
+        timing = {key: timing[key] for key in ['time_namelookup', 'time_connect', 'time_starttransfer', 'time_total']}
+        timing['wall_seconds'] = time.monotonic() - started
+        timings.append(timing)
+        print('METRIC: first-attempt system DNS/HTTP ' + json.dumps(timing), flush=True)
+        assert timing['time_namelookup'] < 2 and timing['time_total'] < 3 and timing['wall_seconds'] < 4, 'System DNS/HTTP exceeded isolated latency budget: ' + str(timing)
     assert counts['dns'] > 0 and counts['http'] > 0, 'HTTP used a non-VPN shortcut'
     for _ in range(30):
         after = json.loads(run([probe, '--traffic']).stdout)

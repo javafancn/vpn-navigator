@@ -13,7 +13,7 @@ final class SplitDNSProxy {
     private let vpn: [Upstream]
     private var listeners: [NWListener] = []
     private var clients: [UUID: NWConnection] = [:]
-    private var exchanges: [UUID: DNSExchange] = [:]
+    private var requests: [UUID: DNSResolution] = [:]
     private var stopped = false
     private(set) var port: UInt16 = 0
     init(domains: ChinaDNSDomains, domestic: [Upstream], vpn: [Upstream]) {
@@ -51,7 +51,7 @@ final class SplitDNSProxy {
             stopped = true
             listeners.forEach { $0.cancel() }; listeners.removeAll()
             clients.values.forEach { $0.cancel() }; clients.removeAll()
-            let pending = Array(exchanges.values); exchanges.removeAll()
+            let pending = Array(requests.values); requests.removeAll()
             pending.forEach { $0.cancel() }
         }
     }
@@ -110,21 +110,74 @@ final class SplitDNSProxy {
     }
     private func query(_ data: Data, tcp: Bool, done: @escaping (Data) -> Void) {
         guard !stopped, let question = DNSQuestion(data) else { done(Data()); return }
-        guard exchanges.count < 128 else { done(question.failure(for: data)); return }
-        let servers = (domains.contains(question.name) ? domestic : []) + vpn
-        attempt(data, question: question, servers: servers, tcp: tcp, done: done)
-    }
-    private func attempt(_ data: Data, question: DNSQuestion, servers: [Upstream], tcp: Bool, done: @escaping (Data) -> Void) {
-        guard !stopped else { return }
-        guard let server = servers.first else { done(question.failure(for: data)); return }
+        guard requests.count < 128 else { done(question.failure(for: data)); return }
+        // Hedge only within the same policy group. A domestic timeout must
+        // finish its group before VPN fallback; an unlisted query never has
+        // a domestic group. Fast healthy resolvers still receive one request.
+        let groups = (domains.contains(question.name) && !domestic.isEmpty ? [domestic] : []) + [vpn]
         let id = UUID()
-        let exchange = DNSExchange(queue: queue, server: server, tcp: tcp, data: data, question: question) { [weak self] result in
-            guard let self else { return }; self.exchanges.removeValue(forKey: id)
+        let request = DNSResolution(queue: queue, groups: groups, tcp: tcp, data: data, question: question) { [weak self] result in
+            guard let self else { return }; self.requests.removeValue(forKey: id)
             guard !self.stopped else { return }
             if var result { result[0] = data[0]; result[1] = data[1]; done(result) }
-            else { self.attempt(data, question: question, servers: Array(servers.dropFirst()), tcp: tcp, done: done) }
+            else { done(question.failure(for: data)) }
         }
-        exchanges[id] = exchange; exchange.start()
+        requests[id] = request; request.start()
+    }
+}
+
+/// At most two live upstream sockets per request; the second starts after
+/// 250 ms or an immediate first failure. First valid success cancels losers.
+/// This avoids a repeated two-second stall on a blackholed primary resolver
+/// without broadcasting healthy queries or racing across privacy boundaries.
+private final class DNSResolution {
+    private let queue: DispatchQueue
+    private var groups: [[SplitDNSProxy.Upstream]]
+    private var remaining: [SplitDNSProxy.Upstream] = []
+    private let tcp: Bool
+    private let data: Data
+    private let question: DNSQuestion
+    private var active: [UUID: DNSExchange] = [:]
+    private var hedge: DispatchWorkItem?
+    private var completion: ((Data?) -> Void)?
+
+    init(queue: DispatchQueue, groups: [[SplitDNSProxy.Upstream]], tcp: Bool,
+         data: Data, question: DNSQuestion, done: @escaping (Data?) -> Void) {
+        self.queue = queue; self.groups = groups; self.tcp = tcp
+        self.data = data; self.question = question; completion = done
+    }
+    func start() { nextGroup() }
+    func cancel() { completion = nil; clear() }
+    private func clear() {
+        hedge?.cancel(); hedge = nil
+        active.values.forEach { $0.cancel() }; active.removeAll()
+    }
+    private func finish(_ response: Data?) {
+        guard let done = completion else { return }; completion = nil
+        clear(); done(response)
+    }
+    private func nextGroup() {
+        guard completion != nil else { return }
+        guard !groups.isEmpty else { finish(nil); return }
+        remaining = groups.removeFirst()
+        if remaining.isEmpty { nextGroup() } else { launch() }
+    }
+    private func launch() {
+        guard completion != nil, active.count < 2, !remaining.isEmpty else { return }
+        hedge?.cancel(); hedge = nil
+        let server = remaining.removeFirst(), id = UUID()
+        let exchange = DNSExchange(queue: queue, server: server, tcp: tcp, data: data, question: question) { [weak self] response in
+            guard let self, self.completion != nil else { return }
+            self.active.removeValue(forKey: id)
+            if let response { self.finish(response) }
+            else if !self.remaining.isEmpty { self.launch() }
+            else if self.active.isEmpty { self.nextGroup() }
+        }
+        active[id] = exchange; exchange.start()
+        if active.count < 2 && !remaining.isEmpty {
+            let work = DispatchWorkItem { [weak self] in self?.launch() }
+            hedge = work; queue.asyncAfter(deadline: .now() + .milliseconds(250), execute: work)
+        }
     }
 }
 

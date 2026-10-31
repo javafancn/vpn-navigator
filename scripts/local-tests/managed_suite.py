@@ -11,6 +11,7 @@ from pathlib import Path
 from managed_transport import ENDPOINT, transport
 from quit_fixture import exercise_quit
 from managed_web import DNS, WEB, upstream_resolver, web_fixture, verify_web
+from managed_performance import encrypted_bandwidth, verify_mode_performance
 
 APP = Path('/Applications/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp')
 MANIFEST = Path('/Library/Application Support/VPNNavigator/Local/manifest.json')
@@ -94,6 +95,7 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
     original_ccd = ccd.read_text()
     upstream = upstream_resolver(run)
     timings = {}
+    performance = {}
     before_default = run(['/sbin/route', '-n', 'get', 'default']).stdout
     rules = folder / 'managed-rules.txt'
     # Deliberately non-adjacent /32s: custom-direct merging must not collapse
@@ -178,6 +180,7 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
                         metric = re.search(r'METRIC: connection mode=.+ seconds=([0-9.]+)', result.stdout)
                         assert metric, 'Connection timing evidence missing'
                         timings.setdefault(mode, []).append(float(metric[1]))
+                        assert float(metric[1]) < (12 if mode == 'China Direct' else 5), 'Local connection exceeded performance budget: ' + metric[0]
                         report = json.loads(report_path.read_text())
                         assert report['state'] == 'connected' and report['routingMode'] == mode
                         server_tunnel, client_tunnel = tunnel_interfaces(run)
@@ -195,6 +198,10 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
                             with web_fixture(run, folder, server_tunnel, upstream) as counts:
                                 verify_web(run, probe, counts, client_tunnel, fallback=not provided_dns, split=mode == 'China Direct')
                         data_echo(run, probe, server_tunnel, client_tunnel, aliases)
+                        if dns_kind == 'legacy':
+                            measured = encrypted_bandwidth(run, probe, server_tunnel, client_tunnel, aliases)
+                            performance[(protocol, mode)] = measured
+                            print('METRIC: encrypted bandwidth ' + json.dumps({'protocol': protocol, 'mode': mode, **measured}), flush=True)
                         run(['sudo', '-n', 'cp', app_approval, MANIFEST])
                         exercise_quit(run, cleanup_timeout=240)
                         print('PASS: ' + protocol.upper() + ' / ' + mode + ': real application connect, kernel route selection, bidirectional encrypted payload, watchdog stability and actual Quit cleanup.', flush=True)
@@ -206,6 +213,7 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
         after = run(['/sbin/route', '-n', 'get', 'default']).stdout
         fields = lambda text: dict(re.findall(r'^\s*(gateway|interface):\s*(\S+)', text, re.M))
         assert fields(after) == fields(before_default), 'Managed test did not restore the physical default'
+        verify_mode_performance(performance)
         print('PASS: six real TCP/UDP mode combinations and live switch round trips; physical default restored.', flush=True)
         print('PASS: missing server DNS uses VPN-only fallback and still resolves and loads the IPv4 webpage.', flush=True)
         print('PASS: modern isolated-environment DNS hook and legacy DHCP DNS both resolve and load IPv4 webpages through the VPN.', flush=True)

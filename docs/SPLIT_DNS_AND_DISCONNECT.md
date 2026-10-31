@@ -32,7 +32,14 @@ precedence over overlapping custom VPN ranges, and are included in PF direct
 allow lists. Other addresses in those ranges retain their original policy.
 
 The relay binds only `127.0.0.1` at an OS-selected high port, with a maximum of
-64 client flows and 128 upstream transactions. Upstreams use numeric addresses,
+64 client flows and 128 requests (at most two live upstream sockets per request).
+Since 0.8.13, a backup in the same resolver group starts after 250 ms if the
+primary has not returned, or immediately if the primary fails. The first valid
+success cancels remaining attempts. Healthy fast queries use one upstream.
+Domestic resolvers must all fail before VPN fallback; unlisted queries only
+ever have the VPN group. An NXDOMAIN is a valid answer, not a reason to change
+groups. No query cache or resolver health persistence is added.
+Upstreams use numeric addresses,
 randomized transaction IDs, connected sockets and matching questions; DNS TCP
 framing, persistent streams, A/AAAA and truncated UDP/TCP retry are supported.
 It never binds port 53 or creates `/etc/resolver` files. The port is published in

@@ -39,7 +39,7 @@ def answer(packet, path, tcp):
         return bytes([packet[0] ^ 1, packet[1]]) + struct.pack('!HHHHH', 0x8180, 1, 0, 0, 0) + packet[12:end]
     if name.startswith('truncated.') and not tcp:
         return packet[:2] + struct.pack('!HHHHH', 0x8380, 1, 0, 0, 0) + packet[12:end]
-    if not direct:
+    if not direct and not name.startswith('healthy.'):
         time.sleep(.18)  # Deterministic distant VPN resolver latency.
     if kind == 28:
         ip = socket.inet_pton(socket.AF_INET6, '2001:db8::' + ('1' if direct else '2'))
@@ -133,6 +133,8 @@ try:
                 sock.close()
 
     for tcp in [False, True]:
+        assert query('healthy.baidu.com', tcp)[-1] == 1
+        assert query('healthy.foreign.test', tcp)[-1] == 2
         assert query('.', tcp)[-1] == 2
         for kind in [1, 28]:
             assert query('www.baidu.com', tcp, kind)[-1] == 1
@@ -186,8 +188,8 @@ try:
     assert max(direct) < min(remote) and min(remote) >= .16, (direct, remote)
     assert not any(name.endswith('foreign.test') or name.endswith('google.com') or name.endswith('evil.test')
                    for path in ['direct', 'direct-backup'] for name, _ in counts[path])
-    assert not any(name == 'latency.baidu.com' for name, _ in counts['direct-backup']), 'Healthy queries broadcast to backup'
-    assert not any(name == 'latency.foreign.test' for name, _ in counts['vpn-backup']), 'Healthy VPN queries broadcast to backup'
+    assert not any(name == 'healthy.baidu.com' for name, _ in counts['direct-backup']), 'Healthy queries broadcast to backup'
+    assert not any(name == 'healthy.foreign.test' for name, _ in counts['vpn-backup']), 'Healthy VPN queries broadcast to backup'
     print('PASS: real loopback-only split DNS UDP/TCP, A/AAAA, concurrent requests, framed persistent TCP, TC retry, forged/refused response failover, VPN-only failure and domain boundaries.')
     print(f'METRIC: domestic DNS {sum(direct)/len(direct)*1000:.1f}ms vs simulated remote DNS {sum(remote)/len(remote)*1000:.1f}ms; no user network latency claim.')
 finally:

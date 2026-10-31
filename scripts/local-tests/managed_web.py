@@ -25,6 +25,17 @@ WEB = '198.19.100.80'
 CLIENT_ALIAS = '198.18.254.99'
 
 
+class IsolatedHTTPServer(http.server.ThreadingHTTPServer):
+    def server_bind(self):
+        # HTTPServer.server_bind calls getfqdn(0.0.0.0), resolving the runner's
+        # unrelated private host name AFTER VPN DNS is installed. That setup
+        # lookup can stall for ~35 s and says nothing about client web latency.
+        # Bind normally and use a fixed synthetic name; client DNS stays real.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = 'vpnnav-fixture'
+        self.server_port = self.server_address[1]
+
+
 def upstream_resolver(run):
     text = run(['/usr/sbin/scutil', '--dns']).stdout
     for ip in re.findall(r'nameserver\[[0-9]+\]\s*:\s*([0-9.]+)', text):
@@ -90,7 +101,7 @@ def web_fixture(run, folder, server_tunnel, upstream):
     class UDP(socketserver.ThreadingUDPServer):
         daemon_threads = True
     dns = UDP(('0.0.0.0', 0), DNSHandler)
-    http_service = http.server.ThreadingHTTPServer(('0.0.0.0', 0), HTTPHandler)
+    http_service = IsolatedHTTPServer(('0.0.0.0', 0), HTTPHandler)
     threads = [threading.Thread(target=s.serve_forever, daemon=True) for s in [dns, http_service]]
     anchor = 'com.apple/zzz.vpnnav-data-' + uuid.uuid4().hex
     def pf(*args, ok=True):

@@ -74,6 +74,7 @@ def encrypted_bandwidth(run, probe, server_tunnel, client_tunnel, aliases):
                                 assert receive(client, 32) == expected, 'Upload acknowledgement mismatch'
                             seconds = time.monotonic() - started
                             samples[direction].append(SIZE * 8 / seconds / 1_000_000)
+                            print(f'METRIC: encrypted stream direction={direction} bytes={SIZE} seconds={seconds:.3f} mbps={samples[direction][-1]:.3f}', flush=True)
             finally:
                 worker.join(timeout=15)
             assert not worker.is_alive() and not errors, 'Encrypted bandwidth server failed: ' + str(errors)

@@ -13,7 +13,7 @@ import threading
 import time
 
 assert sys.platform == 'darwin' and os.environ.get('GITHUB_ACTIONS') == 'true'
-counts = {'direct': [], 'vpn': []}
+counts = {'direct': [], 'direct-backup': [], 'vpn': [], 'vpn-backup': []}
 lock = threading.Lock()
 
 
@@ -25,20 +25,26 @@ def answer(packet, path, tcp):
     kind = struct.unpack('!H', packet[p+1:p+3])[0]
     with lock:
         counts[path].append((name, tcp))
-    if name.startswith('timeout.'):
+    direct = path.startswith('direct')
+    backup = path.endswith('backup')
+    if name.startswith('timeout.') or (name.startswith('blackhole.') and not backup):
         return None
-    if name.startswith('refused.') and path == 'direct':
+    if name.startswith('domestic-down.') and direct:
+        return None
+    if name.startswith('slow.') and not backup:
+        time.sleep(.9)
+    if name.startswith('refused.') and direct:
         return packet[:2] + struct.pack('!HHHHH', 0x8185, 1, 0, 0, 0) + packet[12:end]
-    if name.startswith('spoof.') and path == 'direct':
+    if name.startswith('spoof.') and direct:
         return bytes([packet[0] ^ 1, packet[1]]) + struct.pack('!HHHHH', 0x8180, 1, 0, 0, 0) + packet[12:end]
     if name.startswith('truncated.') and not tcp:
         return packet[:2] + struct.pack('!HHHHH', 0x8380, 1, 0, 0, 0) + packet[12:end]
-    if path == 'vpn':
+    if not direct:
         time.sleep(.18)  # Deterministic distant VPN resolver latency.
     if kind == 28:
-        ip = socket.inet_pton(socket.AF_INET6, '2001:db8::' + ('1' if path == 'direct' else '2'))
+        ip = socket.inet_pton(socket.AF_INET6, '2001:db8::' + ('1' if direct else '2'))
     else:
-        ip = socket.inet_aton('192.0.2.' + ('1' if path == 'direct' else '2'))
+        ip = socket.inet_aton('192.0.2.' + ('1' if direct else '2'))
     record = b'\xc0\x0c' + struct.pack('!HHIH', kind, 1, 0, len(ip)) + ip
     return packet[:2] + struct.pack('!HHHHH', 0x8180, 1, 1, 0, 0) + packet[12:end] + record
 
@@ -86,15 +92,15 @@ class TCPHandler(socketserver.BaseRequestHandler):
 
 
 services = []
-for path in ['direct', 'vpn']:
+for path in counts:
     tcp = TCP(('127.0.0.1', 0), TCPHandler)
     udp = UDP(('127.0.0.1', tcp.server_address[1]), UDPHandler)
     for service in [tcp, udp]:
         service.path = path; services.append(service)
         threading.Thread(target=service.serve_forever, daemon=True).start()
 
-helper = subprocess.Popen([sys.argv[1], '--self-test-split-dns', str(services[0].server_address[1]),
-    str(services[2].server_address[1]), str(Path('Resources/Rules/china-dns-domains.txt').resolve())],
+helper = subprocess.Popen([sys.argv[1], '--self-test-split-dns', *[str(services[i].server_address[1]) for i in [0, 2, 4, 6]],
+    str(Path('Resources/Rules/china-dns-domains.txt').resolve())],
     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 try:
     assert select.select([helper.stdout], [], [], 12)[0], 'Relay readiness timed out'
@@ -134,6 +140,19 @@ try:
             assert query('www.google.com', tcp, kind)[-1] == 2
         assert query('refused.baidu.com', tcp)[-1] == 2
         assert query('spoof.baidu.com', tcp)[-1] == 2
+        # A silent or slow primary must not impose its two-second timeout on
+        # every lookup. Both policy groups hedge only to their own backup.
+        for suffix, expected in [('baidu.com', 1), ('foreign.test', 2)]:
+            for failure in ['blackhole', 'slow']:
+                start = time.monotonic()
+                assert query(failure + '.' + suffix, tcp)[-1] == expected
+                elapsed = time.monotonic() - start
+                assert .20 <= elapsed < 1.5, (failure, suffix, tcp, elapsed)
+                print(f'METRIC: hedged DNS {failure} {suffix} tcp={tcp} seconds={elapsed:.3f}')
+        # Exhaust domestic resolvers before VPN fallback; never race groups.
+        start = time.monotonic()
+        assert query('domestic-down.baidu.com', tcp)[-1] == 2
+        assert 2.0 <= time.monotonic() - start < 4
     assert query('truncated.baidu.com')[2] & 2
     assert query('truncated.baidu.com', tcp=True)[-1] == 1
     with socket.create_connection(('127.0.0.1', port), timeout=3) as stream:
@@ -165,7 +184,10 @@ try:
         start = time.monotonic(); query('latency.baidu.com'); direct.append(time.monotonic()-start)
         start = time.monotonic(); query('latency.foreign.test'); remote.append(time.monotonic()-start)
     assert max(direct) < min(remote) and min(remote) >= .16, (direct, remote)
-    assert not any(name.endswith('foreign.test') or name.endswith('google.com') or name.endswith('evil.test') for name, _ in counts['direct'])
+    assert not any(name.endswith('foreign.test') or name.endswith('google.com') or name.endswith('evil.test')
+                   for path in ['direct', 'direct-backup'] for name, _ in counts[path])
+    assert not any(name == 'latency.baidu.com' for name, _ in counts['direct-backup']), 'Healthy queries broadcast to backup'
+    assert not any(name == 'latency.foreign.test' for name, _ in counts['vpn-backup']), 'Healthy VPN queries broadcast to backup'
     print('PASS: real loopback-only split DNS UDP/TCP, A/AAAA, concurrent requests, framed persistent TCP, TC retry, forged/refused response failover, VPN-only failure and domain boundaries.')
     print(f'METRIC: domestic DNS {sum(direct)/len(direct)*1000:.1f}ms vs simulated remote DNS {sum(remote)/len(remote)*1000:.1f}ms; no user network latency claim.')
 finally:

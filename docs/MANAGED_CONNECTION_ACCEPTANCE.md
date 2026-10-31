@@ -40,6 +40,40 @@ override in the managed connection test.
 - Request real application Quit; observe complete route/DNS cleanup, disappearance
   of the helper PID, preserved installation approval and on-demand relaunch.
 
+## Performance regression gates (0.8.13 / Build 33)
+
+Successful connection alone is insufficient. The same four installed-system
+runners must also meet these deterministic local acceptance budgets:
+
+- Initial application connection: Original and Full VPN below 5 seconds; China
+  Direct with 4,096 real non-adjacent routes below 12 seconds. These timings
+  exclude deliberate watchdog waits, live switches and Quit cleanup.
+- Each managed connection resolves three fresh random names using ordinary
+  system DNS and fetches HTTP through the real encrypted IPv4 path. Every first
+  attempt must succeed; retries can no longer turn a slow failure into a pass.
+  Name lookup must be below 2 seconds, curl total below 3 seconds, and process
+  wall time below 4 seconds. Log name lookup, connect, first byte and total time
+  independently, including preflight time outside the HTTP measurement.
+- Each of the six TCP/UDP and mode combinations transfers three 8 MiB downloads
+  and three 8 MiB uploads. A scoped TCP stream crosses both actual utun interfaces
+  and the real encrypted OpenVPN transport; SHA-256 verifies every complete
+  payload and management counters must account for at least 24 MiB each way.
+- The median in each direction must exceed 16 Mbit/s on the isolated runner.
+  Full VPN and China Direct must retain at least 50% of Original's median on
+  the same runner and transport. This is a coarse CI regression bound, not
+  acceptable proof of a 49% user-visible slowdown; sample values remain logged
+  for review. No physical public-network throughput is inferred from loopback.
+- The production DNS relay separately runs real UDP/TCP queries against healthy,
+  blackholed and delayed primary resolvers. A healthy primary gets no duplicate
+  backup query; a stalled primary's healthy same-group backup must answer in
+  under 1.5 seconds, while all-failed domestic queries wait for that group to
+  exhaust before VPN fallback. Foreign names must never reach domestic DNS.
+
+The bulk stream verifies engine/mode overhead and data integrity. The IPv4
+HTTP test verifies route-selected addressing and native DNS. Neither substitutes
+for the other; neither measures a user's real VPN server or ISP. Their fixtures
+and all certificates are synthetic and remain confined to disposable runners.
+
 ## Isolation and limitations
 
 Only disposable GitHub macOS runners may execute these fixtures. A private PF

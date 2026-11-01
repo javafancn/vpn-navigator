@@ -62,7 +62,14 @@ runners must also meet these deterministic local acceptance budgets:
   payload and management counters must account for at least 96 MiB each way.
 - The median in each direction must exceed 16 Mbit/s on the isolated runner.
   Full VPN and China Direct must retain at least 50% of Original's median on
-  the same runner and transport. This is a coarse CI regression bound, not
+  the same runner and transport. For each protocol the order is Original,
+  Full VPN, Original, China Direct, Original. Each managed result uses the
+  geometric mean of its immediately preceding/following Original measurements.
+  A greater than 25% change between those two references fails as inconclusive
+  host drift; it never produces a pass or an automatic sample retry. All
+  direction comparisons are printed before failing. The suite records engine,
+  helper (including reaped children), fixture CPU time and transfer wall time
+  to distinguish forwarding overhead from changing CI load. This is a coarse CI regression bound, not
   acceptable proof of a 49% user-visible slowdown; sample values remain logged
   for review. No physical public-network throughput is inferred from loopback.
 - The production DNS relay separately runs real UDP/TCP queries against healthy,
@@ -75,6 +82,11 @@ The bulk stream verifies engine/mode overhead and data integrity. The IPv4
 HTTP test verifies route-selected addressing and native DNS. Neither substitutes
 for the other; neither measures a user's real VPN server or ISP. Their fixtures
 and all certificates are synthetic and remain confined to disposable runners.
+
+The bracketing Original sessions use the same real import/connect/quit path as
+the other cases. They do not turn off the managed watchdog, replace routes with
+mocks, or alter engine crypto/buffer settings. The legacy TCP/UDP sweep therefore
+has ten actual connections plus the two existing missing/modern-DNS cases.
 
 ## Isolation and limitations
 

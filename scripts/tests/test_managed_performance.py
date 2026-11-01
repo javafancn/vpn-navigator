@@ -13,7 +13,9 @@ spec.loader.exec_module(performance)
 
 
 def sample(download, upload=None):
-    return {'median_mbps': {'download': download, 'upload': upload or download}}
+    upload = upload or download
+    return {'median_mbps': {'download': download, 'upload': upload},
+            'samples_mbps': {'download': [download] * 9, 'upload': [upload] * 9}}
 
 
 class PairedPerformanceTests(unittest.TestCase):
@@ -53,6 +55,24 @@ class PairedPerformanceTests(unittest.TestCase):
         records[('udp', 'China Direct')] = sample(15)
         with self.assertRaisesRegex(AssertionError, 'absolute throughput floor'):
             self.run_gate(records, baselines)
+
+    def test_uncertainty_crossing_the_gate_does_not_pass(self):
+        records, baselines = self.inputs()
+        records[('tcp', 'Full VPN')] = {'median_mbps': {'download': 100, 'upload': 52},
+            'samples_mbps': {'download': [100] * 9, 'upload': [40, 45, 49, 50, 52, 54, 55, 56, 60]}}
+        with self.assertRaises(performance.BaselineDriftError):
+            self.run_gate(records, baselines)
+
+    def test_overlapping_baseline_intervals_do_not_claim_proven_host_drift(self):
+        records, baselines = self.inputs()
+        baselines['tcp'][0] = {'median_mbps': {'download': 100, 'upload': 100},
+            'samples_mbps': {key: [70, 80, 90, 95, 100, 105, 110, 120, 140] for key in ['download', 'upload']}}
+        baselines['tcp'][1] = {'median_mbps': {'download': 130, 'upload': 130},
+            'samples_mbps': {key: [90, 100, 110, 120, 130, 140, 150, 160, 170] for key in ['download', 'upload']}}
+        records[('tcp', 'Full VPN')] = sample(150)
+        # A 30% difference of point estimates alone does not establish drift.
+        # All managed lower ratio bounds still comfortably exceed the gate.
+        self.run_gate(records, baselines)
 
     def test_cpu_accounting_handles_clock_fields_and_spaced_paths(self):
         output = ('12 0:01.25 /Library/Application Support/VPNNavigator/Local/Payload/openvpn\n'

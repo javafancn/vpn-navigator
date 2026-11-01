@@ -6,6 +6,11 @@ authenticated production XPC, bundled OpenVPN, actual utun interfaces, and real
 kernel routing commands. There is no mocked route command or trusted-path
 override in the managed connection test.
 
+The current matrix covers macOS 15 and 26 on both Apple Silicon and Intel.
+It replaces the retiring macOS 14 hosted runner; the declared application and
+engine deployment minimum stays macOS 13. GitHub retirement notice:
+https://github.blog/changelog/2026-10-01-github-actions-macos-14-runner-image-retirement/
+
 ## Required scenarios
 
 - TCP and UDP, each with Original, Full VPN and China Direct: six combinations.
@@ -54,20 +59,32 @@ runners must also meet these deterministic local acceptance budgets:
   Name lookup must be below 2 seconds, curl total below 3 seconds, and process
   wall time below 4 seconds. Log name lookup, connect, first byte and total time
   independently, including preflight time outside the HTTP measurement.
-- Each of the six TCP/UDP and mode combinations transfers three 32 MiB downloads
-  and three 32 MiB uploads. Fixture stream sockets use TCP_NODELAY so the tiny
+  The server-side DNS/HTTP responders stay alive through all data transfers and
+  application Quit. One additional fresh-name HTTP request after the transfer
+  confirms that DNS stays healthy; performance is never sampled with an
+  artificially blackholed managed resolver. The six managed cases therefore
+  produce 24 first-attempt native DNS/HTTP requests.
+- Each of the six TCP/UDP and mode combinations transfers nine 32 MiB downloads
+  and nine 32 MiB uploads. Fixture stream sockets use TCP_NODELAY so the tiny
   one-byte test command cannot dominate transfer timing through delayed ACKs.
   A scoped TCP stream crosses both actual utun interfaces
   and the real encrypted OpenVPN transport; SHA-256 verifies every complete
-  payload and management counters must account for at least 96 MiB each way.
+  payload and management counters must account for at least 288 MiB each way
+  in every sample block. Original repeats for bracketing reference blocks.
 - The median in each direction must exceed 16 Mbit/s on the isolated runner.
   Full VPN and China Direct must retain at least 50% of Original's median on
   the same runner and transport. For each protocol the order is Original,
   Full VPN, Original, China Direct, Original. Each managed result uses the
   geometric mean of its immediately preceding/following Original measurements.
-  A greater than 25% change between those two references fails as inconclusive
-  host drift; it never produces a pass or an automatic sample retry. All
-  direction comparisons are printed before failing. The suite records engine,
+  Each nine-sample block uses the second/eighth order statistics as uncertainty
+  bounds for the median (96.09375% population-median coverage under independent,
+  stationary sampling). Propagate those bounds through the geometric mean and
+  ratio. The entire relative interval must meet the unchanged 50% gate to pass;
+  an interval wholly below it is a regression, and an interval crossing it fails
+  as inconclusive. Baseline bounds proving more than 25% host drift also fail
+  as inconclusive. No automatic retry or best-sample selection is allowed.
+  These assumptions and bounds do not establish a public-network SLA.
+  All comparisons are printed before failing. The suite records engine,
   helper (including reaped children), fixture CPU time and transfer wall time
   to distinguish forwarding overhead from changing CI load. This is a coarse CI regression bound, not
   acceptable proof of a 49% user-visible slowdown; sample values remain logged

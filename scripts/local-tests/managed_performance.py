@@ -15,11 +15,22 @@ import threading
 import time
 
 SIZE = 32 * 1024 * 1024
-SAMPLES = 3
+SAMPLES = 9
 
 
 class BaselineDriftError(AssertionError):
-    """The host changed speed; this sample cannot establish a mode regression."""
+    """Host drift or sampling uncertainty prevents a trustworthy comparison."""
+
+
+def median_bounds(record, direction):
+    values = sorted(record['samples_mbps'][direction])
+    assert len(values) == SAMPLES, 'Missing fixed-count performance samples'
+    assert all(math.isfinite(v) and v > 0 for v in values), 'Invalid bandwidth sample'
+    assert abs(statistics.median(values) - record['median_mbps'][direction]) <= .001, 'Median does not match recorded samples'
+    # For nine independent stationary samples, ranks 2..8 cover the population
+    # median with 1 - 2*(C(9,0)+C(9,1))/2**9 = 96.09375% probability.
+    # Host-drift checks still apply; this is not a WAN confidence guarantee.
+    return values[1], values[-2]
 
 
 def cpu_snapshot():
@@ -140,6 +151,7 @@ def encrypted_bandwidth(run, probe, server_tunnel, client_tunnel, aliases):
 def verify_mode_performance(records, baselines):
     failures = []
     unstable = []
+    uncertain = []
     for protocol in ['tcp', 'udp']:
         original = baselines[protocol]
         assert len(original) == 3, 'Missing bracketing Original measurements'
@@ -152,21 +164,34 @@ def verify_mode_performance(records, baselines):
                 baseline = math.sqrt(before * after)
                 measured = actual['median_mbps'][direction]
                 assert measured >= 16, 'Managed mode below absolute throughput floor'
+                before_low, before_high = median_bounds(original[index], direction)
+                after_low, after_high = median_bounds(original[index + 1], direction)
+                measured_low, measured_high = median_bounds(actual, direction)
+                reference_low = math.sqrt(before_low * after_low)
+                reference_high = math.sqrt(before_high * after_high)
+                ratio_low, ratio_high = measured_low / reference_high, measured_high / reference_low
+                drift_low, drift_high = before_low / after_high, before_high / after_low
                 receipt = {'protocol': protocol, 'mode': mode, 'direction': direction,
                            'original_before_mbps': before, 'original_after_mbps': after,
                            'reference_mbps': baseline, 'measured_mbps': measured,
                            'ratio': measured / baseline,
-                           'baseline_drift': max(before, after) / min(before, after)}
+                           'reference_bounds_mbps': [reference_low, reference_high],
+                           'measured_bounds_mbps': [measured_low, measured_high],
+                           'ratio_bounds': [ratio_low, ratio_high],
+                           'baseline_ratio_bounds': [drift_low, drift_high]}
                 print('METRIC: paired performance ' + json.dumps(receipt), flush=True)
-                if receipt['baseline_drift'] > 1.25:
+                if drift_low > 1.25 or drift_high < .8:
                     unstable.append(receipt)
-                elif measured < baseline * .5:
+                elif ratio_high < .5:
                     failures.append(receipt)
+                elif ratio_low < .5:
+                    uncertain.append(receipt)
     # Report all directions before failing so one anomaly does not hide the
     # other mode/transport evidence. No retry may turn an unstable sample green.
     if failures:
         raise AssertionError('Stable paired performance exceeds 50% regression budget: ' + json.dumps(failures))
-    if unstable:
-        raise BaselineDriftError('INCONCLUSIVE: Original baseline changed by more than 25%: ' + json.dumps(unstable))
+    if unstable or uncertain:
+        raise BaselineDriftError('INCONCLUSIVE: baseline drift or uncertainty across the 50% gate: ' +
+                                 json.dumps({'baseline_drift': unstable, 'uncertain_ratios': uncertain}))
     print('PASS: all six TCP/UDP mode combinations meet encrypted upload/download integrity, '
           '16 Mbit/s floor and 50% paired relative regression budgets with stable Original baselines.', flush=True)

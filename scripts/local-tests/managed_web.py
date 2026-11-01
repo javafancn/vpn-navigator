@@ -144,7 +144,8 @@ def web_fixture(run, folder, server_tunnel, upstream):
         assert pf('-sr').stdout == before, 'Root PF rules changed'
 
 
-def verify_web(run, probe, counts, client_tunnel, fallback=False, split=False):
+def verify_web(run, probe, counts, client_tunnel, fallback=False, split=False, requests=3):
+    assert requests in (1, 3)
     preflight = time.monotonic()
     resolver = '1.1.1.1' if fallback else DNS
     path = run(['/sbin/route', '-n', 'get', resolver]).stdout
@@ -170,7 +171,7 @@ def verify_web(run, probe, counts, client_tunnel, fallback=False, split=False):
     before = json.loads(run([probe, '--traffic']).stdout)
     print(f'METRIC: managed web preflight seconds={time.monotonic() - preflight:.3f}', flush=True)
     timings = []
-    for _ in range(3):
+    for _ in range(requests):
         host = uuid.uuid4().hex + '.vpnnav.test'
         started = time.monotonic()
         result = run(['/usr/bin/curl', '--noproxy', '*', '--fail', '--silent', '--show-error',

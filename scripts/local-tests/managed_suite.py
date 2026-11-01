@@ -1,4 +1,5 @@
 """Real installed app -> XPC -> TLS -> kernel routes, on disposable Macs only."""
+import contextlib
 import ipaddress
 import json
 import os
@@ -195,20 +196,25 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
                             if mode == 'China Direct':
                                 assert journal.count('"committed"') >= 4096, 'Large rule plan was not actually installed'
                         run(['sudo', '-n', 'cp', probe_approval, MANIFEST])
-                        if mode != 'Original':
-                            with web_fixture(run, folder, server_tunnel, upstream) as counts:
+                        context = web_fixture(run, folder, server_tunnel, upstream) if mode != 'Original' else contextlib.nullcontext(None)
+                        with context as counts:
+                            if counts is not None:
                                 verify_web(run, probe, counts, client_tunnel, fallback=not provided_dns, split=mode == 'China Direct')
-                        data_echo(run, probe, server_tunnel, client_tunnel, aliases)
-                        if dns_kind == 'legacy':
-                            measured = encrypted_bandwidth(run, probe, server_tunnel, client_tunnel, aliases)
-                            performance[(protocol, mode)] = measured
-                            if mode == 'Original':
-                                baselines[protocol].append(measured)
-                            print('METRIC: encrypted bandwidth ' + json.dumps({'protocol': protocol, 'mode': mode,
-                                'baseline_index': len(baselines[protocol]) - 1 if mode == 'Original' else None, **measured}), flush=True)
-                        run(['sudo', '-n', 'cp', app_approval, MANIFEST])
-                        exercise_quit(run, cleanup_timeout=240)
-                        print('PASS: ' + protocol.upper() + ' / ' + mode + ': real application connect, kernel route selection, bidirectional encrypted payload, watchdog stability and actual Quit cleanup.', flush=True)
+                            data_echo(run, probe, server_tunnel, client_tunnel, aliases)
+                            if dns_kind == 'legacy':
+                                measured = encrypted_bandwidth(run, probe, server_tunnel, client_tunnel, aliases)
+                                performance[(protocol, mode)] = measured
+                                if mode == 'Original':
+                                    baselines[protocol].append(measured)
+                                print('METRIC: encrypted bandwidth ' + json.dumps({'protocol': protocol, 'mode': mode,
+                                    'baseline_index': len(baselines[protocol]) - 1 if mode == 'Original' else None, **measured}), flush=True)
+                            if counts is not None:
+                                verify_web(run, probe, counts, client_tunnel, fallback=not provided_dns,
+                                    split=mode == 'China Direct', requests=1)
+                                print('PASS: system DNS/HTTP remains healthy after encrypted payload transfer.', flush=True)
+                            run(['sudo', '-n', 'cp', app_approval, MANIFEST])
+                            exercise_quit(run, cleanup_timeout=240)
+                            print('PASS: ' + protocol.upper() + ' / ' + mode + ': real application connect, kernel route selection, bidirectional encrypted payload, watchdog stability and actual Quit cleanup.', flush=True)
                     finally:
                         run(['sudo', '-n', 'cp', probe_approval, MANIFEST])
                         run([probe, '--disconnect'], ok=False, timeout=240)

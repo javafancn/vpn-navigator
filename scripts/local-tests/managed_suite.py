@@ -1,4 +1,5 @@
 """Real installed app -> XPC -> TLS -> kernel routes, on disposable Macs only."""
+import contextlib
 import ipaddress
 import json
 import os
@@ -96,6 +97,7 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
     upstream = upstream_resolver(run)
     timings = {}
     performance = {}
+    baselines = {'tcp': [], 'udp': []}
     before_default = run(['/sbin/route', '-n', 'get', 'default']).stdout
     rules = folder / 'managed-rules.txt'
     # Deliberately non-adjacent /32s: custom-direct merging must not collapse
@@ -156,7 +158,7 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
             profile_path = folder / ('managed-' + protocol + '.ovpn')
             profile_path.write_text(client); profile_path.chmod(0o600)
             with transport(run, folder, port, protocol):
-                for mode in (['Original', 'Full VPN', 'China Direct'] if dns_kind == 'legacy' else ['China Direct']):
+                for mode in (['Original', 'Full VPN', 'Original', 'China Direct', 'Original'] if dns_kind == 'legacy' else ['China Direct']):
                     # Original keeps the existing scoped IPv6 payload fixture.
                     # Shared-host gateway routes would select the server utun.
                     pushed = ''
@@ -194,17 +196,25 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
                             if mode == 'China Direct':
                                 assert journal.count('"committed"') >= 4096, 'Large rule plan was not actually installed'
                         run(['sudo', '-n', 'cp', probe_approval, MANIFEST])
-                        if mode != 'Original':
-                            with web_fixture(run, folder, server_tunnel, upstream) as counts:
+                        context = web_fixture(run, folder, server_tunnel, upstream) if mode != 'Original' else contextlib.nullcontext(None)
+                        with context as counts:
+                            if counts is not None:
                                 verify_web(run, probe, counts, client_tunnel, fallback=not provided_dns, split=mode == 'China Direct')
-                        data_echo(run, probe, server_tunnel, client_tunnel, aliases)
-                        if dns_kind == 'legacy':
-                            measured = encrypted_bandwidth(run, probe, server_tunnel, client_tunnel, aliases)
-                            performance[(protocol, mode)] = measured
-                            print('METRIC: encrypted bandwidth ' + json.dumps({'protocol': protocol, 'mode': mode, **measured}), flush=True)
-                        run(['sudo', '-n', 'cp', app_approval, MANIFEST])
-                        exercise_quit(run, cleanup_timeout=240)
-                        print('PASS: ' + protocol.upper() + ' / ' + mode + ': real application connect, kernel route selection, bidirectional encrypted payload, watchdog stability and actual Quit cleanup.', flush=True)
+                            data_echo(run, probe, server_tunnel, client_tunnel, aliases)
+                            if dns_kind == 'legacy':
+                                measured = encrypted_bandwidth(run, probe, server_tunnel, client_tunnel, aliases)
+                                performance[(protocol, mode)] = measured
+                                if mode == 'Original':
+                                    baselines[protocol].append(measured)
+                                print('METRIC: encrypted bandwidth ' + json.dumps({'protocol': protocol, 'mode': mode,
+                                    'baseline_index': len(baselines[protocol]) - 1 if mode == 'Original' else None, **measured}), flush=True)
+                            if counts is not None:
+                                verify_web(run, probe, counts, client_tunnel, fallback=not provided_dns,
+                                    split=mode == 'China Direct', requests=1)
+                                print('PASS: system DNS/HTTP remains healthy after encrypted payload transfer.', flush=True)
+                            run(['sudo', '-n', 'cp', app_approval, MANIFEST])
+                            exercise_quit(run, cleanup_timeout=240)
+                            print('PASS: ' + protocol.upper() + ' / ' + mode + ': real application connect, kernel route selection, bidirectional encrypted payload, watchdog stability and actual Quit cleanup.', flush=True)
                     finally:
                         run(['sudo', '-n', 'cp', probe_approval, MANIFEST])
                         run([probe, '--disconnect'], ok=False, timeout=240)
@@ -213,7 +223,7 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
         after = run(['/sbin/route', '-n', 'get', 'default']).stdout
         fields = lambda text: dict(re.findall(r'^\s*(gateway|interface):\s*(\S+)', text, re.M))
         assert fields(after) == fields(before_default), 'Managed test did not restore the physical default'
-        verify_mode_performance(performance)
+        verify_mode_performance(performance, baselines)
         print('PASS: six real TCP/UDP mode combinations and live switch round trips; physical default restored.', flush=True)
         print('PASS: missing server DNS uses VPN-only fallback and still resolves and loads the IPv4 webpage.', flush=True)
         print('PASS: modern isolated-environment DNS hook and legacy DHCP DNS both resolve and load IPv4 webpages through the VPN.', flush=True)

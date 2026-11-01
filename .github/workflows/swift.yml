@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-14, macos-15, macos-15-intel, macos-26]
+        runner: [macos-15, macos-15-intel, macos-26, macos-26-intel]
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +19,7 @@ jobs:
       - name: Build
         run: swift build
       - name: Verify workspace keyboard and accessibility in the debug build
-        if: matrix.runner != 'macos-15-intel'
+        if: ${{ !endsWith(matrix.runner, '-intel') }}
         run: |
           defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
           python3 - <<'PYTEST'

@@ -102,7 +102,7 @@ Recovery handles only DNS, routes, and PF resources whose ownership by this app 
 
 ## Validation and release gates
 
-Automation includes core tests, macOS 14/15/26 and Intel builds, dual-architecture UI packages, loopback probes, synthetic-service DNS restoration, PF syntax checks, actual PF blocking/unblocking of one loopback port, and source-engine/minimum-OS checks. Installed-system checks also exercise real application Quit, helper shutdown, retained approval/registration, and subsequent on-demand startup. Pass/fail status is determined by the Actions results for the specific commit.
+Automation includes core tests, macOS 15/26 builds on both Apple Silicon and Intel, dual-architecture UI packages, loopback probes, synthetic-service DNS restoration, PF syntax checks, actual PF blocking/unblocking of one loopback port, and source-engine/minimum-OS checks. Installed-system checks also exercise real application Quit, helper shutdown, retained approval/registration, and subsequent on-demand startup. Pass/fail status is determined by the Actions results for the specific commit.
 
 Further acceptance on user Macs and actual servers must record privileged-helper authorization, real TLS/MFA, domestic/international egress and DNS captures, IPv6, network switching, sleep/wake, daemon crashes, long-running sessions, and installation/update/removal. See the [Full QA checklist](docs/QA.md), [Product readiness record](docs/PRODUCT_READINESS_2026_10_17.md), and [Authentication and maintenance completion](docs/AUTH_AND_MAINTENANCE_2026_10_18.md).
 

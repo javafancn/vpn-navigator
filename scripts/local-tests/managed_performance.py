@@ -23,7 +23,7 @@ class BaselineDriftError(AssertionError):
 
 
 def cpu_snapshot():
-    result = subprocess.run(['/bin/ps', '-S', '-axo', 'pid=,time=,comm='],
+    result = subprocess.run(['/bin/ps', '-S', '-ww', '-axo', 'pid=,time=,comm='],
                             capture_output=True, text=True, timeout=5)
     assert result.returncode == 0, 'Cannot collect benchmark process CPU counters'
     values = {}

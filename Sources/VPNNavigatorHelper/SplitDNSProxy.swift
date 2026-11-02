@@ -28,8 +28,8 @@ final class SplitDNSProxy {
     private var requests: [UUID: DNSResolution] = [:]
     private var stopped = false
     private(set) var port: UInt16 = 0
-    init(domains: ChinaDNSDomains, domestic: [Upstream], vpn: [Upstream]) {
-        self.domains = domains; self.domestic = domestic; self.vpn = vpn
+    init(domains: ChinaDNSDomains, domestic: [Upstream], vpn: [Upstream], mode: RoutingMode = .chinaDirect) {
+        self.domains = domains; self.domestic = mode == .chinaDirect ? domestic : []; self.vpn = vpn
     }
     func start() throws {
         guard !vpn.isEmpty, listeners.isEmpty else { throw DNSJournalError.unavailable }

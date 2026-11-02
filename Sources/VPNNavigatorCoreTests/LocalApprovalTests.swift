@@ -3,6 +3,16 @@ import CryptoKit
 @testable import VPNNavigatorCore
 
 final class LocalApprovalTests: XCTestCase {
+    func testHelperIsLazyAndLegacyDaemonCanBeMaintained() throws {
+        let data = try LocalInstallation.daemonData()
+        let plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        XCTAssertEqual(plist["RunAtLoad"] as? Bool, false)
+        XCTAssertTrue(try LocalInstallation.isApprovedDaemonData(data))
+        XCTAssertTrue(try LocalInstallation.isApprovedDaemonData(LocalInstallation.daemonData(runAtLoad: true)))
+        var altered = plist
+        altered["ProgramArguments"] = ["/tmp/lookalike-helper"]
+        XCTAssertFalse(try LocalInstallation.isApprovedDaemonData(PropertyListSerialization.data(fromPropertyList: altered, format: .xml, options: 0)))
+    }
     private func approval(uid: UInt32 = 501, architecture: String = "arm64", version: String = "0.2.0") -> LocalApproval {
         let binaries = Dictionary(uniqueKeysWithValues: LocalRole.allCases.map {
             ($0.rawValue, LocalBinary(sha256: String(repeating: "a", count: 64), cdhash: String(repeating: "b", count: 40), identifier: $0.identifier))

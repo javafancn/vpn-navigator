@@ -4,6 +4,8 @@ import Foundation
 /// redirect an unlisted query to a physical resolver.
 public struct ChinaDNSDomains: Sendable {
     private let names: Set<String>
+    public static let empty = ChinaDNSDomains(names: [])
+    private init(names: Set<String>) { self.names = names }
     public init(text: String) throws {
         guard text.utf8.count <= 4_000_000 else { throw RuleError.tooLarge }
         let rows = text.split(separator: "\n").map(String.init)

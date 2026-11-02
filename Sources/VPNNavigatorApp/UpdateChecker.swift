@@ -26,12 +26,12 @@ enum UpdateChecker {
     /// Read-only GitHub release metadata check. Installation needs explicit user consent.
     static func latestRelease() async throws -> AvailableUpdate {
         let endpoint = URL(string: "https://api.github.com/repos/javafancn/vpn-navigator/releases/latest")!
-        var request = URLRequest(url: endpoint)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if (response as? HTTPURLResponse)?.statusCode == 404 { throw UpdateCheckError.noRelease }
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw URLError(.badServerResponse)
+        let data: Data
+        do {
+            data = try await BoundedDownload.data(from: endpoint, maximumBytes: 2_000_000,
+                allowedHosts: ["api.github.com"], timeout: 20)
+        } catch BoundedDownload.Failure.httpStatus(404) {
+            throw UpdateCheckError.noRelease
         }
         return try JSONDecoder().decode(AvailableUpdate.self, from: data)
     }

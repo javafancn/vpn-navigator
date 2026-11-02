@@ -18,6 +18,15 @@ on:
       - 'Resources/Rules/china-dns-domains.txt'
       - 'Sources/VPNNavigatorHelper/ChinaDNSRules.swift'
       - 'Sources/VPNNavigatorHelper/SplitDNSProxy.swift'
+      - 'Sources/CVPNRoutes/**'
+      - 'Sources/VPNNavigatorHelper/KernelRouteReader.swift'
+      - 'Sources/VPNNavigatorHelper/RouteExecutor.swift'
+      - 'Sources/VPNNavigatorHelper/ManagedTunnel.swift'
+      - 'Sources/VPNNavigatorHelper/DNSRecoveryJournal.swift'
+      - 'Sources/VPNNavigatorCore/LocalInstallation.swift'
+      - 'Sources/VPNNavigatorLocalSetup/**'
+      - 'scripts/local-pkg-scripts/**'
+      - 'scripts/local-uninstall-scripts/**'
       - 'Resources/Info.plist'
       - 'scripts/tests/test_package_local_artifacts.py'
 
@@ -53,6 +62,7 @@ jobs:
           plutil -lint Resources/Info.plist
           python3 scripts/check-localization.py
           python3 -m unittest discover -s scripts/tests -p 'test_package_local_artifacts.py'
+          python3 -m unittest discover -s scripts/tests -p 'test_idle_helper_maintenance.py'
       - name: Fetch checksum-verified OpenVPN and OpenSSL sources
         run: python3 scripts/fetch-engine-sources.py "$RUNNER_TEMP/installer-engine-sources"
       - uses: actions/cache@v4

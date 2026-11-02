@@ -228,11 +228,20 @@ public enum LocalInstallation {
             fm.fileExists(atPath: "/var/run/vpn-navigator/\($0)")
         }
     }
-    public static func daemonData() throws -> Data {
+    public static func daemonData(runAtLoad: Bool = false) throws -> Data {
         let plist: [String: Any] = ["Label": daemonLabel,
-            "ProgramArguments": [executable(.helper).path], "RunAtLoad": true,
+            "ProgramArguments": [executable(.helper).path], "RunAtLoad": runAtLoad,
             "MachServices": [HelperIdentity.machService: true]]
         return try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+    }
+    public static func isApprovedDaemonData(_ data: Data) throws -> Bool {
+        let actual = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as AnyObject
+        // Accept the old startup policy for maintenance of existing installs.
+        for eager in [false, true] {
+            let expected = try PropertyListSerialization.propertyList(from: daemonData(runAtLoad: eager), options: [], format: nil) as AnyObject
+            if CFEqual(actual, expected) { return true }
+        }
+        return false
     }
     /// Called only by the approved root helper after session cleanup. No paths
     /// or commands come from XPC. launchctl is spawned after its final reply.
@@ -242,7 +251,7 @@ public enum LocalInstallation {
         guard !hasRecoveryEvidence else { throw LocalInstallError.recoveryRequired }
         if FileManager.default.fileExists(atPath: daemonPlist.path) {
             try protected(daemonPlist)
-            guard try Data(contentsOf: daemonPlist) == daemonData() else { throw LocalInstallError.altered }
+            guard try isApprovedDaemonData(Data(contentsOf: daemonPlist)) else { throw LocalInstallError.altered }
             try FileManager.default.removeItem(at: daemonPlist)
         }
         if FileManager.default.fileExists(atPath: retired.path) { try protected(retired); try FileManager.default.removeItem(at: retired) }

@@ -5,7 +5,8 @@ import VPNNavigatorCore
 
 enum SplitDNSSelfTest {
     static func run() throws {
-        guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true", CommandLine.arguments.count == 7,
+        let full = CommandLine.arguments.last == "--full-vpn"
+        guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true", CommandLine.arguments.count == (full ? 8 : 7),
               let domestic = UInt16(CommandLine.arguments[2]), let domesticBackup = UInt16(CommandLine.arguments[3]),
               let vpn = UInt16(CommandLine.arguments[4]), let vpnBackup = UInt16(CommandLine.arguments[5]) else { throw DNSJournalError.unavailable }
         let domains = try ChinaDNSRules.read(URL(fileURLWithPath: CommandLine.arguments[6]))
@@ -13,7 +14,7 @@ enum SplitDNSSelfTest {
               !domains.contains("www.google.com"), !domains.contains("baidu.com.evil.test") else { throw DNSJournalError.unavailable }
         let proxy = SplitDNSProxy(domains: domains,
             domestic: [domestic, domesticBackup].map { .init(address: "127.0.0.1", port: $0) },
-            vpn: [vpn, vpnBackup].map { .init(address: "127.0.0.1", port: $0) })
+            vpn: [vpn, vpnBackup].map { .init(address: "127.0.0.1", port: $0) }, mode: full ? .fullVPN : .chinaDirect)
         try proxy.start(); try proxy.verify()
         print("DNS_PROXY_PORT=\(proxy.port)"); fflush(stdout)
         DispatchQueue.global(qos: .utility).async {

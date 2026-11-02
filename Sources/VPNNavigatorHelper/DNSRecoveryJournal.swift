@@ -17,7 +17,12 @@ final class DNSRecoveryJournal {
         var managedGlobal: Data?
     }
     private let file: URL
-    init(file: URL = URL(fileURLWithPath: "/var/run/vpn-navigator/dns.journal")) { self.file = file }
+    private let flushCache: () throws -> Void
+    init(file: URL = URL(fileURLWithPath: "/var/run/vpn-navigator/dns.journal"),
+         flushCache: @escaping () throws -> Void = {
+             _ = try RouteExecutor.command("/usr/bin/dscacheutil", ["-flushcache"])
+             _ = try RouteExecutor.command("/bin/launchctl", ["kill", "HUP", "system/com.apple.mDNSResponder"])
+         }) { self.file = file; self.flushCache = flushCache }
     private let store = SCDynamicStoreCreate(nil, "VPNNavigator.DNSRecovery" as CFString, nil, nil)
     var exists: Bool { FileManager.default.fileExists(atPath: file.path) }
     private(set) var primaryService: String?
@@ -132,7 +137,7 @@ final class DNSRecoveryJournal {
             try confirm(tunnel: tunnel)
             record.previousApplied = nil
             try save(record)
-            _ = try RouteExecutor.command("/usr/bin/dscacheutil", ["-flushcache"])
+            try flushCache()
         }
         record = try load()
         record.managedGlobal = record.applied?[primary]
@@ -165,7 +170,7 @@ final class DNSRecoveryJournal {
         guard let store, SCDynamicStoreSetValue(store, key as CFString, value as CFDictionary) else { throw DNSJournalError.unavailable }
         try confirm(tunnel: tunnel)
         record.previousApplied = nil; try save(record)
-        _ = try RouteExecutor.command("/usr/bin/dscacheutil", ["-flushcache"])
+        try flushCache()
     }
     func confirm(tunnel: String) throws {
         guard DNSRecoveryPolicy.validTunnel(tunnel) else { throw DNSJournalError.unavailable }
@@ -213,6 +218,7 @@ final class DNSRecoveryJournal {
         for key in keys {
             guard try equal(restored[key], record.before[key]) else { throw DNSJournalError.conflict }
         }
+        if !set.isEmpty || !remove.isEmpty { try flushCache() }
         try FileManager.default.removeItem(at: file)
         primaryService = nil
     }

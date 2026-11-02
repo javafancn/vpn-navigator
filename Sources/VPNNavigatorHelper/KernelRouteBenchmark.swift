@@ -22,6 +22,7 @@ enum KernelRouteBenchmark {
         let folder = URL(fileURLWithPath: "/var/run/vpn-navigator").appendingPathComponent("kernel-benchmark-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         var times: [String: Double] = [:]
+        let reader = try KernelRouteReader()
         for native in [false, true] {
             let journal = folder.appendingPathComponent(native ? "native.journal" : "cli.journal")
             let executor = native ? RouteExecutor(journal: journal) : RouteExecutor(journal: journal, run: RouteExecutor.command)
@@ -33,8 +34,11 @@ enum KernelRouteBenchmark {
                 let route = routes[index]
                 let observed = try RouteExecutor.command("/sbin/route", ["-n", "get", "-net", route.prefix.description])
                 guard ObservedIPv4Route(commandOutput: observed).isExactly(route) else { throw RouteExecutionError.routeOwnershipLost(route.prefix.description) }
+                guard try reader.observe(route).isExactly(route) else { throw RouteExecutionError.routeOwnershipLost(route.prefix.description) }
             }
+            let removalStarted = ProcessInfo.processInfo.systemUptime
             executor.rollback()
+            times[native ? "native-removal" : "cli-removal"] = ProcessInfo.processInfo.systemUptime - removalStarted
             guard executor.installed.isEmpty, !FileManager.default.fileExists(atPath: journal.path) else { throw RouteExecutionError.journalFailure }
             let after = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
             guard routes.allSatisfy({ RoutePrefixPresence.ipv4($0.prefix, table: after) == .absent }) else { throw RouteExecutionError.journalFailure }

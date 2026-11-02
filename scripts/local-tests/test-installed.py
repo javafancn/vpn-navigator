@@ -205,11 +205,30 @@ let delegate = Delegate(); listener.delegate = delegate; listener.resume(); RunL
         run(['sudo', '/usr/sbin/installer', '-pkg', installer, '-target', '/'])
         health()
         print('PASS: administrator-approved reinstall repairs incomplete payload after maintenance.')
-        run([APP / 'Contents/MacOS/VPNNavigatorApp', '--vpnnav-local-services-self-test'])
+        # Direct PKG uninstall must also handle an intact approval and an idle
+        # startup-enabled helper, without requiring an app maintenance roundtrip.
+        run(['sudo', 'plutil', '-replace', 'RunAtLoad', '-bool', 'YES', PLIST])
+        user_jobs = []
+        agents = pathlib.Path.home() / 'Library/LaunchAgents'
+        agents.mkdir(parents=True, exist_ok=True)
+        for suffix, arguments in [('local-login', ['/usr/bin/open', '-j', '-a', str(APP)]),
+                                  ('local-rules', [str(PAYLOAD / 'VPNNavigatorRuleAgent')])]:
+            label = 'com.javafancn.vpn-navigator.' + suffix
+            path = agents / (label + '.plist')
+            assert not path.exists(), 'Previous maintenance left a user task behind'
+            # Loaded but idle jobs model scheduled work without starting it
+            # during this installation fixture.
+            path.write_bytes(plistlib.dumps({'Label': label, 'ProgramArguments': arguments, 'RunAtLoad': False}))
+            path.chmod(0o600)
+            run(['launchctl', 'bootstrap', 'gui/' + str(os.getuid()), path])
+            user_jobs.append((label, path))
         run(['sudo', '/usr/sbin/installer', '-pkg', PAYLOAD / 'VPNNavigator-Uninstall.pkg', '-target', '/'])
+        for label, path in user_jobs:
+            assert not path.exists(), 'Direct uninstall left a user LaunchAgent'
+            assert run(['launchctl', 'print', f'gui/{os.getuid()}/{label}'], ok=False).returncode != 0
         assert not BASE.exists() and not PLIST.exists() and not APP.exists()
         assert run(['launchctl', 'print', 'system/' + LABEL], ok=False).returncode != 0
-        print('PASS: actual local install, bidirectional XPC trust and complete system uninstall.')
+        print('PASS: actual local install, bidirectional XPC trust and direct uninstall of an idle helper with user task cleanup.')
         # Absence of the setup tool alone is not proof of a complete uninstall.
         run(['sudo', 'touch', PLIST])
         try:

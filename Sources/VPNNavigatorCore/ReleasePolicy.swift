@@ -37,15 +37,20 @@ public enum ReleaseAssetPolicy {
         return !name.contains("intel") && !name.contains("aarch64")
     }
     public static func isApprovedReleasePage(_ url: URL) -> Bool {
-        url.scheme == "https" && url.host == "github.com" &&
+        hasApprovedOrigin(url) &&
         url.path.hasPrefix("/javafancn/vpn-navigator/releases/tag/")
     }
     public static func isApprovedInstaller(_ url: URL) -> Bool {
-        url.scheme == "https" && url.host == "github.com" &&
+        hasApprovedOrigin(url) &&
         url.path.hasPrefix("/javafancn/vpn-navigator/releases/download/") &&
         url.pathExtension.lowercased() == "pkg" &&
         !url.lastPathComponent.lowercased().contains("-local") &&
         !url.lastPathComponent.lowercased().contains("uninstall")
+    }
+    private static func hasApprovedOrigin(_ url: URL) -> Bool {
+        url.scheme == "https" && url.host == "github.com" &&
+        url.user == nil && url.password == nil && (url.port == nil || url.port == 443) &&
+        url.query == nil && url.fragment == nil
     }
 }
 

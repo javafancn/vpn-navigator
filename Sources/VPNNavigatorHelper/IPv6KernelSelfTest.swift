@@ -30,6 +30,7 @@ enum IPv6KernelSelfTest {
         reference.rollback()
         guard reference.installed6.isEmpty, !FileManager.default.fileExists(atPath: journal.path) else { throw RouteExecutionError.journalFailure }
         let executor = RouteExecutor(journal: journal)
+        let reader = try KernelRouteReader()
         defer { executor.rollback() }
         try executor.applyIPv6(routes)
         for route in routes {
@@ -38,9 +39,12 @@ enum IPv6KernelSelfTest {
                 fputs("IPv6 kernel fixture observation: \(raw)\n", stderr)
                 throw RouteExecutionError.routeOwnershipLost(route.prefix.description)
             }
+            guard try reader.observe(route).isExactly(route) else { throw RouteExecutionError.routeOwnershipLost(route.prefix.description) }
         }
         executor.rollback()
         guard executor.installed6.isEmpty, !FileManager.default.fileExists(atPath: journal.path) else { throw RouteExecutionError.journalFailure }
+        let after = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet6"])
+        guard routes.allSatisfy({ RoutePrefixPresence.ipv6($0.prefix, table: after) == .absent }) else { throw RouteExecutionError.journalFailure }
         print("PASS: actual macOS IPv6 interface and native gateway prefix/host routes match route(8), verify ownership and roll back; default routes unchanged.")
     }
 }

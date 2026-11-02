@@ -771,6 +771,8 @@ final class AppModel: ObservableObject {
     }
 
     func checkForUpdates() async {
+        availableInstaller = nil
+        availableReleasePage = nil
         if BuildChannel.isLocal {
             message = L10n.text("本地版通过可信来源的同架构 Local.pkg 手动更新；请先打开升级与卸载准备。")
             showingMaintenance = true

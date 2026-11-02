@@ -232,6 +232,26 @@ try:
     assert not any(name == 'healthy.foreign.test' for name, _ in counts['vpn-backup']), 'Healthy VPN queries broadcast to backup'
     print('PASS: real loopback-only split DNS UDP/TCP, A/AAAA, concurrent requests, framed persistent TCP, TC retry, forged/refused response failover, VPN-only failure and domain boundaries.')
     print(f'METRIC: domestic DNS {sum(direct)/len(direct)*1000:.1f}ms vs simulated remote DNS {sum(remote)/len(remote)*1000:.1f}ms; no user network latency claim.')
+    helper.stdin.write('STOP\n'); helper.stdin.flush(); helper.stdin.close()
+    helper.wait(timeout=5)
+    assert helper.returncode == 0 and helper.stdout.readline().strip() == 'DNS_PROXY_STOPPED'
+    helper = subprocess.Popen([sys.argv[1], '--self-test-split-dns',
+        *[str(services[i].server_address[1]) for i in [0, 2, 4, 6]],
+        str(Path('Resources/Rules/china-dns-domains.txt').resolve()), '--full-vpn'],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    assert select.select([helper.stdout], [], [], 12)[0], 'Full VPN relay readiness timed out'
+    line = helper.stdout.readline().strip()
+    assert line.startswith('DNS_PROXY_PORT='), line
+    port = int(line.split('=')[1])
+    before_direct = sum(len(counts[path]) for path in ['direct', 'direct-backup'])
+    for tcp in [False, True]:
+        for name in ['www.baidu.com', 'www.bilibili.com', 'www.google.com']:
+            assert query(name, tcp=tcp)[-1] == 2
+        start = time.monotonic()
+        assert query('blackhole.baidu.com', tcp=tcp)[-1] == 2
+        assert time.monotonic() - start < 1.5, 'Full VPN retained a stalled primary resolver'
+    assert sum(len(counts[path]) for path in ['direct', 'direct-backup']) == before_direct, 'Full VPN sent a query to domestic DNS'
+    print('PASS: Full VPN domestic/foreign queries remain VPN-only, with bounded primary DNS failover over UDP/TCP.')
 finally:
     pending = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     if helper.poll() is None and 'port' in locals():

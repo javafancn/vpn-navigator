@@ -8,6 +8,6 @@
     <array><string>com.javafancn.vpn-navigator</string></array>
     <key>MachServices</key>
     <dict><key>com.javafancn.vpn-navigator.helper</key><true/></dict>
-    <key>RunAtLoad</key><true/>
+    <key>RunAtLoad</key><false/>
     <key>KeepAlive</key><false/>
 </dict></plist>

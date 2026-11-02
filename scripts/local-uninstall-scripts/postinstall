@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 [[ "${3:-/}" == / ]] || exit 1
-for name in VPNNavigatorApp VPNNavigatorHelper VPNNavigatorRuleAgent; do
+for name in VPNNavigatorApp VPNNavigatorRuleAgent VPNNavigatorLocalSetup; do
   if /usr/bin/pgrep -x "$name" >/dev/null 2>&1; then
     echo 'Prepare maintenance and quit VPN Navigator before uninstalling.' >&2; exit 1
   fi
@@ -18,4 +18,24 @@ if [[ ! -e "$SETUP" ]]; then
   exit 0
 fi
 check_local_setup
+# An idle helper may have been started by an older RunAtLoad installation.
+# Stop only our fixed local launchd job, never signal a numeric or foreign PID.
+for name in routes.journal dns.journal pf-guard.json active.ovpn openvpn-child.json; do
+  if [[ -e "/var/run/vpn-navigator/$name" || -L "/var/run/vpn-navigator/$name" ]]; then
+    echo 'Unresolved VPN session or network recovery. Recover before uninstalling.' >&2; exit 1
+  fi
+done
+/bin/launchctl bootout system/com.javafancn.vpn-navigator.local-helper >/dev/null 2>&1 || true
+STOPPED=false
+for attempt in {1..50}; do
+  if ! /bin/launchctl print system/com.javafancn.vpn-navigator.local-helper >/dev/null 2>&1 &&
+     ! /usr/bin/pgrep -x VPNNavigatorHelper >/dev/null 2>&1; then
+    STOPPED=true; break
+  fi
+  /bin/sleep 0.1
+done
+[[ "$STOPPED" == true ]] || { echo 'Local helper did not stop; uninstall refused.' >&2; exit 1; }
+for name in routes.journal dns.journal pf-guard.json active.ovpn openvpn-child.json; do
+  [[ ! -e "/var/run/vpn-navigator/$name" && ! -L "/var/run/vpn-navigator/$name" ]] || exit 1
+done
 "$SETUP" uninstall

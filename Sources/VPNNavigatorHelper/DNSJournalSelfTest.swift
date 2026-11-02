@@ -16,7 +16,8 @@ enum DNSJournalSelfTest {
         let original = ["ServerAddresses": ["192.0.2.53", "2001:db8::53"]] as CFDictionary
         let applied = ["ServerAddresses": ["198.51.100.53", "2001:db8:1::53"]] as CFDictionary
         let other = ["ServerAddresses": ["203.0.113.53"]] as CFDictionary
-        let journal = DNSRecoveryJournal(file: folder.appendingPathComponent("dns.journal"))
+        var cacheFlushes = 0
+        let journal = DNSRecoveryJournal(file: folder.appendingPathComponent("dns.journal"), flushCache: { cacheFlushes += 1 })
         guard SCDynamicStoreSetValue(store, key, original) else { throw DNSJournalError.unavailable }
         try journal.begin(serviceOverride: id)
         guard SCDynamicStoreSetValue(store, key, applied) else { throw DNSJournalError.unavailable }
@@ -38,10 +39,12 @@ enum DNSJournalSelfTest {
         try journal.applyProvided(tunnel: "utun9999", servers: ["10.8.0.53"], search: [], match: [])
         _ = try journal.prepareManaged(tunnel: "utun9999", has4: true, has6: false)
         try journal.publishManagedResolver(tunnel: "utun9999", port: 54321)
+        let firstPortFlushes = cacheFlushes
         let proxyDNS = SCDynamicStoreCopyValue(store, key) as? [String: Any]
         guard proxyDNS?["ServerAddresses"] as? [String] == ["127.0.0.1"], proxyDNS?["ServerPort"] as? Int == 54321,
               try journal.managedGlobalServers() == ["10.8.0.53"] else { throw DNSJournalError.conflict }
         try journal.publishManagedResolver(tunnel: "utun9999", port: nil)
+        guard cacheFlushes == firstPortFlushes + 1 else { throw DNSJournalError.unavailable }
         let fullDNS = SCDynamicStoreCopyValue(store, key) as? [String: Any]
         guard fullDNS?["ServerAddresses"] as? [String] == ["10.8.0.53"], fullDNS?["ServerPort"] == nil else { throw DNSJournalError.conflict }
         try journal.publishManagedResolver(tunnel: "utun9999", port: 54322)

@@ -36,10 +36,6 @@ if [[ -e "$STATE" ]]; then
     preparing|verifying|repairRequired) ;;
     *) exit 1 ;;
   esac
-else
-  if /usr/bin/pgrep -x VPNNavigatorHelper >/dev/null 2>&1; then
-    echo 'Prepare maintenance before replacing the helper.' >&2; exit 1
-  fi
 fi
 # A lazy, stopped job must not launch old code during payload extraction.
 /bin/launchctl bootout "$LABEL" >/dev/null 2>&1 || true

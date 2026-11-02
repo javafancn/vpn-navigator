@@ -25,19 +25,33 @@ import VPNNavigatorCore
                 guard healthy else { _ = try? run(["bootout", "system/" + LocalInstallation.daemonLabel]); throw LocalInstallError.command }
                 try LocalInstallation.completeInstallation()
                 print("Local helper installed and authenticated. No Developer ID certificate used.")
+            } else if args == ["prepare-user-uninstall"], getuid() >= 500 {
+                let approval = try LocalInstallation.load()
+                guard approval.ownerUID == getuid(), LocalInstallation.selfMatches([.setup], approval: approval) else { throw LocalInstallError.unsafe }
+                // User-owned LaunchAgents are removed only after dropping root.
+                try UserServices.setLogin(false)
+                try await UserServices.disableRules()
+                print("User login and rule services disabled.")
             } else if args == ["uninstall"], getuid() == 0 {
                 guard !LocalInstallation.isInstallationPending else { throw LocalInstallError.incomplete }
                 try LocalInstallation.protectedRoot()
                 guard !LocalInstallation.hasRecoveryEvidence else { throw LocalInstallError.recoveryRequired }
-                // The user process must remove its own login/rule jobs and
-                // retire the root service before system payload removal.
-                guard !FileManager.default.fileExists(atPath: LocalInstallation.manifest.path) else { throw LocalInstallError.recoveryRequired }
+                // The PKG has already stopped the idle local job and checked
+                // recovery evidence. Root may retire an intact approval too.
+                if FileManager.default.fileExists(atPath: LocalInstallation.manifest.path) {
+                    let current = try LocalInstallation.load()
+                    guard LocalInstallation.selfMatches([.setup], approval: current) else { throw LocalInstallError.altered }
+                    _ = try run(["-n", "-H", "-u", "#\(current.ownerUID)", LocalInstallation.executable(.setup).path,
+                                 "prepare-user-uninstall"], executable: "/usr/bin/sudo")
+                    guard !LocalInstallation.hasRecoveryEvidence else { throw LocalInstallError.recoveryRequired }
+                    try LocalInstallation.removeApproval()
+                }
                 let approval = try LocalInstallation.decode(LocalInstallation.retired)
                 _ = try? run(["bootout", "system/" + LocalInstallation.daemonLabel])
                 guard !LocalInstallation.hasRecoveryEvidence else { throw LocalInstallError.recoveryRequired }
                 if FileManager.default.fileExists(atPath: LocalInstallation.daemonPlist.path) {
                     try LocalInstallation.protected(LocalInstallation.daemonPlist)
-                    guard try Data(contentsOf: LocalInstallation.daemonPlist) == LocalInstallation.daemonData() else { throw LocalInstallError.altered }
+                    guard try LocalInstallation.isApprovedDaemonData(Data(contentsOf: LocalInstallation.daemonPlist)) else { throw LocalInstallError.altered }
                     try FileManager.default.removeItem(at: LocalInstallation.daemonPlist)
                 }
                 // Remove this app only when it still matches the approved local
@@ -109,9 +123,9 @@ import VPNNavigatorCore
         _ = try run(["enable", "system/" + LocalInstallation.daemonLabel])
         _ = try run(["bootstrap", "system", LocalInstallation.daemonPlist.path])
     }
-    @discardableResult static func run(_ args: [String]) throws -> String {
+    @discardableResult static func run(_ args: [String], executable: String = "/bin/launchctl") throws -> String {
         let task = Process(), pipe = Pipe()
-        task.executableURL = URL(fileURLWithPath: "/bin/launchctl"); task.arguments = args
+        task.executableURL = URL(fileURLWithPath: executable); task.arguments = args
         task.standardOutput = pipe; task.standardError = pipe
         try task.run()
         let timer = DispatchSource.makeTimerSource(queue: .global()); timer.schedule(deadline: .now() + 8)

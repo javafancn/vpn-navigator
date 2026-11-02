@@ -3,6 +3,10 @@ import Foundation
 /// Counts decoded response bytes as they arrive, including responses without
 /// Content-Length. File downloads keep only URLSession's current chunk in memory.
 public enum BoundedDownload {
+    public enum Failure: Error, LocalizedError {
+        case httpStatus(Int)
+        public var errorDescription: String? { URLError(.badServerResponse).localizedDescription }
+    }
     public static func data(from url: URL, maximumBytes: Int, allowedHosts: Set<String>, timeout: TimeInterval = 30, configuration: URLSessionConfiguration = .ephemeral) async throws -> Data {
         let result = try await Request(maximumBytes: maximumBytes, allowedHosts: allowedHosts, timeout: timeout, configuration: configuration).run(url)
         guard case .data(let data) = result else { throw URLError(.unknown) }; return data
@@ -67,8 +71,11 @@ public enum BoundedDownload {
         }
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
                         completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-            guard allowed(response.url), (response as? HTTPURLResponse)?.statusCode == 200 else {
+            guard allowed(response.url), let http = response as? HTTPURLResponse else {
                 completionHandler(.cancel); finish(.failure(URLError(.badServerResponse))); return
+            }
+            guard http.statusCode == 200 else {
+                completionHandler(.cancel); finish(.failure(Failure.httpStatus(http.statusCode))); return
             }
             guard response.expectedContentLength <= Int64(maximumBytes) else {
                 completionHandler(.cancel); finish(.failure(ProfileFileIO.Failure.tooLarge)); return

@@ -14,6 +14,7 @@ final class RouteExecutor {
     private let run: (String, [String]) throws -> String
     private let usesKernelWriter: Bool
     private var kernelWriter: KernelRouteWriter?
+    private var kernelReader: KernelRouteReader?
     private var journalHandle: FileHandle?
 
     init(journal: URL, shouldCancel: @escaping () -> Bool = { false }, run: ((String, [String]) throws -> String)? = nil) {
@@ -176,6 +177,10 @@ final class RouteExecutor {
     }
 
     private func observe(_ route: RouteTarget) throws -> ObservedIPv4Route {
+        if usesKernelWriter {
+            if kernelReader == nil { kernelReader = try KernelRouteReader() }
+            return try kernelReader!.observe(route)
+        }
         let output = try run("/sbin/route",
                                       ["-n", "get", "-net", route.prefix.description])
         return ObservedIPv4Route(commandOutput: output)
@@ -235,7 +240,11 @@ final class RouteExecutor {
         }
     }
     private func observe6(_ route: IPv6RouteTarget) throws -> ObservedIPv6Route {
-        ObservedIPv6Route(commandOutput: try run("/sbin/route", ["-n", "get", "-inet6", "-net", route.prefix.description]))
+        if usesKernelWriter {
+            if kernelReader == nil { kernelReader = try KernelRouteReader() }
+            return try kernelReader!.observe(route)
+        }
+        return ObservedIPv6Route(commandOutput: try run("/sbin/route", ["-n", "get", "-inet6", "-net", route.prefix.description]))
     }
     private func release6(_ route: IPv6RouteTarget, deleteSystemRoute: Bool) throws {
         let mutation = IPv6RouteMutation(action: .remove, route: route)
@@ -253,7 +262,8 @@ final class RouteExecutor {
         let allowlisted: Set<String> = [
             "/sbin/route", "/usr/sbin/netstat", "/sbin/ifconfig", "/usr/bin/dscacheutil"
         ]
-        guard allowlisted.contains(executable) else {
+        let dnsCacheSignal = executable == "/bin/launchctl" && arguments == ["kill", "HUP", "system/com.apple.mDNSResponder"]
+        guard allowlisted.contains(executable) || dnsCacheSignal else {
             throw RouteExecutionError.disallowedExecutable
         }
         let task = Process()

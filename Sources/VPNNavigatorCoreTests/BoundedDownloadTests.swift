@@ -56,4 +56,13 @@ final class BoundedDownloadTests: XCTestCase {
         do { _ = try await BoundedDownload.data(from: URL(string: "http://download.vpnnav.test/ok")!, maximumBytes: 128, allowedHosts: ["download.vpnnav.test"], configuration: configuration); XCTFail() }
         catch let error as URLError { XCTAssertEqual(error.code, .badURL) }
     }
+    func testHTTPStatusRemainsAvailableToCallers() async throws {
+        do {
+            _ = try await BoundedDownload.data(from: url("error"), maximumBytes: 128,
+                allowedHosts: ["download.vpnnav.test"], configuration: configuration)
+            XCTFail("HTTP failure accepted")
+        } catch BoundedDownload.Failure.httpStatus(let status) {
+            XCTAssertEqual(status, 503)
+        }
+    }
 }

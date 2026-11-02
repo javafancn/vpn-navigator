@@ -10,7 +10,9 @@ Supports managed IPv4/IPv6 dual-stack routing, IPv6 server endpoints, dual-stack
 
 Closing the main window keeps the VPN and background services running and hides the Dock icon. Choose **Open Main Window** in the menu bar to restore the window and Dock icon; choose **Quit** to exit completely. The menu bar displays the navigation logo and VPN tunnel download/upload rates, sampled approximately once per second while connected, with automatic B/s, KB/s, and MB/s units. Missing or stale samples display **—**. These rates measure the VPN tunnel, not all traffic on your Mac.
 
-Current development version: **0.8.16**. Three build channels are available: development preview, local test, and Developer ID distribution. Local-test builds include the engine and use administrator approval to pin code identity without a paid developer certificate. Real-network and user-Mac installation acceptance are still required. Production distribution requires signing, notarization, and release acceptance.
+Current development version: **0.8.17**. Three build channels are available: development preview, local test, and Developer ID distribution. Local-test builds include the engine and use administrator approval to pin code identity without a paid developer certificate. Real-network and user-Mac installation acceptance are still required. Production distribution requires signing, notarization, and release acceptance.
+
+0.8.17 avoids repeated whole-payload validation during local-build status polling and atomically checkpoints committed route ownership to bound journal growth across mode changes. Changed inputs invalidate cached validation; engine startup and installation maintenance still force full verification. See [functional and performance review](docs/FUNCTION_AND_PERFORMANCE_0_8_17.md).
 
 0.8.16 also makes cache invalidation advisory in the OpenVPN DNS shell hook, including Original mode. Failed native DNS application still rejects the hook. See [follow-up review](docs/FOLLOWUP_REVIEW_0_8_16.md).
 

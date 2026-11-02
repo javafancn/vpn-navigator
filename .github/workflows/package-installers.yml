@@ -24,6 +24,8 @@ on:
       - 'Sources/VPNNavigatorHelper/ManagedTunnel.swift'
       - 'Sources/VPNNavigatorHelper/DNSRecoveryJournal.swift'
       - 'Sources/VPNNavigatorCore/LocalInstallation.swift'
+      - 'Sources/VPNNavigatorCore/ValidatedFileCache.swift'
+      - 'Sources/VPNNavigatorCore/RouteLedger.swift'
       - 'Sources/VPNNavigatorLocalSetup/**'
       - 'scripts/local-pkg-scripts/**'
       - 'scripts/local-uninstall-scripts/**'

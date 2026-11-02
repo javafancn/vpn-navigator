@@ -26,7 +26,7 @@ import VPNNavigatorCore
                 try LocalInstallation.completeInstallation()
                 print("Local helper installed and authenticated. No Developer ID certificate used.")
             } else if args == ["prepare-user-uninstall"], getuid() >= 500 {
-                let approval = try LocalInstallation.load()
+                let approval = try LocalInstallation.load(revalidate: true)
                 guard approval.ownerUID == getuid(), LocalInstallation.selfMatches([.setup], approval: approval) else { throw LocalInstallError.unsafe }
                 // User-owned LaunchAgents are removed only after dropping root.
                 try UserServices.setLogin(false)
@@ -39,7 +39,7 @@ import VPNNavigatorCore
                 // The PKG has already stopped the idle local job and checked
                 // recovery evidence. Root may retire an intact approval too.
                 if FileManager.default.fileExists(atPath: LocalInstallation.manifest.path) {
-                    let current = try LocalInstallation.load()
+                    let current = try LocalInstallation.load(revalidate: true)
                     guard LocalInstallation.selfMatches([.setup], approval: current) else { throw LocalInstallError.altered }
                     _ = try run(["-n", "-H", "-u", "#\(current.ownerUID)", LocalInstallation.executable(.setup).path,
                                  "prepare-user-uninstall"], executable: "/usr/bin/sudo")

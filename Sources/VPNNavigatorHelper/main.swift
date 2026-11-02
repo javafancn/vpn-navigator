@@ -80,7 +80,7 @@ if CommandLine.arguments.dropFirst().first == "--self-test-ipv6-kernel" {
 #endif
 
 if BuildChannel.isLocal {
-    guard let approval = try? LocalInstallation.load(), LocalInstallation.selfMatches([.helper], approval: approval) else { exit(1) }
+    guard let approval = try? LocalInstallation.load(revalidate: true), LocalInstallation.selfMatches([.helper], approval: approval) else { exit(1) }
 }
 
 final class HelperService: NSObject, VPNNavigatorHelperAPI {

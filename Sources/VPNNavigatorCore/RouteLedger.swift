@@ -14,6 +14,26 @@ public struct RouteLedgerEvent: Codable, Equatable, Sendable {
     }
 }
 
+/// Written atomically only between fully committed mutations. A checkpoint
+/// is a first-record replacement, never a way to clear an uncertain intent.
+public struct RouteLedgerCheckpoint: Codable, Sendable {
+    // Up to 30,000 effective direct routes per family, plus endpoint, DNS and
+    // default routes. Apply the same bound to recovery and checkpoints.
+    public static let maximumRoutes = 60_128
+    public let schema: Int
+    public let kind: String
+    public let installed: [RouteTarget]
+    public let installed6: [IPv6RouteTarget]
+    public init(installed: [RouteTarget], installed6: [IPv6RouteTarget]) {
+        schema = 1; kind = "vpnnav-route-checkpoint"
+        self.installed = installed; self.installed6 = installed6
+    }
+    public var isValid: Bool {
+        schema == 1 && kind == "vpnnav-route-checkpoint" && installed.count + installed6.count <= Self.maximumRoutes &&
+        Set(installed).count == installed.count && Set(installed6).count == installed6.count
+    }
+}
+
 public struct RouteLedgerReplay: Sendable {
     public let installed: [RouteTarget]
     public let installed6: [IPv6RouteTarget]
@@ -40,8 +60,16 @@ public struct RouteLedgerReplay: Sendable {
         var pending: [UUID: RouteMutation] = [:]
         var live6: [IPv6RouteTarget] = [], pending6: [UUID: IPv6RouteMutation] = [:]
         var corrupt = false
+        var first = true
         for row in text.split(separator: "\n", omittingEmptySubsequences: true) {
             let bytes = Data(row.utf8)
+            if first, let checkpoint = try? decoder.decode(RouteLedgerCheckpoint.self, from: bytes) {
+                first = false
+                if checkpoint.isValid { live = checkpoint.installed; live6 = checkpoint.installed6 }
+                else { corrupt = true }
+                continue
+            }
+            first = false
             if let event = try? decoder.decode(RouteLedgerEvent.self, from: bytes) {
                 switch event.phase {
                 case .begun:

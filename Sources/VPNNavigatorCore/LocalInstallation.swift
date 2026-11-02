@@ -102,6 +102,8 @@ public enum LocalInstallError: Error, LocalizedError {
     }
 }
 public enum LocalInstallation {
+    private static let activeValidation = ValidatedFileCache<LocalApproval>()
+    private static let retiredValidation = ValidatedFileCache<LocalApproval>()
     public static var nativeArchitecture: String {
         #if arch(arm64)
         return "arm64"
@@ -161,7 +163,18 @@ public enum LocalInstallation {
         guard ((attrs[.size] as? NSNumber)?.intValue ?? Int.max) < 32_768 else { throw LocalInstallError.invalid }
         let value = try JSONDecoder().decode(LocalApproval.self, from: Data(contentsOf: path)); try value.validate(); return value
     }
-    public static func load(allowRetired: Bool = false) throws -> LocalApproval {
+    public static func load(allowRetired: Bool = false, revalidate: Bool = false) throws -> LocalApproval {
+        guard BuildChannel.isLocal else { throw LocalInstallError.notInstalled }
+        let parents = ["/Library", "/Library/Application Support", "/Library/Application Support/VPNNavigator"]
+            .map { URL(fileURLWithPath: $0) }
+        let inputs = parents + [root, payload, manifest, retired, transaction] +
+            LocalRole.allCases.filter { $0 != .app }.map(executable) +
+            [payload.appendingPathComponent("macos-dns-updown.sh"), uninstaller]
+        return try (allowRetired ? retiredValidation : activeValidation).value(paths: inputs, force: revalidate) {
+            try validateApproval(allowRetired: allowRetired)
+        }
+    }
+    private static func validateApproval(allowRetired: Bool) throws -> LocalApproval {
         if isInstallationPending && getuid() != 0 { throw LocalInstallError.incomplete }
         let record = FileManager.default.fileExists(atPath: manifest.path) ? manifest : (allowRetired ? retired : manifest)
         guard BuildChannel.isLocal, FileManager.default.fileExists(atPath: record.path) else { throw LocalInstallError.notInstalled }
@@ -209,7 +222,7 @@ public enum LocalInstallation {
     }
     public static func completeInstallation() throws {
         guard getuid() == 0, let pending = try pendingTransaction(), pending.phase == .verifying else { throw LocalInstallError.incomplete }
-        let approval = try load()
+        let approval = try load(revalidate: true)
         guard selfMatches([.setup], approval: approval) else { throw LocalInstallError.unsafe }
         try FileManager.default.removeItem(at: transaction)
     }
@@ -247,7 +260,7 @@ public enum LocalInstallation {
     /// or commands come from XPC. launchctl is spawned after its final reply.
     public static func removeApproval() throws {
         guard getuid() == 0 else { throw LocalInstallError.rootRequired }
-        _ = try load()
+        _ = try load(revalidate: true)
         guard !hasRecoveryEvidence else { throw LocalInstallError.recoveryRequired }
         if FileManager.default.fileExists(atPath: daemonPlist.path) {
             try protected(daemonPlist)

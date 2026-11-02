@@ -16,20 +16,32 @@ final class RouteExecutor {
     private var kernelWriter: KernelRouteWriter?
     private var kernelReader: KernelRouteReader?
     private var journalHandle: FileHandle?
+    private var journalBytes = 0
+    private let compactionInterval: Int
+    private var compactAt: Int
 
-    init(journal: URL, shouldCancel: @escaping () -> Bool = { false }, run: ((String, [String]) throws -> String)? = nil) {
+    init(journal: URL, shouldCancel: @escaping () -> Bool = { false }, run: ((String, [String]) throws -> String)? = nil,
+         compactionInterval: Int = 4_000_000) {
         self.journal = journal
         self.shouldCancel = shouldCancel
         self.run = run ?? RouteExecutor.command
         usesKernelWriter = run == nil
+        self.compactionInterval = min(4_000_000, max(4096, compactionInterval))
+        compactAt = self.compactionInterval
         guard let data = try? Data(contentsOf: journal) else { return }
+        journalBytes = data.count
         let replay = RouteLedgerReplay(data: data)
         installed = replay.installed
         installed6 = replay.installed6
         ambiguous = !replay.permitsAutomaticRecovery
+        // Legacy JSON arrays and complete final records may have no newline.
+        // Replace them before appending, rather than joining two JSON values
+        // into a malformed first row during otherwise valid recovery.
+        if !ambiguous, !data.isEmpty, data.last != 10 { compactAt = 0 }
         if !ambiguous {
             if installed.isEmpty && installed6.isEmpty {
                 try? FileManager.default.removeItem(at: journal)
+                if !FileManager.default.fileExists(atPath: journal.path) { journalBytes = 0 }
             } else {
                 rollback()
             }
@@ -146,6 +158,7 @@ final class RouteExecutor {
         if !ambiguous && installed.isEmpty && installed6.isEmpty {
             try? journalHandle?.close(); journalHandle = nil
             try? FileManager.default.removeItem(at: journal)
+            if !FileManager.default.fileExists(atPath: journal.path) { journalBytes = 0; compactAt = compactionInterval }
         }
     }
 
@@ -190,6 +203,8 @@ final class RouteExecutor {
         try autoreleasepool {
         var data = try JSONEncoder().encode(event)
         data.append(10)
+        // Never compact after a begun intent or a failed kernel mutation.
+        if !ambiguous, journalBytes + data.count + 1024 >= compactAt { try compactJournal() }
         if journalHandle == nil {
             let descriptor = open(journal.path, O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
             guard descriptor >= 0 else { throw RouteExecutionError.journalFailure }
@@ -203,7 +218,26 @@ final class RouteExecutor {
         guard let handle = journalHandle else { throw RouteExecutionError.journalFailure }
         try handle.write(contentsOf: data)
         try handle.synchronize()
+        journalBytes += data.count
         }
+    }
+
+    private func compactJournal() throws {
+        guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
+        let checkpoint = RouteLedgerCheckpoint(installed: installed, installed6: installed6)
+        guard checkpoint.isValid else { throw RouteExecutionError.journalFailure }
+        var bytes = try JSONEncoder().encode(checkpoint)
+        bytes.append(10)
+        // Leave at least four MB for later begin/commit records beneath the
+        // recovery reader's 16 MB ceiling. Realistic maximum dual-stack plans
+        // fit in the compact representation, without duplicate mutation IDs.
+        guard bytes.count < 12_000_000 else { throw RouteExecutionError.journalFailure }
+        try ProfileFileIO.write(bytes, to: journal)
+        // The old handle points at the replaced inode. Open the new journal
+        // for the next event; never append to an unlinked pre-checkpoint file.
+        try? journalHandle?.close(); journalHandle = nil
+        journalBytes = bytes.count
+        compactAt = journalBytes + compactionInterval
     }
 
     func applyIPv6(_ routes: [IPv6RouteTarget], inheriting: Set<IPv6RouteTarget> = []) throws {

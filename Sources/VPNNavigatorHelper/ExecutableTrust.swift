@@ -22,7 +22,7 @@ enum ExecutableTrust {
 
     static func trustedOpenVPN() throws -> URL {
         if BuildChannel.isLocal {
-            let approval = try LocalInstallation.load()
+            let approval = try LocalInstallation.load(revalidate: true)
             guard LocalInstallation.selfMatches([.helper], approval: approval) else { throw LocalInstallError.altered }
             return LocalInstallation.executable(.engine)
         }

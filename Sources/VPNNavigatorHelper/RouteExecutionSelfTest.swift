@@ -4,6 +4,7 @@ import VPNNavigatorCore
 
 enum RouteExecutionSelfTest {
     static func run() throws {
+        try RouteCompactionSelfTest.run()
         try RouteCommandPressureSelfTest.observeLegacyBehavior()
         try RouteCommandPressureSelfTest.run()
         try RouteJournalRecoverySelfTest.run()

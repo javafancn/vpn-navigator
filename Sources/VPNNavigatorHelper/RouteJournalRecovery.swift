@@ -20,7 +20,7 @@ enum RouteJournalRecovery {
         guard !replay.malformed else { throw RouteExecutionError.ambiguousJournal }
         let routes = replay.installed + replay.uncertain.map(\.route)
         let routes6 = replay.installed6 + replay.uncertain6.map(\.route)
-        guard routes.count + routes6.count <= 60_000,
+        guard routes.count + routes6.count <= RouteLedgerCheckpoint.maximumRoutes,
               routes.allSatisfy({ route in
                   (0...32).contains(route.prefix.prefix) &&
                   (try? IPv4CIDR(route.prefix.description)) == route.prefix && valid(route.destination)

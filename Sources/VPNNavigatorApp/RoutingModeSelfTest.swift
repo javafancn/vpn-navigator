@@ -31,8 +31,10 @@ enum RoutingModeSelfTest {
         try "client\ndev tun\nremote fixture.example 1194\n<ca>\nFAKE\n</ca>\n".write(to: file, atomically: true, encoding: .utf8)
         let service = Service()
         let storeRoot = root.appendingPathComponent("profiles")
+        let rulesRoot = root.appendingPathComponent("Rules")
+        try await RuleUpdater(folder: rulesRoot).commit(RuleSet(text: (0..<100).map { "11.0.\($0).0/24" }.joined(separator: "\n")))
         let model = AppModel(profileStoreRoot: storeRoot, routingModeService:
-            RoutingModeService(snapshot: { service.report }, apply: { service.apply($0, $1) }))
+            RoutingModeService(snapshot: { service.report }, apply: { service.apply($0, $1) }), routingRuleCacheRoot: rulesRoot)
         await model.importFile(file); model.clearImportReport(); model.message = nil
         guard let id = model.selectedID else { throw Failure.check }
         await model.setMode(.fullVPN)

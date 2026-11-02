@@ -14,8 +14,8 @@ enum RuleAgent {
             async let feed4 = manager.fetchCandidate()
             async let feed6 = manager6.fetchCandidate()
             let (candidate, candidate6) = try await (feed4, feed6)
-            let current = try await manager.cached()
-            let current6 = try await manager6.cached()
+            let cached = try await RoutingRuleUpdate.cached(root: support)
+            let current = cached.ipv4, current6 = cached.ipv6
             if current?.routes == candidate.routes, current6?.routes == candidate6.routes {
                 print("China IPv4/IPv6 rules unchanged.")
                 return
@@ -31,20 +31,13 @@ enum RuleAgent {
                     return
                 }
             } else { status = "disconnected: helper not enabled" }
-            if status.hasPrefix("connected:") {
-                let result = await HelperMessage.request { api, reply in
-                    api.updateRules(RoutingRuleBundle(ipv4: candidate.routes.map(\.description).joined(separator: "\n"), ipv6: candidate6.routes.map(\.description).joined(separator: "\n")).json, reply: reply)
-                }
-                guard result == "Rules applied" || result == "NO_ACTIVE_SPLIT" else {
-                    fputs("Active route update failed; previous cache preserved.\n", stderr)
-                    return
-                }
+            try await RoutingRuleUpdate.commit(root: support, ipv4: candidate, ipv6: candidate6) { text in
+                guard enabled else { return "NO_ACTIVE_SPLIT" }
+                return await HelperMessage.request { api, reply in api.updateRules(text, reply: reply) }
             }
-            try await manager.commit(candidate)
-            try await manager6.commit(candidate6)
             print("China IPv4/IPv6 rules updated: \(candidate.routes.count) prefixes.")
         } catch {
-            fputs("Rule update failed, prior rules preserved: \(error.localizedDescription)\n", stderr)
+            fputs("Rule update failed; inspect the reported recovery status: \(error.localizedDescription)\n", stderr)
         }
     }
 }

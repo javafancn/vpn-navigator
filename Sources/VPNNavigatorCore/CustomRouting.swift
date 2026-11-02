@@ -146,8 +146,13 @@ extension CustomRuleSet {
         let additions = try active6.filter { $0.action == .direct }.map { try Self.prefix6($0.cidr) }
         let cuts = try active6.filter { $0.action == .vpn }.map { try Self.prefix6($0.cidr) } + protectedVPN
         var source: [IPv6CIDR] = []
-        for value in Set(base + additions).sorted(by: { $0.prefix == $1.prefix ? $0 < $1 : $0.prefix < $1.prefix }) {
-            if !source.contains(where: { $0.prefix <= value.prefix && $0.overlaps(value) }) { source.append(value) }
+        // Canonical prefixes sorted by network place every child immediately
+        // after its ancestor (shorter prefix first for the same network).
+        // Accepted prefixes are disjoint, so only the last one can cover the
+        // next input. Avoid scanning all earlier prefixes for every rule.
+        for value in Set(base + additions).sorted() {
+            if let previous = source.last, previous.prefix <= value.prefix, previous.overlaps(value) { continue }
+            source.append(value)
         }
         var result: [IPv6CIDR] = []
         func subtract(_ value: IPv6CIDR, _ overlapping: [IPv6CIDR]) throws {

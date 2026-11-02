@@ -30,7 +30,8 @@ enum ManagedConnectionSelfTest {
             defaults.removePersistentDomain(forName: root.lastPathComponent)
             try? FileManager.default.removeItem(at: root)
         }
-        let model = AppModel(backgroundServiceDefaults: defaults, profileStoreRoot: root.appendingPathComponent("Profiles"), libraryDefaults: defaults, smartDefaults: defaults)
+        let rulesRoot = root.appendingPathComponent("Rules")
+        let model = AppModel(backgroundServiceDefaults: defaults, profileStoreRoot: root.appendingPathComponent("Profiles"), libraryDefaults: defaults, smartDefaults: defaults, routingRuleCacheRoot: rulesRoot)
         await model.load()
         guard model.rules != nil, model.message == nil else { throw Failure.check("bundled rule bootstrap: " + (model.message ?? "missing rules")) }
         await model.refreshConnectionStatus()
@@ -43,7 +44,12 @@ enum ManagedConnectionSelfTest {
         // that message exactly as a user does; verify the structured result.
         model.message = nil
         model.selectedID = profile.id
-        model.rules = try RuleSet(text: String(decoding: ProfileFileIO.read(URL(fileURLWithPath: request.rulesPath)), as: UTF8.self))
+        // Bootstrap was checked above. Replace only this disposable cache with
+        // the fixture so production's pre-connect cache reload reads it too.
+        let fixtureRules = try RuleSet(text: String(decoding: ProfileFileIO.read(URL(fileURLWithPath: request.rulesPath)), as: UTF8.self))
+        try FileManager.default.removeItem(at: rulesRoot.appendingPathComponent("routing-rules.json"))
+        try await RuleUpdater(folder: rulesRoot).commit(fixtureRules)
+        model.rules = fixtureRules
         model.killSwitch = false
         model.requireDualStack = false
         model.reconnectOriginal = false
@@ -85,6 +91,9 @@ enum ManagedConnectionSelfTest {
         }
         guard model.connected else { throw Failure.check("connection deadline") }
         print("METRIC: connection mode=\(request.mode.rawValue) seconds=\(String(format: "%.3f", ProcessInfo.processInfo.systemUptime - started))")
+        if let timings = await HelperClient.shared.sessionReport()?.connectionTimings {
+            print("METRIC: connection stages " + String(decoding: try JSONEncoder().encode(timings), as: UTF8.self))
+        }
         try await verify(model, mode: request.mode)
         if request.switchRoundTrip {
             guard request.mode != .original else { throw Failure.check("live switching requires managed mode") }

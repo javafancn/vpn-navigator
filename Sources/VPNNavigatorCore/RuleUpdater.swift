@@ -36,29 +36,8 @@ public actor RuleUpdater {
         return try RuleSet(text: String(contentsOf: file, encoding: .utf8))
     }
 
-    private func archivePrevious(_ previous: RuleSet) throws {
-        try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: archive.path)
-        let snapshot = archive.appendingPathComponent(UUID().uuidString + ".txt")
-        try Self.serialize(previous).write(to: snapshot, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: snapshot.path)
-    }
-
-    private func pruneArchives(keeping count: Int = 10) {
-        guard let old = try? snapshots() else { return }
-        for item in old.dropFirst(count) {
-            try? FileManager.default.removeItem(at:
-                archive.appendingPathComponent(item.id.uuidString + ".txt"))
-        }
-    }
-
-    private static func serialize(_ rules: RuleSet) -> String {
-        rules.routes.map(\.description).joined(separator: "\n") + "\n"
-    }
     public func cached() throws -> RuleSet? {
-        let file = folder.appendingPathComponent("china-ipv4.txt")
-        guard FileManager.default.fileExists(atPath: file.path) else { return nil }
-        return try RuleSet(text: String(contentsOf: file, encoding: .utf8))
+        try RuleCacheStore.read(folder).ipv4.map { try RuleSet(text: $0) }
     }
     public func localCandidate(_ url: URL) throws -> RuleSet {
         let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
@@ -74,11 +53,7 @@ public actor RuleUpdater {
         try commit(candidate)
         return candidate
     }
-    public func lastUpdated() throws -> Date? {
-        let file = folder.appendingPathComponent("china-ipv4.txt")
-        guard FileManager.default.fileExists(atPath: file.path) else { return nil }
-        return try file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-    }
+    public func lastUpdated() throws -> Date? { try RuleCacheStore.read(folder).ipv4UpdatedAt }
     public func fetchCandidate() async throws -> RuleSet {
         let sources = [Self.source, URL(string: "https://api.github.com/repos/misakaio/chnroutes2/contents/chnroutes.txt?ref=master")!]
         var failure: Error = RuleError.empty
@@ -96,13 +71,8 @@ public actor RuleUpdater {
         throw failure
     }
     public func commit(_ value: RuleSet) throws {
-        if let previous = try cached() {
-            try Self.validateChange(previous: previous, next: value)
-            guard previous.routes != value.routes else { return }
-            try archivePrevious(previous)
-        }
-        try save(value)
-        pruneArchives()
+        let prepared = try RuleCacheStore.Prepared(root: folder, ipv4: value, ipv6: nil)
+        try prepared.publish()
     }
     public static func validateChange(previous: RuleSet, next: RuleSet) throws {
         guard previous.routes.count > 0 else { throw RuleError.empty }
@@ -116,14 +86,6 @@ public actor RuleUpdater {
         guard delta.added.count + delta.removed.count <= max(100, old / 3) else {
             throw RuleError.suspiciousChange
         }
-    }
-    private func save(_ value: RuleSet) throws {
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
-        let target = folder.appendingPathComponent("china-ipv4.txt")
-        let encoded = Self.serialize(value)
-        try encoded.write(to: target, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
     }
     public func refresh() async throws -> RuleSet {
         let candidate = try await fetchCandidate()

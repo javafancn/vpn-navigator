@@ -1,5 +1,4 @@
 """Real installed app -> XPC -> TLS -> kernel routes, on disposable Macs only."""
-import contextlib
 import ipaddress
 import json
 import os
@@ -12,7 +11,7 @@ from pathlib import Path
 from managed_transport import ENDPOINT, transport
 from quit_fixture import exercise_quit
 from managed_web import DNS, WEB, upstream_resolver, web_fixture, verify_web
-from managed_performance import encrypted_bandwidth, verify_mode_performance
+from managed_performance import encrypted_bandwidth, verify_mode_performance, verify_web_performance
 
 APP = Path('/Applications/VPN Navigator.app/Contents/MacOS/VPNNavigatorApp')
 MANIFEST = Path('/Library/Application Support/VPNNavigator/Local/manifest.json')
@@ -98,6 +97,8 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
     timings = {}
     performance = {}
     baselines = {'tcp': [], 'udp': []}
+    web_performance = {}
+    web_baselines = {'tcp': [], 'udp': []}
     before_default = run(['/sbin/route', '-n', 'get', 'default']).stdout
     rules = folder / 'managed-rules.txt'
     # Deliberately non-adjacent /32s: custom-direct merging must not collapse
@@ -111,6 +112,12 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
          '-subj', '/CN=vpnnav-ci-server', '-keyout', folder / 'managed-server.key', '-out', folder / 'managed-server.csr'])
     run(['env', 'OPENSSL_CONF=/dev/null', openssl, 'x509', '-req', '-in', folder / 'managed-server.csr', '-CA', folder / 'ca.crt',
          '-CAkey', folder / 'ca.key', '-CAcreateserial', '-days', '1', '-extfile', extra, '-out', folder / 'managed-server.crt'])
+    web_extensions = folder / 'web.ext'
+    web_extensions.write_text('subjectAltName=DNS:*.vpnnav.test\nkeyUsage=digitalSignature\nextendedKeyUsage=serverAuth\n')
+    run(['env', 'OPENSSL_CONF=/dev/null', openssl, 'req', '-new', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes',
+         '-subj', '/CN=*.vpnnav.test', '-keyout', folder / 'web.key', '-out', folder / 'web.csr'])
+    run(['env', 'OPENSSL_CONF=/dev/null', openssl, 'x509', '-req', '-in', folder / 'web.csr', '-CA', folder / 'ca.crt',
+         '-CAkey', folder / 'ca.key', '-CAcreateserial', '-days', '1', '-extfile', web_extensions, '-out', folder / 'web.crt'])
     exceptions = control_exceptions(run)
     stop_server()
     trace_marker = Path('/var/run/vpn-navigator/ci-managed-trace')
@@ -167,6 +174,15 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
                         pushed = 'push "' + option + '"\n'
                         if dns_kind == 'modern':
                             pushed += 'push "dhcp-option DNS 223.5.5.5"\n'
+                    if mode == 'Original':
+                        # Give the reference exactly the same DNS and web
+                        # destinations through OpenVPN's normal pushed routes.
+                        # The client address is also its Darwin point-to-point
+                        # peer in subnet topology. Select that client utun,
+                        # rather than the same-host server's local gateway.
+                        pushed = (f'push "dhcp-option DNS {DNS}"\n'
+                                  f'push "route {DNS} 255.255.255.255 198.18.254.2"\n'
+                                  f'push "route {WEB} 255.255.255.255 198.18.254.2"\n')
                     config.write_text(server + pushed)
                     start_server()
                     case = folder / 'managed-case.json'
@@ -196,10 +212,15 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
                             if mode == 'China Direct':
                                 assert journal.count('"committed"') >= 4096, 'Large rule plan was not actually installed'
                         run(['sudo', '-n', 'cp', probe_approval, MANIFEST])
-                        context = web_fixture(run, folder, server_tunnel, upstream) if mode != 'Original' else contextlib.nullcontext(None)
+                        context = web_fixture(run, folder, server_tunnel, upstream)
                         with context as counts:
                             if counts is not None:
-                                verify_web(run, probe, counts, client_tunnel, fallback=not provided_dns, split=mode == 'China Direct')
+                                measured_web = verify_web(run, probe, counts, client_tunnel, fallback=not provided_dns,
+                                    split=mode == 'China Direct', requests=9)
+                                if dns_kind == 'legacy':
+                                    web_performance[(protocol, mode)] = measured_web
+                                    if mode == 'Original':
+                                        web_baselines[protocol].append(measured_web)
                             data_echo(run, probe, server_tunnel, client_tunnel, aliases)
                             if dns_kind == 'legacy':
                                 measured = encrypted_bandwidth(run, probe, server_tunnel, client_tunnel, aliases)
@@ -224,6 +245,7 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
         fields = lambda text: dict(re.findall(r'^\s*(gateway|interface):\s*(\S+)', text, re.M))
         assert fields(after) == fields(before_default), 'Managed test did not restore the physical default'
         verify_mode_performance(performance, baselines)
+        verify_web_performance(web_performance, web_baselines)
         print('PASS: six real TCP/UDP mode combinations and live switch round trips; physical default restored.', flush=True)
         print('PASS: missing server DNS uses VPN-only fallback and still resolves and loads the IPv4 webpage.', flush=True)
         print('PASS: modern isolated-environment DNS hook and legacy DHCP DNS both resolve and load IPv4 webpages through the VPN.', flush=True)

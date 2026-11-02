@@ -39,8 +39,11 @@ following the same synchronous kernel write/error behavior as Apple route(8).
 The append-only journal reuses one validated, private, no-follow file descriptor.
 Every individual mutation still has a synchronized begin and commit record;
 there is no deferred durability or batch of uncommitted system changes.
-Existing exact ownership checks remain mandatory before deletion. Interface and
-IPv6 mutations retain the system-tool path.
+Existing exact ownership checks remain mandatory before deletion. IPv6 gateway
+mutations now share the retained native writer, including explicit link-local
+interface scopes. Interface routes retain the system-tool path. The IPv6
+prefix deduplication pass sorts by network and compares only the last accepted
+disjoint prefix, replacing the quadratic scan. See [current performance fixes](PERFORMANCE_FIXES.md).
 
 Native acceptance and its precise forwarding/isolation limits are specified in
 [MANAGED_CONNECTION_ACCEPTANCE.md](MANAGED_CONNECTION_ACCEPTANCE.md). Connection
@@ -49,3 +52,8 @@ timings are reported separately from deliberate watchdog waits and cleanup.
 China Direct now adds a loopback UDP/TCP split resolver and explicit physical
 AliDNS host routes. Only domains in the bundled pinned list use those routes;
 unlisted names never fall back to physical DNS. See [split DNS](SPLIT_DNS_AND_DISCONNECT.md).
+
+UDP receives now use one nonblocking loopback socket, not one retained connection
+per source port. A bounded receive batch yields to upstream completions; the
+existing 128-query budget bounds upstream resources. TCP keeps bounded idle
+connection reclamation and protects partial frames and in-flight requests.

@@ -12,6 +12,11 @@ struct DecryptedProfileBackup: Sendable {
 final class ProfileBackupController: ObservableObject {
     enum Mode: String, CaseIterable { case export = "创建备份", restore = "从备份恢复" }
     @Published var mode: Mode = .export
+    enum HistoryMode: String, CaseIterable { case all = "全部历史版本", recent = "最近若干版本", current = "仅当前版本" }
+    @Published var allProfiles = true
+    @Published var selectedIDs = Set<UUID>()
+    @Published var historyMode: HistoryMode = .all
+    @Published var revisionLimit = 10
     @Published var password = ""
     @Published var confirmation = ""
     @Published var acknowledged = false
@@ -23,7 +28,7 @@ final class ProfileBackupController: ObservableObject {
     private weak var model: AppModel?
     private var task: Task<Void, Never>?
     init(model: AppModel) { self.model = model }
-    var canExport: Bool { !busy && acknowledged && password.count >= 12 && password.utf8.count <= 1024 && password == confirmation && model?.profiles.isEmpty == false }
+    var canExport: Bool { !busy && acknowledged && password.count >= 12 && password.utf8.count <= 1024 && password == confirmation && model?.profiles.isEmpty == false && (allProfiles || !selectedIDs.isEmpty) }
     var canDecrypt: Bool { !busy && selectedFile != nil && !password.isEmpty && password.utf8.count <= 1024 }
     var canRestore: Bool { !busy && acknowledged && preview?.snapshot.entries.isEmpty == false && model?.canRestoreProfileBackup == true }
     func reset() { guard !busy else { return }; password = ""; confirmation = ""; acknowledged = false; preview = nil; status = nil; problem = nil; selectedFile = nil }
@@ -43,10 +48,12 @@ final class ProfileBackupController: ObservableObject {
         panel.nameFieldStringValue = "VPNNavigator-\(ISO8601DateFormatter().string(from: Date()).prefix(10)).vpnnavbackup"
         panel.message = L10n.text("备份可能包含私钥与证书；密码无法找回，请使用独立长密码并妥善保存。")
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        let ids = allProfiles ? nil : selectedIDs
+        let limit: Int? = historyMode == .all ? nil : historyMode == .current ? 0 : revisionLimit
         let secret = password; password = ""; confirmation = ""; busy = true; problem = nil; status = L10n.text("正在读取配置并加密…")
         task = Task { [weak self] in
             let granted = url.startAccessingSecurityScopedResource(); defer { if granted { url.stopAccessingSecurityScopedResource() } }
-            do { let count = try await model.createEncryptedBackup(password: secret, to: url); self?.status = L10n.format("已加密保存 {0} 个配置及其历史版本。", [String(describing: count)]) }
+            do { let count = try await model.createEncryptedBackup(password: secret, to: url, profileIDs: ids, maximumRevisionsPerProfile: limit); self?.status = L10n.format("已加密保存 {0} 个配置及其历史版本。", [String(describing: count)]) }
             catch is CancellationError { self?.status = L10n.text("已取消，本次未提交备份。") }
             catch { self?.problem = error.localizedDescription; self?.status = nil }
             self?.busy = false; self?.task = nil
@@ -92,7 +99,7 @@ struct ProfileBackupView: View {
                 .onChange(of: controller.mode) { _ in controller.reset() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text(L10n.text("完整备份配置、原始文件、自包含证书材料、分组、收藏、分流规则与历史版本。恢复将新增配置，不覆盖现有内容。"))
+                    Text(L10n.text("备份所选配置、原始文件、自包含证书材料、分组、收藏、分流规则与所选历史版本。恢复将新增配置，不覆盖现有内容。"))
                         .font(.system(size: 13)).foregroundStyle(.secondary)
                     if controller.mode == .export { exportFields }
                     else { restoreFields }
@@ -113,6 +120,30 @@ struct ProfileBackupView: View {
     private var exportFields: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.format("当前配置库：{0} 个配置", [String(describing: model.profiles.count)])).font(.headline)
+            Toggle(L10n.text("备份全部配置"), isOn: $controller.allProfiles)
+            if !controller.allProfiles {
+                HStack {
+                    Button(L10n.text("全选")) { controller.selectedIDs = Set(model.profiles.map(\.id)) }
+                    Button(L10n.text("清除选择")) { controller.selectedIDs.removeAll() }
+                    Spacer()
+                    Text(L10n.format("已选择 {0} 个配置", [String(controller.selectedIDs.count)])).font(.caption)
+                }
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        ForEach(model.profiles) { profile in
+                            Toggle(profile.name, isOn: Binding(get: { controller.selectedIDs.contains(profile.id) }, set: { selected in
+                                if selected { controller.selectedIDs.insert(profile.id) } else { controller.selectedIDs.remove(profile.id) }
+                            })).toggleStyle(.checkbox)
+                        }
+                    }
+                }.frame(height: 130)
+            }
+            Picker(L10n.text("历史版本"), selection: $controller.historyMode) {
+                ForEach(ProfileBackupController.HistoryMode.allCases, id: \.self) { Text(L10n.text($0.rawValue)).tag($0) }
+            }
+            if controller.historyMode == .recent {
+                Stepper(L10n.format("每个配置最多 {0} 个历史版本", [String(controller.revisionLimit)]), value: $controller.revisionLimit, in: 1...1000)
+            }
             SecureField(L10n.text("备份密码（至少 12 个字符）"), text: $controller.password)
             SecureField(L10n.text("再次输入备份密码"), text: $controller.confirmation)
             if !controller.confirmation.isEmpty && controller.password != controller.confirmation { Text(L10n.text("两次输入的密码不一致。")).font(.caption).foregroundStyle(.orange) }

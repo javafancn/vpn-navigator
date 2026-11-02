@@ -9,6 +9,8 @@ enum RouteExecutionSelfTest {
         try RouteJournalRecoverySelfTest.run()
         try DualStackRouteSelfTest.run()
         try RouteSwitchSelfTest.run()
+        try RulePlanningSelfTest.run()
+        try testOccupiedIPv4Prefixes()
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -52,6 +54,41 @@ enum RouteExecutionSelfTest {
         })
         try inherited.apply([host], inheriting: [host])
         guard inherited.installed.isEmpty, !FileManager.default.fileExists(atPath: hostJournal.path) else { throw RouteExecutionError.journalFailure }
+    }
+
+    private static func testOccupiedIPv4Prefixes() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        for (destination, prefix, flags) in [
+            ("1.0.1/24", "1.0.1.0/24", "UGSc"),
+            ("11/8", "11.0.0.0/8", "UGSc"),
+            ("192.168/16", "192.168.0.0/16", "UCS"),
+            ("11", "11.0.0.0/8", "UGSc"),
+            ("1.0.1.0/24", "1.0.1.0/24", "UGSc"),
+            ("1.0.1.2", "1.0.1.2/32", "UGHS"),
+            ("default", "0.0.0.0/0", "UGSc")
+        ] {
+            for batch in [false, true] {
+                let journal = folder.appendingPathComponent(UUID().uuidString)
+                var mutationAttempted = false
+                let executor = RouteExecutor(journal: journal, run: { executable, _ in
+                    if executable == "/usr/sbin/netstat" {
+                        return "Internet:\nDestination Gateway Flags Netif\n\(destination) 192.168.1.1 \(flags) en0\n"
+                    }
+                    mutationAttempted = true
+                    throw RouteExecutionError.disallowedExecutable
+                })
+                let target = RouteTarget(try IPv4CIDR(prefix), .viaGateway("192.168.1.1"))
+                do {
+                    if batch { try executor.apply([target]) } else { try executor.apply(target) }
+                    throw RouteExecutionError.journalFailure
+                } catch RouteExecutionError.existingRoute { }
+                guard !mutationAttempted, executor.installed.isEmpty,
+                      !FileManager.default.fileExists(atPath: journal.path) else { throw RouteExecutionError.journalFailure }
+            }
+        }
+        print("PASS: existing abbreviated IPv4 prefixes are rejected before mutation or journal creation in single and batch routing.")
     }
 }
 #endif

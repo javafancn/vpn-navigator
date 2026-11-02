@@ -52,6 +52,8 @@ public enum ProfileHealth {
         do {
             let parsed = try ProfileSafety.validate(runtime)
             try ManagedRoutingPolicy.validate(parsed, mode: mode)
+            do { try ServerIdentityPolicy.validate(parsed) }
+            catch let error as ServerIdentityError { add("server-identity", .error, error.localizedDescription) }
         } catch {
             // Never surface a raw directive, embedded key, or arbitrary error.
             add("compatibility", .error, L10n.text("配置不符合当前引擎或路由模式的兼容要求；请检查服务器、内联 CA 及不支持的选项。"))

@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import Darwin
 import VPNNavigatorCore
 
 /// Session-owned loopback UDP/TCP relay. No cache or query logging; macOS
@@ -12,7 +13,18 @@ final class SplitDNSProxy {
     private let domestic: [Upstream]
     private let vpn: [Upstream]
     private var listeners: [NWListener] = []
-    private var clients: [UUID: NWConnection] = [:]
+    private var udpDescriptor: Int32 = -1
+    private var udpSource: DispatchSourceRead?
+    private final class Client {
+        let connection: NWConnection
+        var pending = 0
+        var readingFrame = true
+        var lastUsed = ProcessInfo.processInfo.systemUptime
+        var mayEvict: Bool { pending == 0 && !readingFrame }
+        init(_ connection: NWConnection) { self.connection = connection }
+    }
+    private var clients: [UUID: Client] = [:]
+    private var idleTimer: DispatchSourceTimer?
     private var requests: [UUID: DNSResolution] = [:]
     private var stopped = false
     private(set) var port: UInt16 = 0
@@ -22,14 +34,99 @@ final class SplitDNSProxy {
     func start() throws {
         guard !vpn.isEmpty, listeners.isEmpty else { throw DNSJournalError.unavailable }
         do {
-            let tcp = try listen(tcp: true, port: .any)
+            let tcp = try listenTCP(port: .any)
             guard let bound = tcp.port else { throw DNSJournalError.unavailable }
             port = bound.rawValue
-            _ = try listen(tcp: false, port: bound)
+            try listenUDP(port: bound.rawValue)
+            queue.sync {
+                let timer = DispatchSource.makeTimerSource(queue: queue)
+                timer.schedule(deadline: .now() + 1, repeating: .seconds(1))
+                timer.setEventHandler { [weak self] in
+                    guard let self else { return }
+                    let now = ProcessInfo.processInfo.systemUptime
+                    let expired = self.clients.filter { $0.value.pending == 0 && now - $0.value.lastUsed >= 10 }.map(\.key)
+                    expired.forEach { self.close($0) }
+                }
+                idleTimer = timer; timer.resume()
+            }
         } catch { stop(); throw error }
     }
-    private func listen(tcp: Bool, port: NWEndpoint.Port) throws -> NWListener {
-        let params = tcp ? NWParameters.tcp : NWParameters.udp
+    private func listenUDP(port: UInt16) throws {
+        let descriptor = Darwin.socket(AF_INET, SOCK_DGRAM, 0)
+        guard descriptor >= 0 else { throw DNSJournalError.unavailable }
+        var capacity: Int32 = 262_144
+        let buffered = withUnsafePointer(to: &capacity) {
+            setsockopt(descriptor, SOL_SOCKET, SO_RCVBUF, $0, socklen_t(MemoryLayout<Int32>.size)) == 0 &&
+            setsockopt(descriptor, SOL_SOCKET, SO_SNDBUF, $0, socklen_t(MemoryLayout<Int32>.size)) == 0
+        }
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr.s_addr = UInt32(0x7f000001).bigEndian
+        let bound = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard buffered, bound == 0, fcntl(descriptor, F_SETFL, O_NONBLOCK) == 0,
+              fcntl(descriptor, F_SETFD, FD_CLOEXEC) == 0 else {
+            Darwin.close(descriptor); throw DNSJournalError.unavailable
+        }
+        queue.sync {
+            udpDescriptor = descriptor
+            let source = DispatchSource.makeReadSource(fileDescriptor: descriptor, queue: queue)
+            source.setEventHandler { [weak self] in self?.readUDPDatagrams() }
+            source.setCancelHandler { Darwin.close(descriptor) }
+            udpSource = source; source.resume()
+        }
+    }
+    private func stopUDP() {
+        udpDescriptor = -1
+        udpSource?.cancel(); udpSource = nil
+    }
+    private func readUDPDatagrams() {
+        let descriptor = udpDescriptor
+        guard descriptor >= 0, !stopped else { return }
+        var buffer = [UInt8](repeating: 0, count: 65_535)
+        // Bound work per queue turn so upstream completions and TCP clients
+        // keep progressing during a UDP burst. UDP has no per-source slots;
+        // the existing 128 in-flight query budget bounds upstream resources.
+        for _ in 0..<32 {
+            var peer = sockaddr_in(), length = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let count = buffer.withUnsafeMutableBytes { bytes in
+                withUnsafeMutablePointer(to: &peer) { pointer in
+                    pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                        Darwin.recvfrom(descriptor, bytes.baseAddress, bytes.count, 0, $0, &length)
+                    }
+                }
+            }
+            if count < 0 {
+                if errno == EINTR { continue }
+                if errno != EAGAIN && errno != EWOULDBLOCK { stopUDP() }
+                return
+            }
+            guard length == MemoryLayout<sockaddr_in>.size, peer.sin_family == AF_INET,
+                  UInt32(bigEndian: peer.sin_addr.s_addr) >> 24 == 127 else { continue }
+            let data = Data(buffer.prefix(count))
+            query(data, tcp: false) { [weak self] response in
+                guard let self, !self.stopped, self.udpDescriptor == descriptor, !response.isEmpty else { return }
+                var destination = peer
+                _ = response.withUnsafeBytes { bytes in
+                    withUnsafePointer(to: &destination) { pointer in
+                        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                            Darwin.sendto(descriptor, bytes.baseAddress, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                        }
+                    }
+                }
+            }
+        }
+        // Drain a large burst on later turns even if no further packet
+        // arrives to trigger another readiness notification.
+        queue.async { [weak self] in self?.readUDPDatagrams() }
+    }
+    private func listenTCP(port: NWEndpoint.Port) throws -> NWListener {
+        let params = NWParameters.tcp
         params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: port)
         let listener = try NWListener(using: params)
         let ready = DispatchSemaphore(value: 0)
@@ -41,7 +138,7 @@ final class SplitDNSProxy {
             default: break
             }
         }
-        listener.newConnectionHandler = { [weak self] connection in self?.accept(connection, tcp: tcp) }
+        listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
         listeners.append(listener); listener.start(queue: queue)
         guard ready.wait(timeout: .now() + 3) == .success, succeeded else { throw DNSJournalError.unavailable }
         return listener
@@ -49,63 +146,76 @@ final class SplitDNSProxy {
     func stop() {
         queue.sync {
             stopped = true
+            stopUDP()
+            idleTimer?.cancel(); idleTimer = nil
             listeners.forEach { $0.cancel() }; listeners.removeAll()
-            clients.values.forEach { $0.cancel() }; clients.removeAll()
+            let openClients = Array(clients.values); clients.removeAll()
+            openClients.forEach { $0.connection.cancel() }
             let pending = Array(requests.values); requests.removeAll()
             pending.forEach { $0.cancel() }
         }
     }
     func verify() throws {
-        guard queue.sync(execute: { !stopped && listeners.count == 2 && listeners.allSatisfy { $0.state == .ready } }) else {
+        guard queue.sync(execute: { !stopped && udpDescriptor >= 0 && udpSource != nil && listeners.count == 1 && listeners.allSatisfy { $0.state == .ready } }) else {
             throw DNSJournalError.unavailable
         }
     }
-    private func accept(_ connection: NWConnection, tcp: Bool) {
-        guard !stopped, clients.count < 64 else { connection.cancel(); return }
-        let id = UUID(); clients[id] = connection
-        connection.start(queue: queue)
-        queue.asyncAfter(deadline: .now() + 10) { [weak self] in self?.close(id) }
-        if tcp { readTCP(connection, id: id) } else { readUDP(connection, id: id) }
-    }
-    private func readUDP(_ connection: NWConnection, id: UUID) {
-        connection.receiveMessage { [weak self] data, _, _, error in
-            guard let self, self.clients[id] != nil, let data, error == nil else { self?.close(id); return }
-            // mDNSResponder can multiplex A/AAAA and parallel names on one
-            // source port. Keep receiving while each transaction is pending.
-            self.readUDP(connection, id: id)
-            self.query(data, tcp: false) { [weak self] response in
-                guard let self, self.clients[id] != nil, !response.isEmpty else { return }
-                connection.send(content: response, completion: .contentProcessed { [weak self] error in
-                    if error != nil { self?.close(id) }
-                })
-            }
+    private func accept(_ connection: NWConnection) {
+        guard !stopped else { connection.cancel(); return }
+        // Reclaim only idle TCP clients. New/partial frames and requests
+        // awaiting upstream or send completion cannot be evicted.
+        if clients.count >= 64, let oldest = clients.filter({ $0.value.mayEvict })
+            .min(by: { $0.value.lastUsed < $1.value.lastUsed })?.key { close(oldest) }
+        guard clients.count < 128 else { connection.cancel(); return }
+        let id = UUID(); clients[id] = Client(connection)
+        connection.stateUpdateHandler = { [weak self] state in
+            switch state { case .failed, .cancelled: self?.close(id); default: break }
         }
+        connection.start(queue: queue)
+        readTCP(connection, id: id)
     }
-    private func close(_ id: UUID) { clients.removeValue(forKey: id)?.cancel() }
+    private func close(_ id: UUID) { clients.removeValue(forKey: id)?.connection.cancel() }
     private func readTCP(_ connection: NWConnection, id: UUID) {
-        read(connection, count: 2) { [weak self] prefix in
+        read(connection, id: id, count: 2) { [weak self] prefix in
             guard let self, let prefix, self.clients[id] != nil else { self?.close(id); return }
             let length = Int(prefix[0]) << 8 | Int(prefix[1])
             guard length >= 17 else { self.close(id); return }
-            self.read(connection, count: length) { [weak self] data in
+            self.read(connection, id: id, count: length) { [weak self] data in
                 guard let self, let data else { self?.close(id); return }
-                self.query(data, tcp: true) { [weak self] response in
-                    guard let self, self.clients[id] != nil else { return }
-                    let framed = Data([UInt8(response.count >> 8), UInt8(response.count & 255)]) + response
-                    connection.send(content: framed, completion: .contentProcessed { [weak self] error in
-                        guard let self else { return }
-                        if error != nil { self.close(id) } else { self.readTCP(connection, id: id) }
-                    })
-                }
+                self.respond(data, connection: connection, id: id, tcp: true)
             }
         }
     }
-    private func read(_ connection: NWConnection, count: Int, buffer: Data = Data(), done: @escaping (Data?) -> Void) {
+    private func respond(_ data: Data, connection: NWConnection, id: UUID, tcp: Bool) {
+        guard let client = clients[id] else { return }
+        client.readingFrame = false; client.pending += 1
+        client.lastUsed = ProcessInfo.processInfo.systemUptime
+        query(data, tcp: tcp) { [weak self] response in
+            guard let self, self.clients[id] === client else { return }
+            guard !response.isEmpty else {
+                client.pending -= 1
+                if tcp { self.close(id) }
+                return
+            }
+            let content = tcp ? Data([UInt8(response.count >> 8), UInt8(response.count & 255)]) + response : response
+            connection.send(content: content, completion: .contentProcessed { [weak self] error in
+                guard let self, self.clients[id] === client else { return }
+                client.pending -= 1; client.lastUsed = ProcessInfo.processInfo.systemUptime
+                if error != nil { self.close(id) }
+                else if tcp { self.readTCP(connection, id: id) }
+            })
+        }
+    }
+    private func read(_ connection: NWConnection, id: UUID, count: Int, buffer: Data = Data(), done: @escaping (Data?) -> Void) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: count - buffer.count) { [weak self] data, _, complete, error in
+            guard let self, let client = self.clients[id] else { done(nil); return }
+            if let data, !data.isEmpty {
+                client.readingFrame = true; client.lastUsed = ProcessInfo.processInfo.systemUptime
+            }
             var next = buffer; if let data { next.append(data) }
             if next.count == count { done(next) }
             else if complete || error != nil || data?.isEmpty != false { done(nil) }
-            else { self?.read(connection, count: count, buffer: next, done: done) }
+            else { self.read(connection, id: id, count: count, buffer: next, done: done) }
         }
     }
     private func query(_ data: Data, tcp: Bool, done: @escaping (Data) -> Void) {

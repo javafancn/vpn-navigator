@@ -215,7 +215,7 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
             firewallRecoveryRequired: engine.firewallRecoveryRequired, attemptID: engine.activeAttemptID,
             networkRecoveryRequired: engine.networkRecoveryRequired,
             routingMode: engine.routingMode, routingRevision: engine.routingRevision,
-            customRuleDigest: engine.customRuleDigest, customRuleCount: engine.customRuleCount, ipStack: engine.ipStack, failureCode: engine.state == .failed ? engine.failureCode : nil)
+            customRuleDigest: engine.customRuleDigest, customRuleCount: engine.customRuleCount, ipStack: engine.ipStack, failureCode: engine.state == .failed ? engine.failureCode : nil, connectionTimings: engine.connectionTimings)
     }
     func activeProfile(reply: @escaping (String) -> Void) {
         queue.async { reply(self.engine.activeProfileID?.uuidString ?? "") }

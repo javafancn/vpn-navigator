@@ -7,13 +7,20 @@ public enum ProfileMaterializer {
     private static let external: Set<String> = ["ca", "cert", "key", "tls-auth", "tls-crypt", "tls-crypt-v2", "pkcs12"]
 
     public static func materialize(text: String, directory: URL) throws -> String {
+        guard text.utf8.count <= 2_000_000 else { throw ProfileValidationError.tooLarge }
         var result: [String] = []
+        var byteCount = 0
+        func append(_ row: String) throws {
+            let nextCount = byteCount + (result.isEmpty ? 0 : 1) + row.utf8.count
+            guard nextCount <= 2_000_000 else { throw ProfileValidationError.tooLarge }
+            result.append(row); byteCount = nextCount
+        }
         var inside: String?
         let base = directory.standardizedFileURL.resolvingSymlinksInPath()
         for (index, row) in text.components(separatedBy: .newlines).enumerated() {
             let trim = row.trimmingCharacters(in: .whitespaces)
             if let tag = inside {
-                result.append(row)
+                try append(row)
                 if trim == "</\(tag)>" { inside = nil }
                 continue
             }
@@ -21,17 +28,17 @@ public enum ProfileMaterializer {
                !trim.hasPrefix("</") {
                 let tag = String(trim.dropFirst().dropLast())
                 inside = tag
-                result.append(row)
+                try append(row)
                 continue
             }
             let tokens: [String]
             do { tokens = try OpenVPNOptionLexer.tokens(trim) }
             catch { throw MaterializeError.invalidPath(index + 1) }
-            guard let directive = tokens.first else { result.append(row); continue }
+            guard let directive = tokens.first else { try append(row); continue }
             if directive == "auth-user-pass", tokens.count == 2 {
                 // Do not import cleartext credentials from external files.
                 // The app prompts for the username/password via a secure field.
-                result.append("auth-user-pass")
+                try append("auth-user-pass")
                 continue
             }
             if external.contains(directive) && (tokens.count == 2 || directive == "tls-auth" && tokens.count == 3) {
@@ -55,13 +62,13 @@ public enum ProfileMaterializer {
                     }
                     body = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 }
-                result += ["<\(directive)>", body, "</\(directive)>"]
+                try append("<\(directive)>"); try append(body); try append("</\(directive)>")
                 if directive == "tls-auth", tokens.count == 3 {
                     guard ["0", "1"].contains(tokens[2]) else { throw MaterializeError.invalidPath(index + 1) }
-                    result.append("key-direction \(tokens[2])")
+                    try append("key-direction \(tokens[2])")
                 }
             } else {
-                result.append(row)
+                try append(row)
             }
         }
         return result.joined(separator: "\n")

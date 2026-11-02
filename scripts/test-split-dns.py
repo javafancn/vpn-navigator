@@ -101,7 +101,7 @@ for path in counts:
 
 helper = subprocess.Popen([sys.argv[1], '--self-test-split-dns', *[str(services[i].server_address[1]) for i in [0, 2, 4, 6]],
     str(Path('Resources/Rules/china-dns-domains.txt').resolve())],
-    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 try:
     assert select.select([helper.stdout], [], [], 12)[0], 'Relay readiness timed out'
     line = helper.stdout.readline().strip()
@@ -131,6 +131,34 @@ try:
         finally:
             if owned:
                 sock.close()
+
+    # Completed UDP flows have no EOF. More than 64 distinct source ports
+    # must work within the old ten-second retention window without a retry.
+    started = time.monotonic()
+    for i in range(1000):
+        assert query(f'healthy.churn{i}.baidu.com')[-1] == 1
+    print(f'METRIC: 1000 independent first-attempt UDP queries seconds={time.monotonic()-started:.3f}')
+
+    # More than 64 genuinely active flows must fit within the 128-request
+    # budget. Every primary delays these names, so idle eviction alone cannot
+    # make this test pass. No retries or extra listener limits are used.
+    burst = []
+    try:
+        for i in range(96):
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.connect(('127.0.0.1', port)); sock.settimeout(8)
+            name = f'slow.burst{i}.baidu.com'
+            ident = struct.pack('!H', i)
+            question = b''.join(bytes([len(s)]) + s.encode() for s in name.split('.')) + b'\0\0\1\0\1'
+            sock.send(ident + struct.pack('!HHHHH', 0x100, 1, 0, 0, 0) + question)
+            burst.append((sock, ident))
+        for sock, ident in burst:
+            response = sock.recv(65535)
+            assert response[:2] == ident and response[-1] == 1, 'Active UDP request lost under churn'
+    finally:
+        for sock, _ in burst:
+            sock.close()
+    print('PASS: 96 distinct active UDP flows complete without eviction or retry.')
 
     for tcp in [False, True]:
         assert query('healthy.baidu.com', tcp)[-1] == 1
@@ -173,6 +201,18 @@ try:
         while pending:
             response = shared.recv(65535)
             assert response[-1] == pending.pop(response[:2])
+    # Reclaiming idle flows must preserve an older flow that has an upstream
+    # request pending, even while many newer flows complete successfully.
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as shared:
+        shared.connect(('127.0.0.1', port)); shared.settimeout(4)
+        question = b'\x04slow\x05baidu\x03com\0\0\1\0\1'
+        ident = b'\xf1\x23'
+        shared.send(ident + struct.pack('!HHHHH', 0x100, 1, 0, 0, 0) + question)
+        for i in range(128):
+            assert query(f'healthy.pending-churn{i}.baidu.com')[-1] == 1
+        response = shared.recv(65535)
+        assert response[:2] == ident and response[-1] == 1, 'In-flight UDP client was evicted'
+        assert query('healthy.reused.baidu.com', stream=shared)[-1] == 1
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
         results = list(pool.map(lambda i: query(('a' + str(i) + '.baidu.com') if i % 2 else ('a' + str(i) + '.foreign.test'), tcp=bool(i%3)), range(32)))
         assert [r[-1] for r in results] == [1 if i%2 else 2 for i in range(32)]
@@ -193,10 +233,20 @@ try:
     print('PASS: real loopback-only split DNS UDP/TCP, A/AAAA, concurrent requests, framed persistent TCP, TC retry, forged/refused response failover, VPN-only failure and domain boundaries.')
     print(f'METRIC: domestic DNS {sum(direct)/len(direct)*1000:.1f}ms vs simulated remote DNS {sum(remote)/len(remote)*1000:.1f}ms; no user network latency claim.')
 finally:
-    helper.terminate()
+    pending = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    if helper.poll() is None and 'port' in locals():
+        question = b'\x07timeout\x07pending\x07foreign\x04test\0\0\1\0\1'
+        pending.sendto(b'\x12\x34' + struct.pack('!HHHHH', 0x100, 1, 0, 0, 0) + question, ('127.0.0.1', port))
+        time.sleep(.03)
+    try:
+        helper.stdin.write('STOP\n'); helper.stdin.flush(); helper.stdin.close()
+    except (BrokenPipeError, OSError):
+        pass
     try:
         helper.wait(timeout=5)
     except subprocess.TimeoutExpired:
         helper.kill(); helper.wait(timeout=5)
+    pending.close()
     for service in services:
         service.shutdown(); service.server_close()
+    assert helper.returncode == 0 and helper.stdout.readline().strip() == 'DNS_PROXY_STOPPED', 'Relay failed graceful stop with an in-flight request'

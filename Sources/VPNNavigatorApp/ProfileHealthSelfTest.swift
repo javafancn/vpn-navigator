@@ -13,7 +13,7 @@ enum ProfileHealthSelfTest {
         defer { try? FileManager.default.removeItem(at: root) }
         let model = AppModel(backgroundServiceDefaults: defaults, profileStoreRoot: root.appendingPathComponent("profiles"), libraryDefaults: defaults, smartDefaults: defaults)
         defer { model.profileHealth.stop(); model.smartConnection.stop(); model.quickAccess.shutdown() }
-        let config = "client\ndev tun\nremote fixture.example 1194\n<ca>\nSYNTHETIC_CA\n</ca>\nauth-user-pass\n"
+        let config = "client\nremote-cert-tls server\ndev tun\nremote fixture.example 1194\n<ca>\nSYNTHETIC_CA\n</ca>\nauth-user-pass\n"
         let originalFile = root.appendingPathComponent("old.ovpn")
         try config.write(to: originalFile, atomically: true, encoding: .utf8)
         await model.importFile(originalFile); model.clearImportReport()

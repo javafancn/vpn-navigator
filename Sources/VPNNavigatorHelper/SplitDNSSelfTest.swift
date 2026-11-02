@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import Darwin
 import VPNNavigatorCore
 
 enum SplitDNSSelfTest {
@@ -15,6 +16,12 @@ enum SplitDNSSelfTest {
             vpn: [vpn, vpnBackup].map { .init(address: "127.0.0.1", port: $0) })
         try proxy.start(); try proxy.verify()
         print("DNS_PROXY_PORT=\(proxy.port)"); fflush(stdout)
+        DispatchQueue.global(qos: .utility).async {
+            guard readLine() == "STOP" else { return }
+            proxy.stop(); proxy.stop()
+            print("DNS_PROXY_STOPPED"); fflush(stdout)
+            exit(0)
+        }
         // Explicitly disposable debug process; no routes, journal or service
         // activation. The caller terminates only the child Process it started.
         RunLoop.main.run()

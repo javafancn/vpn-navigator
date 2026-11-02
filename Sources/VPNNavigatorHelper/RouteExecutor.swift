@@ -43,6 +43,12 @@ final class RouteExecutor {
             try kernelWriter!.apply(route, adding: adding)
         } else { _ = try run("/sbin/route", route.arguments(adding: adding)) }
     }
+    private func mutate(_ route: IPv6RouteTarget, adding: Bool) throws {
+        if usesKernelWriter, case .viaGateway = route.destination {
+            if kernelWriter == nil { kernelWriter = try KernelRouteWriter() }
+            try kernelWriter!.apply(route, adding: adding)
+        } else { _ = try run("/sbin/route", route.arguments(adding: adding)) }
+    }
 
     func apply(_ route: RouteTarget) throws {
         guard !shouldCancel() else { throw CancellationError() }
@@ -84,10 +90,17 @@ final class RouteExecutor {
             guard let first = fields.first else { return nil }
             let destination = String(first)
             if destination == "default" { return try? IPv4CIDR("0.0.0.0/0") }
-            if destination.contains("/") { return try? IPv4CIDR(destination) }
-            var octets = destination.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+            let parts = destination.split(separator: "/", omittingEmptySubsequences: false)
+            guard (1...2).contains(parts.count) else { return nil }
+            var octets = parts[0].split(separator: ".", omittingEmptySubsequences: false).map(String.init)
             guard (1...4).contains(octets.count), octets.allSatisfy({ UInt8($0) != nil }) else { return nil }
-            let bits = fields.count > 2 && fields[2].contains("H") ? 32 : octets.count * 8
+            let bits: Int
+            if parts.count == 2 {
+                guard let prefix = Int(parts[1]), (0...32).contains(prefix) else { return nil }
+                bits = prefix
+            } else {
+                bits = fields.count > 2 && fields[2].contains("H") ? 32 : octets.count * 8
+            }
             while octets.count < 4 { octets.append("0") }
             return try? IPv4CIDR(octets.joined(separator: ".") + "/\(bits)")
         })
@@ -207,7 +220,7 @@ final class RouteExecutor {
             }
             let mutation = IPv6RouteMutation(action: .add, route: route)
             try append(IPv6RouteLedgerEvent(phase: .begun, ipv6Mutation: mutation)); ambiguous = true
-            _ = try run("/sbin/route", route.arguments(adding: true))
+            try mutate(route, adding: true)
             try append(IPv6RouteLedgerEvent(phase: .committed, ipv6Mutation: mutation))
             installed6.append(route); ambiguous = false
         }
@@ -227,7 +240,7 @@ final class RouteExecutor {
     private func release6(_ route: IPv6RouteTarget, deleteSystemRoute: Bool) throws {
         let mutation = IPv6RouteMutation(action: .remove, route: route)
         try append(IPv6RouteLedgerEvent(phase: .begun, ipv6Mutation: mutation)); ambiguous = true
-        if deleteSystemRoute { _ = try run("/sbin/route", route.arguments(adding: false)) }
+        if deleteSystemRoute { try mutate(route, adding: false) }
         try append(IPv6RouteLedgerEvent(phase: .committed, ipv6Mutation: mutation))
         installed6.removeAll { $0 == route }; ambiguous = false
     }

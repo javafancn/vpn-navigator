@@ -10,9 +10,11 @@ public struct ConnectionObservation: Sendable {
     public let stack: TunnelIPStack?
     public let traffic: TunnelTraffic?
     public let failure: DiagnosticCode?
+    public let connectionTimings: [ConnectionStageTiming]?
     public let verifiedConnection: Bool
     public init(_ report: SessionReport) {
         state = report.state; profileID = report.activeProfileID; attemptID = report.attemptID
+        connectionTimings = ConnectionStageTiming.validated(report.connectionTimings)
         mode = report.routingMode; stack = report.ipStack; traffic = report.traffic; failure = report.failureCode
         verifiedConnection = report.state == .connected && report.challenge == nil && !report.requiresNetworkRecovery &&
             report.routingMode != nil && (report.routingMode == .original || report.routingRevision != nil)
@@ -75,6 +77,7 @@ public struct ConnectionHistoryRecord: Codable, Identifiable, Equatable, Sendabl
     public var receivedBytes: UInt64 = 0
     public var sentBytes: UInt64 = 0
     public var everConnected = false
+    public var connectionTimings: [ConnectionStageTiming]?
     public var events: [ConnectionHistoryEvent] = []
     mutating func add(_ kind: ConnectionHistoryEventKind, at date: Date, mode: RoutingMode? = nil, failure: DiagnosticCode? = nil) {
         if let last = events.last, last.kind == kind, last.mode == mode, last.failure == failure { return }
@@ -96,6 +99,7 @@ public struct ConnectionHistoryArchive: Codable, Equatable, Sendable {
     public func validate() throws {
         guard schema == 1, preferences.isValid, records.count <= 200, Set(records.map(\.id)).count == records.count else { throw ConnectionHistoryFailure.invalidArchive }
         for row in records {
+            if let timings = row.connectionTimings, ConnectionStageTiming.validated(timings) == nil { throw ConnectionHistoryFailure.invalidArchive }
             guard [row.beganAt, row.lastObservedAt, row.endedAt].compactMap({ $0 }).allSatisfy({ $0.timeIntervalSince1970.isFinite }),
                   row.observedConnectedSeconds.isFinite, (0...10_000_000_000).contains(row.observedConnectedSeconds), row.events.count <= 40,
                   Set(row.events.map(\.id)).count == row.events.count, row.events.allSatisfy({ $0.date.timeIntervalSince1970.isFinite }) else { throw ConnectionHistoryFailure.invalidArchive }
@@ -221,6 +225,7 @@ public struct ConnectionHistoryTracker: Sendable {
                 consume(.unverified, at: now, uptime: uptime); return
             }
             active?.lastObservedAt = now
+            if let timings = observation.connectionTimings { active?.connectionTimings = timings }
             if observation.state == .disconnected || observation.state == .failed {
                 let outcome: ConnectionHistoryOutcome = observation.state == .failed ? .failed : userStop && !current.everConnected ? .cancelled : .completed
                 finish(outcome, kind: observation.state == .failed ? .failed : .disconnected, at: now, failure: observation.failure)

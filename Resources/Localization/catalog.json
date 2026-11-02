@@ -90,6 +90,11 @@
     "zh": "配置未保存：{0}"
   },
   {
+    "key": "DNS 准备",
+    "zh": "DNS 准备",
+    "en": "DNS preparation"
+  },
+  {
     "key": "DNS 查询域名",
     "zh": "DNS 查询域名",
     "en": "DNS query name"
@@ -183,6 +188,11 @@
     "key": "IPv6 更新失败，原缓存保留：",
     "zh": "IPv6 更新失败，原缓存保留：",
     "en": "IPv6 update failed; old cache retained: "
+  },
+  {
+    "key": "IPv6 更新失败：",
+    "zh": "IPv6 更新失败：",
+    "en": "IPv6 update failed: "
   },
   {
     "key": "IPv6 更新未确认，旧缓存保留：",
@@ -815,6 +825,11 @@
     "en": "Failures & authentication only"
   },
   {
+    "key": "仅当前版本",
+    "zh": "仅当前版本",
+    "en": "Current version only"
+  },
+  {
     "key": "仅有线网络",
     "zh": "仅有线网络",
     "en": "Wired only"
@@ -1075,6 +1090,16 @@
     "en": "Global routing"
   },
   {
+    "key": "全选",
+    "zh": "全选",
+    "en": "Select all"
+  },
+  {
+    "key": "全部历史版本",
+    "zh": "全部历史版本",
+    "en": "All revisions"
+  },
+  {
     "key": "全部配置",
     "zh": "全部配置",
     "en": "All profiles"
@@ -1233,6 +1258,11 @@
     "key": "助手报告已连接",
     "zh": "助手报告已连接",
     "en": "Helper reports connected"
+  },
+  {
+    "key": "助手未确认规则更新：{0}",
+    "zh": "助手未确认规则更新：{0}",
+    "en": "The helper did not confirm the rule update: {0}"
   },
   {
     "key": "助手状态尚未通过核验，请检查安装与授权。",
@@ -1435,6 +1465,16 @@
     "en": "Stop the session if a managed connection fails"
   },
   {
+    "key": "另一个应用实例正在使用配置库，请等待其操作完成后重试。",
+    "zh": "另一个应用实例正在使用配置库，请等待其操作完成后重试。",
+    "en": "Another application instance is using the profile library. Wait for it to finish and try again."
+  },
+  {
+    "key": "另一个规则更新正在进行，请稍后重试。",
+    "zh": "另一个规则更新正在进行，请稍后重试。",
+    "en": "Another rule update is in progress. Please try again shortly."
+  },
+  {
     "key": "只代表当前系统路由表采样。",
     "zh": "只代表当前系统路由表采样。",
     "en": "A snapshot of current system routes only."
@@ -1590,6 +1630,11 @@
     "en": "Return to the connection window to authenticate or cancel explicitly."
   },
   {
+    "key": "国内域名解析专用直连 DNS，优先于地区和自定义规则。",
+    "zh": "国内域名解析专用直连 DNS，优先于地区和自定义规则。",
+    "en": "Dedicated direct DNS for listed domestic domains, ahead of country and custom rules."
+  },
+  {
     "key": "国内直连使用已校验的本地规则，支持在线更新与离线导入。IPv6 地区分流未提供，实验性断线保护需完成发布验收。",
     "zh": "国内直连使用已校验的本地 IPv4／IPv6 规则，支持在线更新与离线导入。实验性断线保护仍需完成发布验收。",
     "en": "China direct routing uses verified local IPv4/IPv6 rules with online updates and offline import. Experimental connection protection still requires release acceptance."
@@ -1670,6 +1715,11 @@
     "en": "Back up & restore…"
   },
   {
+    "key": "备份全部配置",
+    "zh": "备份全部配置",
+    "en": "Back up all profiles"
+  },
+  {
     "key": "备份内容无法通过完整性或配置检查，未执行恢复。",
     "zh": "备份内容无法通过完整性或配置检查，未执行恢复。",
     "en": "Backup integrity or profile checks failed. Nothing restored."
@@ -1693,6 +1743,11 @@
     "key": "备份引用的配置文件缺失或无法安全读取，不能恢复该列表。请保留现状并重新导入原始配置。",
     "zh": "备份引用的配置文件缺失或无法安全读取，不能恢复该列表。请保留现状并重新导入原始配置。",
     "en": "Referenced profile files are missing or unsafe to read. Index cannot be restored. Keep the current state and reimport original profiles."
+  },
+  {
+    "key": "备份所选配置、原始文件、自包含证书材料、分组、收藏、分流规则与所选历史版本。恢复将新增配置，不覆盖现有内容。",
+    "zh": "备份所选配置、原始文件、自包含证书材料、分组、收藏、分流规则与所选历史版本。恢复将新增配置，不覆盖现有内容。",
+    "en": "Back up selected profiles, original files, embedded certificate material, groups, favorites, routing rules and selected revisions. Restore adds profiles without overwriting existing content."
   },
   {
     "key": "备份时间：",
@@ -2215,6 +2270,11 @@
     "en": "Selected"
   },
   {
+    "key": "已选择 {0} 个配置",
+    "zh": "已选择 {0} 个配置",
+    "en": "{0} profiles selected"
+  },
+  {
     "key": "已采集连接时长",
     "zh": "已采集连接时长",
     "en": "Observed connection time"
@@ -2313,6 +2373,11 @@
     "key": "异常、认证请求和恢复未完成会分别提示。同一会话事件只提醒一次；通知不包含配置名称、服务器、Wi-Fi 名称或凭据。点击通知打开主窗口。横幅与声音受系统设置及专注模式控制。",
     "zh": "异常、认证请求和恢复未完成会分别提示。同一会话事件只提醒一次；通知不包含配置名称、服务器、Wi-Fi 名称或凭据。点击通知打开主窗口。横幅与声音受系统设置及专注模式控制。",
     "en": "Failures, authentication requests and unfinished recovery are notified separately, once per session event. Notifications omit profile, server and Wi-Fi names and credentials. Click to open the main window. Banners and sounds follow System Settings and Focus."
+  },
+  {
+    "key": "引擎启动",
+    "zh": "引擎启动",
+    "en": "Engine startup"
   },
   {
     "key": "引擎流量计数重置，已重新采样",
@@ -2940,6 +3005,11 @@
     "en": "No connection history yet. Recording starts with the next session."
   },
   {
+    "key": "暂无阶段耗时，请使用更新后的助手连接一次。",
+    "zh": "暂无阶段耗时，请使用更新后的助手连接一次。",
+    "en": "No stage timings yet. Connect once using the updated helper."
+  },
+  {
     "key": "更新 IPv6 分流规则",
     "zh": "更新 IPv6 分流规则",
     "en": "Update IPv6 routes"
@@ -3035,6 +3105,11 @@
     "en": "Uses a connection confirmed by the helper. With no history, connect manually first or choose a fixed profile."
   },
   {
+    "key": "最近若干版本",
+    "zh": "最近若干版本",
+    "en": "Recent revisions"
+  },
+  {
     "key": "有效采样 {0} 个，下载 {1}，上传 {2}",
     "zh": "有效采样 {0} 个，下载 {1}，上传 {2}",
     "en": "{0} valid samples, download {1}, upload {2}"
@@ -3088,6 +3163,11 @@
     "key": "服务未安装",
     "zh": "服务未安装",
     "en": "Service not installed"
+  },
+  {
+    "key": "服务端身份校验参数无效，请检查 remote-cert-tls 和 verify-x509-name 配置。",
+    "zh": "服务端身份校验参数无效，请检查 remote-cert-tls 和 verify-x509-name 配置。",
+    "en": "Invalid server identity settings. Check remote-cert-tls and verify-x509-name."
   },
   {
     "key": "未下载",
@@ -3730,6 +3810,11 @@
     "en": "This profile needs authentication. Connect manually and save credentials if appropriate. Auto-connect never uses temporary passwords from input fields."
   },
   {
+    "key": "每个配置最多 {0} 个历史版本",
+    "zh": "每个配置最多 {0} 个历史版本",
+    "en": "Up to {0} revisions per profile"
+  },
+  {
     "key": "每个配置最多保存 128 条规则，规则 ID 必须唯一。",
     "zh": "每个配置最多保存 128 条规则，规则 ID 必须唯一。",
     "en": "Each profile supports up to 128 rules with unique IDs."
@@ -3828,6 +3913,11 @@
     "key": "清除筛选",
     "zh": "清除筛选",
     "en": "Clear filters"
+  },
+  {
+    "key": "清除选择",
+    "zh": "清除选择",
+    "en": "Clear selection"
   },
   {
     "key": "源文件",
@@ -4520,6 +4610,11 @@
     "en": "Rule import failed; previous rules retained: {0}"
   },
   {
+    "key": "规则导入失败；请查看当前实际会话状态：{0}",
+    "zh": "规则导入失败；请查看当前实际会话状态：{0}",
+    "en": "Rule import failed; check the actual session state: {0}"
+  },
+  {
     "key": "规则数量",
     "zh": "规则数量",
     "en": "Rule count"
@@ -4535,9 +4630,19 @@
     "en": "Rule source"
   },
   {
+    "key": "规则模式：已收录的国内域名由国内 DNS 直连解析，其它域名通过 VPN 解析。全局模式的 DNS 通过 VPN，优先使用服务器 DNS，缺省使用 Cloudflare／Quad9。原始配置沿用配置文件。",
+    "zh": "规则模式：已收录的国内域名由国内 DNS 直连解析，其它域名通过 VPN 解析。全局模式的 DNS 通过 VPN，优先使用服务器 DNS，缺省使用 Cloudflare／Quad9。原始配置沿用配置文件。",
+    "en": "Rule mode resolves listed domestic domains through direct domestic DNS; other names use VPN DNS. Global mode uses VPN DNS, preferring the server and falling back to Cloudflare/Quad9. Original mode follows the profile."
+  },
+  {
     "key": "规则版本",
     "zh": "规则版本",
     "en": "Rule version"
+  },
+  {
+    "key": "规则缓存未发布，助手恢复旧规则未获确认。请断开 VPN 并重新连接以同步规则。",
+    "zh": "规则缓存未发布，助手恢复旧规则未获确认。请断开 VPN 并重新连接以同步规则。",
+    "en": "The rule cache was not published and restoring the previous live rules was not confirmed. Disconnect and reconnect the VPN to synchronize rules."
   },
   {
     "key": "规则路由",
@@ -4563,6 +4668,11 @@
     "key": "解密并预览",
     "zh": "解密并预览",
     "en": "Decrypt & preview"
+  },
+  {
+    "key": "解析器生效",
+    "zh": "解析器生效",
+    "en": "Resolver activation"
   },
   {
     "key": "解释路径",
@@ -4875,6 +4985,11 @@
     "en": "Routing switch not confirmed: "
   },
   {
+    "key": "路由应用",
+    "zh": "路由应用",
+    "en": "Route application"
+  },
+  {
     "key": "路由操作失败，需要核验系统网络状态",
     "zh": "路由操作失败，需要核验系统网络状态",
     "en": "Routing operation failed. Verify system network state"
@@ -4893,6 +5008,11 @@
     "key": "路由策略",
     "zh": "路由策略",
     "en": "Routing policy"
+  },
+  {
+    "key": "路由规划",
+    "zh": "路由规划",
+    "en": "Route planning"
   },
   {
     "key": "路由解释",
@@ -4980,6 +5100,11 @@
     "en": "Preflight check"
   },
   {
+    "key": "连接协商",
+    "zh": "连接协商",
+    "en": "Connection negotiation"
+  },
+  {
     "key": "连接历史",
     "zh": "连接历史",
     "en": "Connection history"
@@ -5050,6 +5175,11 @@
     "en": "Connection unverified"
   },
   {
+    "key": "连接总耗时",
+    "zh": "连接总耗时",
+    "en": "Total connection time"
+  },
+  {
     "key": "连接总览",
     "zh": "连接总览",
     "en": "Connection overview"
@@ -5073,6 +5203,11 @@
     "key": "连接未成功，自动连接已暂停；请检查后主动恢复。",
     "zh": "连接未成功，自动连接已暂停；请检查后主动恢复。",
     "en": "Connection failed; auto-connect paused. Review the problem, then resume manually."
+  },
+  {
+    "key": "连接核验",
+    "zh": "连接核验",
+    "en": "Connection verification"
   },
   {
     "key": "连接正在变化",
@@ -5118,6 +5253,16 @@
     "key": "连接配置",
     "zh": "连接配置",
     "en": "Connection profiles"
+  },
+  {
+    "key": "连接阶段耗时",
+    "zh": "连接阶段耗时",
+    "en": "Connection stage timings"
+  },
+  {
+    "key": "连接阶段耗时…",
+    "zh": "连接阶段耗时…",
+    "en": "Connection stage timings…"
   },
   {
     "key": "连接需检查",
@@ -5285,6 +5430,11 @@
     "en": "Check profile health…"
   },
   {
+    "key": "配置准备",
+    "zh": "配置准备",
+    "en": "Profile preparation"
+  },
+  {
     "key": "配置列表",
     "zh": "配置列表",
     "en": "Profile list"
@@ -5350,6 +5500,11 @@
     "en": "Profile import results"
   },
   {
+    "key": "配置将对端证书限定为客户端，无法用于安全连接 VPN 服务器。请向管理员获取正确的服务端身份校验配置。",
+    "zh": "配置将对端证书限定为客户端，无法用于安全连接 VPN 服务器。请向管理员获取正确的服务端身份校验配置。",
+    "en": "This profile requires a client certificate from its peer and cannot safely connect to a VPN server. Ask your administrator for the correct server identity settings."
+  },
+  {
     "key": "配置已导入。",
     "zh": "配置已导入。",
     "en": "Profile imported."
@@ -5363,6 +5518,11 @@
     "key": "配置已由应用托管，连接使用独立副本，无需保留原位置的文件。",
     "zh": "配置已由应用托管，连接使用独立副本，无需保留原位置的文件。",
     "en": "The app manages this profile and connects using an independent copy. The original file location is no longer needed."
+  },
+  {
+    "key": "配置库事务锁无法安全核验，请检查目录权限及链接，未执行配置操作。",
+    "zh": "配置库事务锁无法安全核验，请检查目录权限及链接，未执行配置操作。",
+    "en": "The profile library transaction lock could not be verified. Check directory permissions and links. No profile operation was performed."
   },
   {
     "key": "配置或设置已改变，请重新选择文件并预览。",
@@ -5398,6 +5558,11 @@
     "key": "配置类型",
     "zh": "配置类型",
     "en": "Profile type"
+  },
+  {
+    "key": "配置缺少服务端身份校验。请向管理员获取包含 remote-cert-tls server 或精确 verify-x509-name 约束的配置，再连接。",
+    "zh": "配置缺少服务端身份校验。请向管理员获取包含 remote-cert-tls server 或精确 verify-x509-name 约束的配置，再连接。",
+    "en": "This profile does not verify the server identity. Ask your administrator for a profile with remote-cert-tls server or an exact verify-x509-name constraint before connecting."
   },
   {
     "key": "配置规则已改变，请关闭后重新打开编辑器。",
@@ -5548,15 +5713,5 @@
     "key": "；未纳入服务器端点、当前局域网及其它系统路由。",
     "zh": "；未纳入服务器端点、当前局域网及其它系统路由。",
     "en": "; excludes server endpoints, current local networks and other system routes."
-  },
-  {
-    "key": "国内域名解析专用直连 DNS，优先于地区和自定义规则。",
-    "zh": "国内域名解析专用直连 DNS，优先于地区和自定义规则。",
-    "en": "Dedicated direct DNS for listed domestic domains, ahead of country and custom rules."
-  },
-  {
-    "key": "规则模式：已收录的国内域名由国内 DNS 直连解析，其它域名通过 VPN 解析。全局模式的 DNS 通过 VPN，优先使用服务器 DNS，缺省使用 Cloudflare／Quad9。原始配置沿用配置文件。",
-    "zh": "规则模式：已收录的国内域名由国内 DNS 直连解析，其它域名通过 VPN 解析。全局模式的 DNS 通过 VPN，优先使用服务器 DNS，缺省使用 Cloudflare／Quad9。原始配置沿用配置文件。",
-    "en": "Rule mode resolves listed domestic domains through direct domestic DNS; other names use VPN DNS. Global mode uses VPN DNS, preferring the server and falling back to Cloudflare/Quad9. Original mode follows the profile."
   }
 ]

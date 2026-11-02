@@ -2,6 +2,25 @@ import XCTest
 @testable import VPNNavigatorCore
 
 final class ConnectionHistoryTests: XCTestCase {
+    func testStageTimingsPersistAndLegacyHistoryStillDecodes() throws {
+        let profile = UUID(), attempt = UUID(), date = Date()
+        let timings = [ConnectionStageTiming(stage: .negotiation, milliseconds: 100), .init(stage: .total, milliseconds: 200)]
+        var tracker = ConnectionHistoryTracker(now: date)
+        tracker.consume(.report(.init(.init(state: .connected, message: "private", activeProfileID: profile, receivedBytes: 0, sentBytes: 0,
+            attemptID: attempt, networkRecoveryRequired: false, routingMode: .original, connectionTimings: timings))), at: date, uptime: 1)
+        tracker.consume(.report(.init(.init(state: .disconnected, message: "", activeProfileID: profile, receivedBytes: nil, sentBytes: nil,
+            attemptID: attempt))), at: date.addingTimeInterval(1), uptime: 2)
+        XCTAssertEqual(tracker.records[0].connectionTimings, timings)
+        let data = try JSONEncoder().encode(tracker.archive)
+        XCTAssertEqual(try JSONDecoder().decode(ConnectionHistoryArchive.self, from: data).records[0].connectionTimings, timings)
+        var legacy = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        var records = legacy["records"] as! [[String: Any]]
+        records[0].removeValue(forKey: "connectionTimings"); legacy["records"] = records
+        let decoded = try JSONDecoder().decode(ConnectionHistoryArchive.self, from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertNil(decoded.records[0].connectionTimings)
+        XCTAssertNil(ConnectionStageTiming.validated([.init(stage: .total, milliseconds: -.infinity)]))
+        XCTAssertNil(ConnectionStageTiming.validated([.init(stage: .dns, milliseconds: 1), .init(stage: .dns, milliseconds: 2)]))
+    }
     private let profile = UUID(), attempt = UUID(), date = Date(timeIntervalSince1970: 1_700_000_000)
     private func report(_ state: TunnelState = .connected, receive: UInt64? = 0, send: UInt64? = 0, mode: RoutingMode? = .original, revision: UUID? = nil, attempt: UUID? = nil, profile: UUID? = nil, failure: DiagnosticCode? = nil) -> ConnectionHistoryInput {
         .report(.init(.init(state: state, message: "NEVER_SAVE_THIS_PASSWORD_OR_HOST.example", activeProfileID: profile ?? self.profile,

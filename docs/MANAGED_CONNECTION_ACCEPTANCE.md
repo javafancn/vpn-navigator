@@ -31,8 +31,11 @@ https://github.blog/changelog/2026-10-01-github-actions-macos-14-runner-image-re
 - Exchange scoped UDP payloads in both encrypted directions; verify real byte
   counters increase. Scope avoids same-host LOCAL/lo0 shortcuts without replacing
   local host routes.
-- In managed modes, resolve a unique `.vpnnav.test` name through the macOS system resolver and
-  fetch an 8 KB IPv4 HTTP response using ordinary curl (no resolver override).
+- In all three modes, resolve a unique `.vpnnav.test` name through the macOS system resolver and
+  fetch an 8 KB IPv4 HTTPS response using ordinary curl (no resolver override),
+  with a synthetic CA and verified wildcard server certificate. Original uses
+  normal server-pushed host routes to the same DNS and web destinations for a
+  matched reference without changing the CI controller's default route.
   The provided resolver lies inside a direct country prefix; its exact route
   must still select the client utun. The no-DNS case must use the managed VPN
   fallback and load the same page. Actual encrypted counters must increase.
@@ -45,7 +48,11 @@ https://github.blog/changelog/2026-10-01-github-actions-macos-14-runner-image-re
 - Request real application Quit; observe complete route/DNS cleanup, disappearance
   of the helper PID, preserved installation approval and on-demand relaunch.
 
-## Performance regression gates (0.8.13 / Build 33)
+## Performance regression gates (working tree after 0.8.13 / Build 33)
+
+The updated installed-system HTTPS comparisons and IPv6 kernel gateway checks
+remain pending until this working tree runs on the disposable installed CI
+matrix. Local component results are recorded in [PERFORMANCE_FIXES.md](PERFORMANCE_FIXES.md).
 
 Successful connection alone is insufficient. The same four installed-system
 runners must also meet these deterministic local acceptance budgets:
@@ -53,17 +60,21 @@ runners must also meet these deterministic local acceptance budgets:
 - Initial application connection: Original and Full VPN below 5 seconds; China
   Direct with 4,096 real non-adjacent routes below 12 seconds. These timings
   exclude deliberate watchdog waits, live switches and Quit cleanup.
-- Each managed connection resolves three fresh random names using ordinary
-  system DNS and fetches HTTP through the real encrypted IPv4 path. Every first
+- Each connection resolves nine fresh random names using ordinary
+  system DNS and fetches HTTPS through the real encrypted IPv4 path, then repeats
+  each name with a positive DNS TTL to measure warm lookups. Every first
   attempt must succeed; retries can no longer turn a slow failure into a pass.
   Name lookup must be below 2 seconds, curl total below 3 seconds, and process
-  wall time below 4 seconds. Log name lookup, connect, first byte and total time
-  independently, including preflight time outside the HTTP measurement.
-  The server-side DNS/HTTP responders stay alive through all data transfers and
-  application Quit. One additional fresh-name HTTP request after the transfer
+  wall time below 4 seconds. Log name lookup, connect, TLS, first byte and total time
+  independently, including preflight time outside the HTTPS measurement.
+  Compare cold/warm phase medians and P95 against the preceding/following Original
+  blocks. Median allowance is 25% plus 20 ms; P95 allowance is 25% plus 50 ms.
+  Baseline median drift exceeding 25% plus 50 ms is inconclusive. Missing samples,
+  invalid values and first-attempt failures cannot pass.
+  The server-side DNS/HTTPS responders stay alive through all data transfers and
+  application Quit. One additional cold/warm HTTPS pair after the transfer
   confirms that DNS stays healthy; performance is never sampled with an
-  artificially blackholed managed resolver. The six managed cases therefore
-  produce 24 first-attempt native DNS/HTTP requests.
+  artificially blackholed managed resolver.
 - Each of the six TCP/UDP and mode combinations transfers nine 32 MiB downloads
   and nine 32 MiB uploads. Fixture stream sockets use TCP_NODELAY so the tiny
   one-byte test command cannot dominate transfer timing through delayed ACKs.
@@ -72,31 +83,35 @@ runners must also meet these deterministic local acceptance budgets:
   payload and management counters must account for at least 288 MiB each way
   in every sample block. Original repeats for bracketing reference blocks.
 - The median in each direction must exceed 16 Mbit/s on the isolated runner.
-  Full VPN and China Direct must retain at least 50% of Original's median on
+  Full VPN and China Direct must retain at least 85% of Original's median on
   the same runner and transport. For each protocol the order is Original,
   Full VPN, Original, China Direct, Original. Each managed result uses the
   geometric mean of its immediately preceding/following Original measurements.
   Each nine-sample block uses the second/eighth order statistics as uncertainty
   bounds for the median (96.09375% population-median coverage under independent,
   stationary sampling). Propagate those bounds through the geometric mean and
-  ratio. The entire relative interval must meet the unchanged 50% gate to pass;
+  ratio. The entire relative interval must meet the 85% retention gate to pass;
   an interval wholly below it is a regression, and an interval crossing it fails
   as inconclusive. Baseline bounds proving more than 25% host drift also fail
   as inconclusive. No automatic retry or best-sample selection is allowed.
   These assumptions and bounds do not establish a public-network SLA.
   All comparisons are printed before failing. The suite records engine,
   helper (including reaped children), fixture CPU time and transfer wall time
-  to distinguish forwarding overhead from changing CI load. This is a coarse CI regression bound, not
-  acceptable proof of a 49% user-visible slowdown; sample values remain logged
-  for review. No physical public-network throughput is inferred from loopback.
+  to distinguish forwarding overhead from changing CI load. Sample values remain
+  logged for review; this gate does not replace representative real-browser and
+  public-network measurements. No public-network throughput is inferred from loopback.
 - The production DNS relay separately runs real UDP/TCP queries against healthy,
   blackholed and delayed primary resolvers. A healthy primary gets no duplicate
   backup query; a stalled primary's healthy same-group backup must answer in
   under 1.5 seconds, while all-failed domestic queries wait for that group to
   exhaust before VPN fallback. Foreign names must never reach domestic DNS.
+  One thousand independent UDP queries must complete on their first attempt,
+  along with 96 simultaneously active UDP clients and an in-flight query during
+  source-port churn. IPv6 planning also checks 4,096 prefixes without network
+  changes, alongside exact coverage and VPN/DNS exclusion regressions.
 
 The bulk stream verifies engine/mode overhead and data integrity. The IPv4
-HTTP test verifies route-selected addressing and native DNS. Neither substitutes
+HTTPS test verifies route-selected addressing, native DNS and TLS. Neither substitutes
 for the other; neither measures a user's real VPN server or ISP. Their fixtures
 and all certificates are synthetic and remain confined to disposable runners.
 
@@ -113,7 +128,7 @@ to a local synthetic TLS server; main PF rules and unrelated anchors remain
 unchanged. The application still observes the physical route for that endpoint.
 The fixture restores only its own PF enable reference and rules.
 
-For IPv4 DNS/HTTP, the synthetic server pushes standard client-nat/iroute to a
+For IPv4 DNS/HTTPS, the synthetic server pushes standard client-nat/iroute to a
 non-local client alias. A server-utun-only PF redirect reaches disposable local
 responders; return packets must re-enter server utun and the encrypted data path.
 The client destination is never a local alias, avoiding Darwin's LOCAL/lo0

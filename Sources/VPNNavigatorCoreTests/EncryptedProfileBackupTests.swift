@@ -3,6 +3,49 @@ import Darwin
 @testable import VPNNavigatorCore
 
 final class EncryptedProfileBackupTests: XCTestCase {
+    func testSelectiveBackupAndNewestRevisionLimit() async throws {
+        let root = try folder(); defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("fixture.ovpn")
+        try configuration.write(to: file, atomically: true, encoding: .utf8)
+        let cache = root.appendingPathComponent("store"), store = ProfileStore(root: cache)
+        let first = try await store.importProfile(from: file)
+        _ = try await store.importProfile(from: file)
+        let history = cache.appendingPathComponent("History/" + first.id.uuidString)
+        try FileManager.default.createDirectory(at: history, withIntermediateDirectories: true)
+        for i in 0..<3 {
+            let path = history.appendingPathComponent(UUID().uuidString + ".ovpn")
+            try (configuration + "# revision \(i)\n").write(to: path, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: Double(1000 + i))], ofItemAtPath: path.path)
+        }
+        let limited = try await store.backupSnapshot(profileIDs: [first.id], maximumRevisionsPerProfile: 1)
+        XCTAssertEqual(limited.entries.count, 1); XCTAssertEqual(limited.entries[0].profile.id, first.id)
+        XCTAssertEqual(limited.revisionCount, 1); XCTAssertTrue(limited.entries[0].revisions[0].runtime.contains("# revision 2"))
+        let current = try await store.backupSnapshot(profileIDs: [first.id], maximumRevisionsPerProfile: 0)
+        XCTAssertEqual(current.revisionCount, 0)
+        let archive = try EncryptedProfileBackup.seal(limited, password: password)
+        XCTAssertEqual(try EncryptedProfileBackup.open(archive, password: password), limited)
+        do { _ = try await store.backupSnapshot(profileIDs: [UUID()]); XCTFail() } catch ProfileBackupFailure.staleLibrary {}
+    }
+    func testBackupStopsAtBudgetBeforeReadingRemainingHistory() async throws {
+        let root = try folder(); defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("fixture.ovpn")
+        try configuration.write(to: file, atomically: true, encoding: .utf8)
+        let cache = root.appendingPathComponent("store"), store = ProfileStore(root: cache)
+        let profile = try await store.importProfile(from: file)
+        let history = cache.appendingPathComponent("History/" + profile.id.uuidString)
+        try FileManager.default.createDirectory(at: history, withIntermediateDirectories: true)
+        let large = Data((configuration + "#" + String(repeating: "x", count: 1_990_000 - configuration.utf8.count - 2) + "\n").utf8)
+        for i in 0..<9 {
+            let path = history.appendingPathComponent(UUID().uuidString + ".ovpn")
+            // A late invalid revision proves that the reader stopped on the
+            // byte budget before materializing all history into memory.
+            try (i == 8 ? Data([255]) : large).write(to: path)
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: Double(2000 - i))], ofItemAtPath: path.path)
+        }
+        do { _ = try await store.backupSnapshot(); XCTFail() } catch ProfileBackupFailure.limits {}
+        let current = try await store.backupSnapshot(maximumRevisionsPerProfile: 0)
+        XCTAssertEqual(current.revisionCount, 0)
+    }
     private let configuration = "client\ndev tun\nremote fixture.example 1194\n<ca>\nFAKE_CA\n</ca>\n<key>\nFAKE_PRIVATE_MATERIAL\n</key>\nauth-user-pass\n"
     private let password = "test-correct-horse-key"
     private func payload() -> ProfileBackupSnapshot {

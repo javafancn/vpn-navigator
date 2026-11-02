@@ -41,43 +41,25 @@ public actor APNICIPv6PreviewStore {
     public init(root: URL) { self.root = root }
 
     public func cached() throws -> IPv6RuleSet? {
-        let path = root.appendingPathComponent("china-ipv6-preview.txt")
-        guard FileManager.default.fileExists(atPath: path.path) else { return nil }
-        return try IPv6RuleSet(text: String(contentsOf: path, encoding: .utf8))
+        try RuleCacheStore.read(root).ipv6.map { try IPv6RuleSet(text: $0) }
     }
 
     public func fetchCandidate() async throws -> IPv6RuleSet {
-        var request = URLRequest(url: Self.source)
-        request.timeoutInterval = 30
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200,
-              data.count > 1000, data.count < 8_000_000,
-              let text = String(data: data, encoding: .utf8) else {
+        let data = try await BoundedDownload.data(from: Self.source, maximumBytes: 7_999_999,
+                                                  allowedHosts: ["ftp.apnic.net"], timeout: 30)
+        guard data.count > 1000, let text = String(data: data, encoding: .utf8) else {
             throw APNICIPv6Error.missingCountryData
         }
         let candidate = try APNICIPv6Delegations.parse(text)
         guard candidate.routes.count >= 100 else {
             throw APNICIPv6Error.missingCountryData
         }
-        if let previous = try cached() {
-            // Fail closed on large source changes, just like IPv4 data.
-            let old = previous.routes.count
-            let count = candidate.routes.count
-            guard count >= old * 80 / 100, count <= old * 120 / 100 else {
-                throw APNICIPv6Error.malformedCountryEntry
-            }
-        }
+        if let previous = try cached() { try IPv6RuleSet.validateChange(previous: previous, next: candidate) }
         return candidate
     }
     public func commit(_ candidate: IPv6RuleSet) throws {
-        guard candidate.routes.count >= 100 else { throw APNICIPv6Error.missingCountryData }
-        if let old = try cached() { try IPv6RuleSet.validateChange(previous: old, next: candidate) }
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
-        let file = root.appendingPathComponent("china-ipv6-preview.txt")
-        try (candidate.routes.map(\.description).joined(separator: "\n") + "\n")
-            .write(to: file, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        let prepared = try RuleCacheStore.Prepared(root: root, ipv4: nil, ipv6: candidate)
+        try prepared.publish()
     }
     public func refresh() async throws -> IPv6RuleSet { let value = try await fetchCandidate(); try commit(value); return value }
 }

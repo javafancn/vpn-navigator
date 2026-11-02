@@ -178,11 +178,13 @@ final class AppModel: ObservableObject {
     }
 
     private let store: ProfileStore
+    @Published private(set) var connectionTimings: [ConnectionStageTiming] = []
+    private let ruleCacheRoot: URL
     private let updater: RuleUpdater
     private let ipv6Updater: APNICIPv6PreviewStore
     private let helper = HelperClient.shared
 
-    init(backgroundServiceDefaults: UserDefaults = .standard, profileStoreRoot: URL? = nil, routingModeService: RoutingModeService? = nil, libraryDefaults: UserDefaults = .standard, smartDefaults: UserDefaults = .standard) {
+    init(backgroundServiceDefaults: UserDefaults = .standard, profileStoreRoot: URL? = nil, routingModeService: RoutingModeService? = nil, libraryDefaults: UserDefaults = .standard, smartDefaults: UserDefaults = .standard, routingRuleCacheRoot: URL? = nil) {
         self.smartDefaults = smartDefaults
         self.libraryDefaults = libraryDefaults
         profileLibrary = ProfileLibraryQuery(sort: ProfileLibrarySort(savedValue: libraryDefaults.string(forKey: "profileLibrarySort")))
@@ -193,8 +195,9 @@ final class AppModel: ObservableObject {
             .appendingPathComponent("VPNNavigator", isDirectory: true)
         connectionHistoryDirectory = (profileStoreRoot?.deletingLastPathComponent() ?? root).appendingPathComponent("ConnectionHistory")
         store = ProfileStore(root: profileStoreRoot ?? root.appendingPathComponent("Profiles"))
-        updater = RuleUpdater(folder: root.appendingPathComponent("Rules"))
-        ipv6Updater = APNICIPv6PreviewStore(root: root.appendingPathComponent("Rules"))
+        ruleCacheRoot = routingRuleCacheRoot ?? root.appendingPathComponent("Rules")
+        updater = RuleUpdater(folder: ruleCacheRoot)
+        ipv6Updater = APNICIPv6PreviewStore(root: ruleCacheRoot)
         automaticRulesEnabled = backgroundPreferences.rulesEnabled
         launchAtLogin = backgroundPreferences.loginEnabled
         let initialStatus = helper.installationStatus
@@ -318,14 +321,12 @@ final class AppModel: ObservableObject {
     func load() async {
         do { try await loadProfiles() } catch { /* Persistent recovery banner owns this failure. */ }
         do {
-            rules = try await updater.cached()
+            try await reloadRuleCache()
             if rules == nil, let seed = Bundle.main.url(forResource: "china-ipv4", withExtension: "txt", subdirectory: "Rules") {
                 rules = try await updater.bootstrap(seed)
             }
-            rulesUpdatedAt = try await updater.lastUpdated()
-            ipv6Preview = try await ipv6Updater.cached()
+            try await reloadRuleCache()
             ruleSnapshots = try await updater.snapshots()
-            rulesUpdatedAt = try await updater.lastUpdated()
         } catch { message = error.localizedDescription }
     }
     private func loadProfiles() async throws {
@@ -561,6 +562,7 @@ final class AppModel: ObservableObject {
                 guard report.activeProfileID == id, report.attemptID == expectedAttempt,
                       report.routingRevision == revision, report.routingMode == previous else { throw RoutingModeSwitchError.stale }
                 let request = try RoutingModeSwitchRequest(report: report, target: mode)
+                if mode == .chinaDirect { try await reloadRuleCache() }
                 let ruleText = mode == .chinaDirect ? routingRuleText() : ""
                 let response = await routingModeService.apply(request, ruleText)
                 let confirmed = await routingModeService.snapshot()
@@ -728,19 +730,32 @@ final class AppModel: ObservableObject {
         let v6 = ipv6 ?? ipv6Preview
         return v6.map { RoutingRuleBundle(ipv4: text4, ipv6: $0.routes.map(\.description).joined(separator: "\n")).json } ?? text4
     }
+    private func reloadRuleCache() async throws {
+        let cached = try await RoutingRuleUpdate.cached(root: ruleCacheRoot)
+        rules = cached.ipv4; ipv6Preview = cached.ipv6; rulesUpdatedAt = cached.ipv4UpdatedAt
+    }
+    private func publishRules(ipv4: RuleSet? = nil, ipv6: IPv6RuleSet? = nil) async throws {
+        do {
+            try await RoutingRuleUpdate.commit(root: ruleCacheRoot, ipv4: ipv4, ipv6: ipv6) { text in
+                if self.helper.installationStatus == .enabled { return await self.helper.updateRules(text) }
+                return "NO_ACTIVE_SPLIT"
+            }
+        } catch {
+            await refreshConnectionStatus()
+            throw error
+        }
+        try await reloadRuleCache()
+        await refreshConnectionStatus()
+    }
+
     func updateIPv6Preview() async {
         guard !busy, !routingModeSwitching, !connecting, !stopping else { return }
         busy = true; defer { busy = false }
         do {
             let candidate = try await ipv6Updater.fetchCandidate()
-            if connected {
-                let response = await helper.updateRules(routingRuleText(ipv6: candidate))
-                guard response == "Rules applied" || response == "NO_ACTIVE_SPLIT" else { message = L10n.text("IPv6 更新未确认，旧缓存保留：") + response; return }
-                await refreshConnectionStatus()
-            }
-            try await ipv6Updater.commit(candidate); ipv6Preview = candidate
+            try await publishRules(ipv6: candidate)
             message = L10n.format("已校验并保存 {0} 条中国 IPv6 注册前缀；活动规则会话已同步核验。", [String(describing: candidate.routes.count)])
-        } catch { message = L10n.text("IPv6 更新失败，原缓存保留：") + error.localizedDescription }
+        } catch { message = L10n.text("IPv6 更新失败：") + error.localizedDescription }
     }
     func refreshRules() async {
         guard !busy, !routingModeSwitching, !connecting, !stopping else { return }
@@ -749,13 +764,8 @@ final class AppModel: ObservableObject {
             async let candidate4 = updater.fetchCandidate()
             async let candidate6 = ipv6Updater.fetchCandidate()
             let (v4, v6) = try await (candidate4, candidate6)
-            if connected {
-                let response = await helper.updateRules(routingRuleText(v4, ipv6: v6))
-                guard response == "Rules applied" || response == "NO_ACTIVE_SPLIT" else { message = L10n.text("双栈更新未确认，原缓存保留：") + response; return }
-                await refreshConnectionStatus()
-            }
-            try await updater.commit(v4); try await ipv6Updater.commit(v6)
-            rules = v4; ipv6Preview = v6; ruleSnapshots = try await updater.snapshots(); rulesUpdatedAt = try await updater.lastUpdated()
+            try await publishRules(ipv4: v4, ipv6: v6)
+            ruleSnapshots = try await updater.snapshots(); rulesUpdatedAt = try await updater.lastUpdated()
             message = L10n.format("已校验并保存 IPv4 {0} 条、IPv6 {1} 条规则。", [String(describing: v4.routes.count), String(describing: v6.routes.count)])
         } catch { message = L10n.text("双栈规则更新失败；请查看当前实际会话状态：") + error.localizedDescription }
     }
@@ -917,16 +927,7 @@ final class AppModel: ObservableObject {
             if let previous = try await updater.cached() {
                 try RuleUpdater.validateChange(previous: previous, next: restored)
             }
-            if connected {
-                let result = await helper.updateRules(
-                    routingRuleText(restored))
-                guard result == "Rules applied" || result == "NO_ACTIVE_SPLIT" else {
-                    message = L10n.format("Previous rules preserved: {0}", [String(describing: result)])
-                    return
-                }
-            }
-            try await updater.commit(restored)
-            rules = restored
+            try await publishRules(ipv4: restored)
             ruleSnapshots = try await updater.snapshots()
             rulesUpdatedAt = try await updater.lastUpdated()
             message = L10n.text("Previous China IPv4 rules restored.")
@@ -963,6 +964,7 @@ final class AppModel: ObservableObject {
     }
     func applyVerifiedSessionReport(_ report: SessionReport, at date: Date = Date(), uptime: Double = ProcessInfo.processInfo.systemUptime) {
         guard !disconnectRequestInFlight else { return }
+        connectionTimings = ConnectionStageTiming.validated(report.connectionTimings) ?? []
         menuTraffic.observe(report, at: date, uptime: uptime)
         if !(busy && connectionAttempt != nil && sessionState == .connecting && report.state == .disconnected) {
             connectionHistory.observe(.report(.init(report)), at: date, uptime: uptime)
@@ -1080,7 +1082,7 @@ final class AppModel: ObservableObject {
         localEvents.append(.starting)
         do {
             let text = try await store.runtimeConfig(for: selected)
-            let validated = try ProfileSafety.validate(text)
+            let validated = try ProfileSafety.validateForConnection(text)
             try ManagedRoutingPolicy.validate(validated, mode: selected.mode)
             if selected.mode == .chinaDirect && rules == nil {
                 message = L10n.text("请先下载或导入中国 IPv4 规则。")
@@ -1115,6 +1117,7 @@ final class AppModel: ObservableObject {
                 }
                 connectionUsername = username; connectionPassword = password
             }
+            if selected.mode != .original { try await reloadRuleCache() }
             let rulesText = routingRuleText()
             guard connectionAttempt == attempt else { return }
             if automatically {
@@ -1252,7 +1255,10 @@ final class AppModel: ObservableObject {
             "\(ISO8601DateFormatter().string(from: $0.date)) [\($0.code.rawValue)] \($0.code.summary)"
         }.joined(separator: "\n")
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
-        let report = L10n.format("VPN Navigator {0}\nmacOS {1}\n状态：{2}\n配置数：{3}\nIPv4规则数：{4}\n\n本报告不包含地址、域名、配置、证书或凭据。\n\n{5}\n", [String(describing: version), String(describing: ProcessInfo.processInfo.operatingSystemVersionString), String(describing: sessionState.rawValue), String(describing: profiles.count), String(describing: rules?.routes.count ?? 0), String(describing: events)])
+        var report = L10n.format("VPN Navigator {0}\nmacOS {1}\n状态：{2}\n配置数：{3}\nIPv4规则数：{4}\n\n本报告不包含地址、域名、配置、证书或凭据。\n\n{5}\n", [String(describing: version), String(describing: ProcessInfo.processInfo.operatingSystemVersionString), String(describing: sessionState.rawValue), String(describing: profiles.count), String(describing: rules?.routes.count ?? 0), String(describing: events)])
+        if !connectionTimings.isEmpty {
+            report += "\n" + connectionTimings.map { $0.title + ": " + String(format: "%.1f ms", $0.milliseconds) }.joined(separator: "\n") + "\n"
+        }
         let panel = NSSavePanel(); panel.nameFieldStringValue = "VPNNavigator-diagnostics.txt"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
@@ -1267,17 +1273,11 @@ final class AppModel: ObservableObject {
         busy = true; defer { busy = false }
         do {
             let candidate = try await updater.localCandidate(url)
-            if connected {
-                let response = await helper.updateRules(routingRuleText(candidate))
-                guard response == "Rules applied" || response == "NO_ACTIVE_SPLIT" else {
-                    message = response; return
-                }
-            }
-            try await updater.commit(candidate)
-            rules = candidate; ruleSnapshots = try await updater.snapshots()
+            try await publishRules(ipv4: candidate)
+            ruleSnapshots = try await updater.snapshots()
             rulesUpdatedAt = try await updater.lastUpdated()
             message = L10n.format("已校验并导入 {0} 条 IPv4 规则。", [String(describing: candidate.routes.count)])
-        } catch { message = L10n.format("规则导入失败，原规则已保留：{0}", [String(describing: error.localizedDescription)]) }
+        } catch { message = L10n.format("规则导入失败；请查看当前实际会话状态：{0}", [String(describing: error.localizedDescription)]) }
     }
 
     /// Synchronous UI barrier; the authenticated I/O runs outside MainActor
@@ -1420,11 +1420,11 @@ final class AppModel: ObservableObject {
         let work = Task.detached(priority: .userInitiated) { try operation() }
         return try await withTaskCancellationHandler(operation: { try await work.value }, onCancel: { work.cancel() })
     }
-    func createEncryptedBackup(password: String, to url: URL) async throws -> Int {
+    func createEncryptedBackup(password: String, to url: URL, profileIDs: Set<UUID>? = nil, maximumRevisionsPerProfile: Int? = nil) async throws -> Int {
         guard canUseProfileBackup, url.pathExtension.lowercased() == "vpnnavbackup" else { throw ProfileBackupFailure.pendingRecovery }
         profileBackupInProgress = true; profileMutations += 1
         defer { profileBackupInProgress = false; profileMutations -= 1 }
-        let snapshot = try await store.backupSnapshot()
+        let snapshot = try await store.backupSnapshot(profileIDs: profileIDs, maximumRevisionsPerProfile: maximumRevisionsPerProfile)
         try Task.checkCancellation()
         let archive = try await backupWork { try EncryptedProfileBackup.seal(snapshot, password: password) }
         try Task.checkCancellation()

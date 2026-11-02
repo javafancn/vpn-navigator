@@ -10,40 +10,61 @@ public struct ProfileRevision: Identifiable, Sendable {
 /// The initially imported source is saved to history on the first edit.
 public actor ProfileStore {
     let root: URL
+    private var transactionDepth = 0
+    private var transactionLock: ProfileStoreTransactionLock?
     var index: ProfileIndexRepository { ProfileIndexRepository(root: root) }
     public init(root: URL) { self.root = root }
+    // Synchronous actor methods never suspend while owning the transaction.
+    // Nested reads/recovery share this instance's outer lock rather than
+    // attempting a second flock and deadlocking against themselves.
+    func beginTransaction() throws {
+        if transactionDepth == 0 { transactionLock = try ProfileStoreTransactionLock(root: root) }
+        transactionDepth += 1
+    }
+    func endTransaction() {
+        transactionDepth -= 1
+        if transactionDepth == 0 { transactionLock = nil }
+    }
     private func prepare() throws {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
     }
     public func list() throws -> [VPNProfile] {
+        try beginTransaction(); defer { endTransaction() }
         try prepare()
         try recoverProfileUpdate()
         try recoverBackupRestore()
         return try index.list()
     }
     public func indexBackupInfo() throws -> ProfileIndexBackupInfo {
+        try beginTransaction(); defer { endTransaction() }
         try prepare(); return try index.backupInfo()
     }
     public func refreshIndexBackup() throws {
+        try beginTransaction(); defer { endTransaction() }
         try prepare(); try index.refreshBackup()
     }
     public func indexRecoveryPreview() throws -> ProfileIndexRecoveryPreview {
+        try beginTransaction(); defer { endTransaction() }
         try prepare(); return try index.recoveryPreview()
     }
     public func recoverIndex(_ preview: ProfileIndexRecoveryPreview) throws {
+        try beginTransaction(); defer { endTransaction() }
         try prepare(); try index.recover(preview)
     }
     public func importProfile(from file: URL) throws -> VPNProfile {
+        try beginTransaction(); defer { endTransaction() }
         try prepare()
         guard file.pathExtension.lowercased() == "ovpn" else { throw StoreError.invalidFile }
         let contents = try ProfileFileIO.read(file, followSymlinks: true)
-        guard !contents.isEmpty, contents.count <= 2_000_000,
-              let string = String(data: contents, encoding: .utf8),
-              string.contains("remote ") || string.contains("\nremote ") else { throw StoreError.invalidFile }
+        guard !contents.isEmpty, let string = String(data: contents, encoding: .utf8) else { throw StoreError.invalidFile }
         // Normalize external inline-capable certificates into a private runtime copy.
         // Preserve the user's original bytes as the canonical source.
         let runtime = try ProfileMaterializer.materialize(text: string, directory: file.deletingLastPathComponent())
+        // Use the same parser and size bound as connection/export before
+        // publishing either file or the index. Whitespace and quoted options
+        // must not depend on a substring search in the original source.
+        _ = try ProfileSafety.validate(runtime)
         var profiles = try list()
         let id = UUID()
         let filename = "\(id.uuidString).ovpn"
@@ -64,22 +85,26 @@ public actor ProfileStore {
         return profile
     }
     public func update(_ profile: VPNProfile) throws {
+        try beginTransaction(); defer { endTransaction() }
         var profiles = try list()
         guard let idx = profiles.firstIndex(where: { $0.id == profile.id }) else { throw StoreError.notFound }
         profiles[idx] = profile
         try save(profiles)
     }
     public func fileSize(for profile: VPNProfile) throws -> Int {
+        try beginTransaction(); defer { endTransaction() }
         guard profile.relativePath == "\(profile.id.uuidString).ovpn" else { throw StoreError.invalidFile }
         return (try FileManager.default.attributesOfItem(atPath: root.appendingPathComponent(profile.relativePath).path)[.size] as? NSNumber)?.intValue ?? 0
     }
     public func original(for profile: VPNProfile) throws -> String {
+        try beginTransaction(); defer { endTransaction() }
         // Never allow untrusted persisted paths to escape the store.
         guard profile.relativePath == "\(profile.id.uuidString).ovpn" else { throw StoreError.invalidFile }
         guard let text = String(data: try ProfileFileIO.read(root.appendingPathComponent(profile.relativePath)), encoding: .utf8) else { throw StoreError.invalidFile }
         return text
     }
     public func runtimeConfig(for profile: VPNProfile) throws -> String {
+        try beginTransaction(); defer { endTransaction() }
         guard profile.relativePath == "\(profile.id.uuidString).ovpn" else { throw StoreError.invalidFile }
         let normalized = root.appendingPathComponent("\(profile.id.uuidString).runtime.ovpn")
         guard FileManager.default.fileExists(atPath: normalized.path) else { return try original(for: profile) }
@@ -92,6 +117,7 @@ public actor ProfileStore {
     }
 
     public func revisions(for profile: VPNProfile) throws -> [ProfileRevision] {
+        try beginTransaction(); defer { endTransaction() }
         let folder = historyDirectory(for: profile.id)
         guard FileManager.default.fileExists(atPath: folder.path) else { return [] }
         return try FileManager.default.contentsOfDirectory(
@@ -111,11 +137,13 @@ public actor ProfileStore {
 
     /// Save a safe, self-contained profile while preserving its prior source.
     public func revise(_ profile: VPNProfile, text: String) throws {
+        try beginTransaction(); defer { endTransaction() }
         try prepare()
         try reviseTransaction(profile, text: text)
     }
 
     public func restore(_ profile: VPNProfile, revision filename: String) throws {
+        try beginTransaction(); defer { endTransaction() }
         guard filename == URL(fileURLWithPath: filename).lastPathComponent,
               filename.hasSuffix(".ovpn"),
               UUID(uuidString: String(filename.dropLast(5))) != nil else {
@@ -127,6 +155,7 @@ public actor ProfileStore {
     }
 
     public func delete(id: UUID) throws {
+        try beginTransaction(); defer { endTransaction() }
         var profiles = try list()
         guard let item = profiles.first(where: { $0.id == id }) else { throw StoreError.notFound }
         profiles.removeAll { $0.id == id }
@@ -164,14 +193,22 @@ extension ProfileStore {
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         }
     }
-    private func backupText(_ url: URL) throws -> String {
-        let data = try ProfileFileIO.read(url)
-        guard String(data: data, encoding: .utf8) != nil else { throw ProfileBackupFailure.invalidContents }
-        // The UTF-8 collection decoder retains a leading BOM as a scalar;
-        // Foundation's encoding detector may consume it as a byte-order mark.
-        return String(decoding: data, as: UTF8.self)
+    private struct BackupBudget {
+        var remaining = EncryptedProfileBackup.maximumPlaintextBytes
+        var revisions = 0
+        mutating func text(_ url: URL, preservingBOM: Bool = false) throws -> String {
+            try Task.checkCancellation()
+            guard remaining > 0 else { throw ProfileBackupFailure.limits }
+            let data: Data
+            do { data = try ProfileFileIO.read(url, maximumBytes: min(2_000_000, remaining)) }
+            catch ProfileFileIO.Failure.tooLarge { throw ProfileBackupFailure.limits }
+            guard let decoded = String(data: data, encoding: .utf8) else { throw ProfileBackupFailure.invalidContents }
+            remaining -= data.count
+            return preservingBOM ? String(decoding: data, as: UTF8.self) : decoded
+        }
     }
-    private func backupHistory(_ profile: VPNProfile) throws -> [ProfileBackupRevision] {
+    private func backupHistory(_ profile: VPNProfile, maximum: Int?, budget: inout BackupBudget) throws -> [ProfileBackupRevision] {
+        if maximum == 0 { return [] }
         let parent = root.appendingPathComponent("History", isDirectory: true)
         guard FileManager.default.fileExists(atPath: parent.path) else { return [] }
         try privateDirectory(parent)
@@ -179,41 +216,57 @@ extension ProfileStore {
         guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
         try privateDirectory(directory)
         let revisions = try revisions(for: profile)
-        guard revisions.count <= 1000 else { throw ProfileBackupFailure.limits }
-        return try revisions.map { revision in
-            try Task.checkCancellation()
+        let selected = Array(revisions.prefix(maximum ?? revisions.count))
+        guard selected.count <= 1000, selected.count <= 10_000 - budget.revisions else { throw ProfileBackupFailure.limits }
+        budget.revisions += selected.count
+        var result: [ProfileBackupRevision] = []
+        for revision in selected {
             let id = UUID(uuidString: String(revision.filename.dropLast(5)))!
-            let runtime = try ProfileFileIO.read(directory.appendingPathComponent(revision.filename))
+            let runtime = try budget.text(directory.appendingPathComponent(revision.filename))
             let sourceURL = directory.appendingPathComponent(String(revision.filename.dropLast(5)) + ".source.ovpn")
             let source: String?
             if (try? FileManager.default.attributesOfItem(atPath: sourceURL.path)) != nil {
-                source = try backupText(sourceURL)
+                source = try budget.text(sourceURL, preservingBOM: true)
             } else { source = nil }
-            guard let text = String(data: runtime, encoding: .utf8) else { throw ProfileBackupFailure.invalidContents }
-            return ProfileBackupRevision(id: id, createdAt: revision.createdAt, runtime: text, source: source)
+            result.append(ProfileBackupRevision(id: id, createdAt: revision.createdAt, runtime: runtime, source: source))
         }
+        return result
     }
-    public func backupSnapshot() throws -> ProfileBackupSnapshot {
-        let profiles = try list(); try privateDirectory(root)
+    /// nil IDs selects the whole library; zero revisions exports current files
+    /// only. A finite limit selects the newest revisions of each chosen profile.
+    public func backupSnapshot(profileIDs: Set<UUID>? = nil, maximumRevisionsPerProfile: Int? = nil) throws -> ProfileBackupSnapshot {
+        try beginTransaction(); defer { endTransaction() }
+        if let maximumRevisionsPerProfile, !(0...1000).contains(maximumRevisionsPerProfile) { throw ProfileBackupFailure.limits }
+        let library = try list(); try privateDirectory(root)
+        if let profileIDs, !profileIDs.isSubset(of: Set(library.map(\.id))) { throw ProfileBackupFailure.staleLibrary }
+        let profiles = library.filter { profileIDs?.contains($0.id) ?? true }
         guard profiles.count <= 1000 else { throw ProfileBackupFailure.limits }
         var entries: [ProfileBackupEntry] = []
-        var bytes = 0
+        var budget = BackupBudget()
         for profile in profiles {
-            try Task.checkCancellation()
+            let sourcePath = root.appendingPathComponent(profile.relativePath)
+            let source = try budget.text(sourcePath, preservingBOM: true)
             let runtimePath = root.appendingPathComponent(profile.id.uuidString + ".runtime.ovpn")
+            let runtime: String
             if let attributes = try? FileManager.default.attributesOfItem(atPath: runtimePath.path) {
                 guard attributes[.type] as? FileAttributeType == .typeRegular else { throw ProfileBackupFailure.invalidContents }
+                runtime = try budget.text(runtimePath)
+            } else {
+                // Match runtimeConfig's UTF-8 decoder for legacy profiles
+                // while retaining original source bytes in the archive.
+                let decoded = source.hasPrefix("\u{feff}") ? String(source.dropFirst()) : source
+                guard decoded.utf8.count <= budget.remaining else { throw ProfileBackupFailure.limits }
+                budget.remaining -= decoded.utf8.count; runtime = decoded
             }
-            let entry = try ProfileBackupEntry(profile: profile, source: backupText(root.appendingPathComponent(profile.relativePath)), runtime: runtimeConfig(for: profile), revisions: backupHistory(profile))
-            bytes += entry.source.utf8.count + entry.runtime.utf8.count + entry.revisions.reduce(0) { $0 + $1.runtime.utf8.count + ($1.source?.utf8.count ?? 0) }
-            guard bytes <= EncryptedProfileBackup.maximumPlaintextBytes else { throw ProfileBackupFailure.limits }
-            entries.append(entry)
+            let revisions = try backupHistory(profile, maximum: maximumRevisionsPerProfile, budget: &budget)
+            entries.append(ProfileBackupEntry(profile: profile, source: source, runtime: runtime, revisions: revisions))
         }
         let result = ProfileBackupSnapshot(entries: entries); try result.validate(); return result
     }
     /// Expected metadata binds confirmation to the library displayed in preview.
     /// All restored IDs are fresh; archive paths are never used for destinations.
     public func restoreBackup(_ snapshot: ProfileBackupSnapshot, expecting expected: [VPNProfile]) throws -> [VPNProfile] {
+        try beginTransaction(); defer { endTransaction() }
         try snapshot.validate()
         let current = try list(); try privateDirectory(root)
         guard current == expected else { throw ProfileBackupFailure.staleLibrary }

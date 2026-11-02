@@ -16,5 +16,5 @@ enum HealthCertificateFixture {
     """
     static let start = Date(timeIntervalSince1970: 1893456000)
     static let end = Date(timeIntervalSince1970: 2208988800)
-    static let config = "client\ndev tun\nremote fixture.example 1194\n<ca>\n" + pem + "\n</ca>\nauth-user-pass\n"
+    static let config = "client\nremote-cert-tls server\ndev tun\nremote fixture.example 1194\n<ca>\n" + pem + "\n</ca>\nauth-user-pass\n"
 }

@@ -2,6 +2,19 @@ import XCTest
 @testable import VPNNavigatorCore
 
 final class CustomRoutingTests: XCTestCase {
+    func testIPv6SortedPrefixDedupPreservesDisjointNetworksAndVPNCuts() throws {
+        let country = try IPv6RuleSet(text: "240e:1234::/32\n240e:1234:1::/48\n240e:1235::/48\n240e:1236::/48")
+        let rules = try CustomRuleSet([.init(cidr: "240e:1234:2::/48", action: .vpn)])
+        let planned = try rules.directPrefixes6(country: country, local: [], endpoint: nil,
+            protectedVPN: [IPv6CIDR("240e:1234:1::53/128")])
+        for (address, expected) in [("240e:1234:1::52", true), ("240e:1234:1::53", false),
+            ("240e:1234:2::1", false), ("240e:1235::1", true), ("240e:1236::1", true), ("240e:1237::1", false)] {
+            XCTAssertEqual(planned.contains { $0.contains(address) }, expected, address)
+        }
+        for (index, prefix) in planned.enumerated() {
+            XCTAssertFalse(planned.dropFirst(index + 1).contains { $0.overlaps(prefix) })
+        }
+    }
     private func rule(_ cidr: String, _ action: CustomRouteAction = .vpn, enabled: Bool = true) -> CustomRouteRule {
         .init(cidr: cidr, action: action, enabled: enabled)
     }

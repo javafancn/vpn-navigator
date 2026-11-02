@@ -94,6 +94,8 @@ For source-built engines and signed distribution, see [Installation and release]
 
 ## Security scope
 
+Connections require `remote-cert-tls server` or an exact `verify-x509-name` server identity constraint, checked independently by the app and privileged helper. Legacy profiles without a constraint remain available for import, editing and backup, but health checks report an error and connections are refused; obtain a corrected profile from your administrator. Cross-instance and cross-process transaction locks protect profile indexes and recovery records. See [high-priority fixes and validation](docs/HIGH_PRIORITY_FIXES.md).
+
 Disconnect protection is an explicitly enabled experimental feature for IPv4/IPv6 endpoints and Global/China Direct modes. It integrates an independent anchor into compatible system PF layouts. Enabling, rebuilding, tightening, or removing protection resets existing network connections, including other VPNs. Unknown PF layouts are rejected. Full physical-network leak acceptance remains incomplete; static rules and loopback tests cannot establish zero leakage.
 
 Managed single-stack sessions must also meet protection requirements for the address family not carried by the tunnel; see the dual-stack documentation. In-session CRV1 reauthentication, SAML/browser authentication, TAP, arbitrary scripts/plugins, and hardware PKCS11 are outside the current support scope. Unsupported profiles or authentication must fail explicitly.

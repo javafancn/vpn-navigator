@@ -16,6 +16,7 @@ struct NetworkDiagnosticsView: View {
     @State private var localError = ""
     @State private var checking = false
     @State private var showingTarget = false
+    @State private var showingTimings = false
     @State private var work: Task<Void, Never>?
     @State private var attempt = UUID()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -51,6 +52,9 @@ struct NetworkDiagnosticsView: View {
                 HStack {
                     WorkspaceHeading(title: L10n.text("网络诊断"), subtitle: L10n.text("以真实探测核对连接、解析、路径和延迟"), symbol: "waveform.path.ecg")
                     Spacer()
+                    Button(L10n.text("连接阶段耗时…")) { showingTimings = true }
+                        .buttonStyle(ReferenceSecondaryButton())
+                        .popover(isPresented: $showingTimings) { ConnectionTimingView(timings: model.connectionTimings).padding(18).frame(width: 310) }
                     Button(L10n.text("公网出口…")) { cancel(); model.showingPublicEgress = true }.buttonStyle(ReferenceSecondaryButton()).disabled(!model.canStartEgressProbe)
                 }
                 HStack(spacing: 14) {

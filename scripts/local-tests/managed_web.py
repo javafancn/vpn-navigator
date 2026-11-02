@@ -10,10 +10,12 @@ import http.server
 import ipaddress
 import json
 import os
+from pathlib import Path
 import plistlib
 import re
 import socket
 import socketserver
+import ssl
 import struct
 import sys
 import threading
@@ -48,6 +50,18 @@ def upstream_resolver(run):
     raise AssertionError('No physical CI DNS resolver; cannot preserve runner DNS')
 
 
+def https_server(folder, handler, address=('0.0.0.0', 0)):
+    server = IsolatedHTTPServer(address, handler)
+    try:
+        tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        tls.load_cert_chain(folder / 'web.crt', folder / 'web.key')
+        server.socket = tls.wrap_socket(server.socket, server_side=True)
+    except BaseException:
+        server.server_close()
+        raise
+    return server
+
+
 @contextlib.contextmanager
 def web_fixture(run, folder, server_tunnel, upstream):
     assert sys.platform == 'darwin' and os.environ.get('GITHUB_ACTIONS') == 'true'
@@ -74,7 +88,7 @@ def web_fixture(run, folder, server_tunnel, upstream):
                     counts['dns'] += 1
                     answer = b''
                     if kind == 1:
-                        answer = b'\xc0\x0c' + struct.pack('!HHIH', 1, 1, 0, 4) + socket.inet_aton(WEB)
+                        answer = b'\xc0\x0c' + struct.pack('!HHIH', 1, 1, 60, 4) + socket.inet_aton(WEB)
                     response = packet[:2] + struct.pack('!HHHHH', 0x8180, 1, bool(answer), 0, 0) + packet[12:end] + answer
                 else:
                     # Keep the CI controller's DNS working during real /1 routes.
@@ -101,7 +115,7 @@ def web_fixture(run, folder, server_tunnel, upstream):
     class UDP(socketserver.ThreadingUDPServer):
         daemon_threads = True
     dns = UDP(('0.0.0.0', 0), DNSHandler)
-    http_service = IsolatedHTTPServer(('0.0.0.0', 0), HTTPHandler)
+    http_service = https_server(folder, HTTPHandler)
     threads = [threading.Thread(target=s.serve_forever, daemon=True) for s in [dns, http_service]]
     anchor = 'com.apple/zzz.vpnnav-data-' + uuid.uuid4().hex
     def pf(*args, ok=True):
@@ -109,7 +123,7 @@ def web_fixture(run, folder, server_tunnel, upstream):
     rules = folder / 'managed-web.pf'
     rules.write_text(
         f'rdr pass on {server_tunnel} inet proto udp from {CLIENT_ALIAS} to {{ {DNS}, 1.1.1.1, 9.9.9.9 }} port 53 -> 198.18.254.1 port {dns.server_address[1]}\n'
-        f'rdr pass on {server_tunnel} inet proto tcp from {CLIENT_ALIAS} to {WEB} port 80 -> 198.18.254.1 port {http_service.server_address[1]}\n')
+        f'rdr pass on {server_tunnel} inet proto tcp from {CLIENT_ALIAS} to {WEB} port 443 -> 198.18.254.1 port {http_service.server_address[1]}\n')
     rules.chmod(0o600)
     owned_route = False
     before = pf('-sr').stdout
@@ -145,7 +159,7 @@ def web_fixture(run, folder, server_tunnel, upstream):
 
 
 def verify_web(run, probe, counts, client_tunnel, fallback=False, split=False, requests=3):
-    assert requests in (1, 3)
+    assert requests in (1, 3, 9)
     preflight = time.monotonic()
     resolver = '1.1.1.1' if fallback else DNS
     path = run(['/sbin/route', '-n', 'get', resolver]).stdout
@@ -173,24 +187,27 @@ def verify_web(run, probe, counts, client_tunnel, fallback=False, split=False, r
     timings = []
     for _ in range(requests):
         host = uuid.uuid4().hex + '.vpnnav.test'
-        started = time.monotonic()
-        result = run(['/usr/bin/curl', '--noproxy', '*', '--fail', '--silent', '--show-error',
-            '--max-time', '5', '--connect-timeout', '3', '--http1.1', '--write-out', '\n%{json}',
-            'http://' + host + '/'], ok=False, timeout=10)
-        assert result.returncode == 0, 'First-attempt system DNS/HTTP failed: ' + result.stderr
-        body, metrics = result.stdout.rsplit('\n', 1)
-        assert body.startswith('vpnnav-managed-web:' + host + ':') and len(body) > 8192
-        timing = json.loads(metrics)
-        timing = {key: timing[key] for key in ['time_namelookup', 'time_connect', 'time_starttransfer', 'time_total']}
-        timing['wall_seconds'] = time.monotonic() - started
-        timings.append(timing)
-        print('METRIC: first-attempt system DNS/HTTP ' + json.dumps(timing), flush=True)
-        assert timing['time_namelookup'] < 2 and timing['time_total'] < 3 and timing['wall_seconds'] < 4, 'System DNS/HTTP exceeded isolated latency budget: ' + str(timing)
+        for cache_state in ['cold', 'warm']:
+            started = time.monotonic()
+            result = run(['/usr/bin/curl', '--noproxy', '*', '--fail', '--silent', '--show-error',
+                '--max-time', '5', '--connect-timeout', '3', '--http1.1',
+                '--cacert', str(Path(probe).parent / 'ca.crt'), '--write-out', '\n%{json}',
+                'https://' + host + '/'], ok=False, timeout=10)
+            assert result.returncode == 0, 'First-attempt system DNS/HTTPS failed: ' + result.stderr
+            body, metrics = result.stdout.rsplit('\n', 1)
+            assert body.startswith('vpnnav-managed-web:' + host + ':') and len(body) > 8192
+            timing = json.loads(metrics)
+            timing = {key: timing[key] for key in ['time_namelookup', 'time_connect', 'time_appconnect', 'time_starttransfer', 'time_total']}
+            timing['wall_seconds'] = time.monotonic() - started
+            timing['cache_state'] = cache_state
+            timings.append(timing)
+            print('METRIC: first-attempt system DNS/HTTPS ' + json.dumps(timing), flush=True)
+            assert timing['time_namelookup'] < 2 and timing['time_total'] < 3 and timing['wall_seconds'] < 4, 'System DNS/HTTPS exceeded isolated latency budget: ' + str(timing)
     assert counts['dns'] > 0 and counts['http'] > 0, 'HTTP used a non-VPN shortcut'
     for _ in range(30):
         after = json.loads(run([probe, '--traffic']).stdout)
         if after['received'] - before['received'] >= 8192 and after['sent'] > before['sent']:
             print('PASS: system DNS and IPv4 HTTP traverse the encrypted VPN; DNS in a direct prefix stays in the tunnel.', flush=True)
-            return
+            return timings
         time.sleep(.2)
     raise AssertionError('DNS/HTTP did not increase real encrypted byte counters')

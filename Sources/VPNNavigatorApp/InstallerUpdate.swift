@@ -22,13 +22,9 @@ enum InstallerUpdate {
     static func prepare(_ url: URL) async throws -> URL {
         guard ReleaseAssetPolicy.isApprovedInstaller(url) else { throw InstallerUpdateError.invalidURL }
         let team = try signedTeamID()
-        let (temporary, response) = try await URLSession.shared.download(from: url)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw InstallerUpdateError.downloadFailed
-        }
-        let attributes = try FileManager.default.attributesOfItem(atPath: temporary.path)
-        let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
-        guard size > 0, size <= 400_000_000 else { throw InstallerUpdateError.oversized }
+        let temporary = try await BoundedDownload.file(from: url, maximumBytes: 400_000_000,
+            allowedHosts: ["github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com", "github-releases.githubusercontent.com"])
+        defer { try? FileManager.default.removeItem(at: temporary) }
 
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("VPNNavigator/Updates", isDirectory: true)

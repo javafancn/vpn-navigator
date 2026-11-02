@@ -16,6 +16,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check bilingual catalog and production coverage
         run: python3 scripts/check-localization.py
+      - name: Verify native IPv6 route encoding without system mutations
+        run: python3 -m unittest discover -s scripts/tests -p test_native_routes.py -v
       - name: Build
         run: swift build
       - name: Verify workspace keyboard and accessibility in the debug build
@@ -48,6 +50,13 @@ jobs:
           PYTEST
       - name: Unit tests
         run: swift test
+      - name: Verify server identity and cross-process profile transactions
+        run: |
+          python3 - <<'PYTEST'
+          import subprocess
+          folder = subprocess.check_output(['swift', 'build', '--show-bin-path'], text=True).strip()
+          subprocess.run(['python3', 'scripts/test-profile-safety.py', folder], check=True, timeout=240)
+          PYTEST
       - name: Verify real split DNS relay and domestic/remote latency separation
         run: 'python3 scripts/test-split-dns.py "$(swift build --show-bin-path)/VPNNavigatorHelper"'
       - name: Verify route rollback ordering without system mutations

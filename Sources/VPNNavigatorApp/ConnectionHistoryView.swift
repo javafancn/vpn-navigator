@@ -73,6 +73,9 @@ struct ConnectionHistoryView: View {
                             if value { expanded.insert(row.id) } else { expanded.remove(row.id) }
                         })) {
                             VStack(alignment: .leading, spacing: 8) {
+                                if let timings = row.connectionTimings, !timings.isEmpty {
+                                    ConnectionTimingView(timings: timings).padding(.bottom, 8)
+                                }
                                 HStack {
                                     Text(L10n.text("采集时长 ") + ConnectionHistoryDisplay.duration(row.observedConnectedSeconds))
                                     Spacer()

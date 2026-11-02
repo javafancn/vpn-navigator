@@ -16,6 +16,7 @@ import time
 
 SIZE = 32 * 1024 * 1024
 SAMPLES = 9
+MINIMUM_THROUGHPUT_RATIO = .85
 
 
 class BaselineDriftError(AssertionError):
@@ -182,16 +183,55 @@ def verify_mode_performance(records, baselines):
                 print('METRIC: paired performance ' + json.dumps(receipt), flush=True)
                 if drift_low > 1.25 or drift_high < .8:
                     unstable.append(receipt)
-                elif ratio_high < .5:
+                elif ratio_high < MINIMUM_THROUGHPUT_RATIO:
                     failures.append(receipt)
-                elif ratio_low < .5:
+                elif ratio_low < MINIMUM_THROUGHPUT_RATIO:
                     uncertain.append(receipt)
     # Report all directions before failing so one anomaly does not hide the
     # other mode/transport evidence. No retry may turn an unstable sample green.
     if failures:
-        raise AssertionError('Stable paired performance exceeds 50% regression budget: ' + json.dumps(failures))
+        raise AssertionError('Stable paired performance exceeds 15% regression budget: ' + json.dumps(failures))
     if unstable or uncertain:
-        raise BaselineDriftError('INCONCLUSIVE: baseline drift or uncertainty across the 50% gate: ' +
+        raise BaselineDriftError('INCONCLUSIVE: baseline drift or uncertainty across the 85% retention gate: ' +
                                  json.dumps({'baseline_drift': unstable, 'uncertain_ratios': uncertain}))
     print('PASS: all six TCP/UDP mode combinations meet encrypted upload/download integrity, '
-          '16 Mbit/s floor and 50% paired relative regression budgets with stable Original baselines.', flush=True)
+          '16 Mbit/s floor and 85% paired throughput retention with stable Original baselines.', flush=True)
+
+
+def verify_web_performance(records, baselines):
+    """Paired native DNS/HTTPS measurements, independently of bulk throughput.
+
+    Warm means a repeated name with a positive TTL; TLS still uses a fresh curl
+    process. Fixed additive allowances avoid ratios of tiny loopback timings.
+    """
+    failures, unstable = [], []
+
+    def summary(samples, cache, key):
+        values = sorted(item[key] for item in samples if item['cache_state'] == cache)
+        assert len(values) == SAMPLES, 'Missing fixed-count DNS/HTTPS samples'
+        assert all(math.isfinite(value) and value >= 0 for value in values), 'Invalid web latency sample'
+        return statistics.median(values), values[math.ceil(.95 * len(values)) - 1]
+
+    for protocol in ['tcp', 'udp']:
+        original = baselines[protocol]
+        assert len(original) == 3, 'Missing bracketing Original web measurements'
+        for index, mode in enumerate(['Full VPN', 'China Direct']):
+            for cache in ['cold', 'warm']:
+                for key in ['time_namelookup', 'time_connect', 'time_appconnect', 'time_starttransfer', 'time_total']:
+                    before, before95 = summary(original[index], cache, key)
+                    after, after95 = summary(original[index + 1], cache, key)
+                    median, p95 = summary(records[(protocol, mode)], cache, key)
+                    reference = math.sqrt(before * after)
+                    receipt = {'protocol': protocol, 'mode': mode, 'cache_state': cache, 'phase': key,
+                               'median_seconds': median, 'p95_seconds': p95,
+                               'reference_median_seconds': reference, 'reference_p95_seconds': max(before95, after95)}
+                    print('METRIC: paired DNS/HTTPS ' + json.dumps(receipt), flush=True)
+                    if max(before, after) > min(before, after) * 1.25 + .05:
+                        unstable.append(receipt)
+                    elif median > reference * 1.25 + .02 or p95 > max(before95, after95) * 1.25 + .05:
+                        failures.append(receipt)
+    if unstable:
+        raise BaselineDriftError('INCONCLUSIVE: DNS/HTTPS Original baseline drift: ' + json.dumps(unstable))
+    if failures:
+        raise AssertionError('Paired DNS/HTTPS latency regression: ' + json.dumps(failures))
+    print('PASS: cold/warm native DNS, TCP, TLS, first-byte and total HTTPS median/P95 match bracketing Original latency budgets.', flush=True)

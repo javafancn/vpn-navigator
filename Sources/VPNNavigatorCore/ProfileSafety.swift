@@ -3,6 +3,11 @@ import Foundation
 /// Reject unsafe or unsupported OpenVPN commands BEFORE passing a profile to a privileged process.
 /// This is a strict, intentionally incomplete compatibility profile: denial is safer than guessing.
 public enum ProfileSafety {
+    public static func validateForConnection(_ content: String) throws -> ValidatedProfile {
+        let profile = try validate(content)
+        try ServerIdentityPolicy.validate(profile)
+        return profile
+    }
     private static let allowed: Set<String> = [
         "client", "tls-client", "dev", "dev-type", "proto", "remote", "remote-random",
         "resolv-retry", "nobind", "persist-key", "persist-tun", "auth", "cipher",

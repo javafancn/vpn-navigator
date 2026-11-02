@@ -34,6 +34,69 @@ final class ProfileTransferTests: XCTestCase {
         XCTAssertFalse(roundTrip.contains("VPNNAVIGATOR GENERATED ROUTES"))
         XCTAssertFalse(roundTrip.contains("redirect-gateway"))
     }
+    func testImportUsesOptionParserAndPreservesSourceWhitespace() async throws {
+        let root = try folder(); defer { try? FileManager.default.removeItem(at: root) }
+        let store = ProfileStore(root: root.appendingPathComponent("store"))
+        for (index, remote) in ["remote\tvpn.example\t1194", "  remote   vpn.example 1194", "\"remote\" \"vpn.example\" 1194"].enumerated() {
+            let text = sample.replacingOccurrences(of: "remote vpn.example 1194", with: remote)
+            let source = root.appendingPathComponent("whitespace-\(index).ovpn")
+            try ProfileFileIO.write(Data(text.utf8), to: source)
+            let profile = try await store.importProfile(from: source)
+            let original = try await store.original(for: profile)
+            let runtime = try await store.runtimeConfig(for: profile)
+            XCTAssertEqual(original, text)
+            XCTAssertEqual(try Data(contentsOf: source), Data(text.utf8))
+            XCTAssertEqual(try ProfileSafety.validate(runtime).remoteHosts, ["vpn.example"])
+        }
+    }
+    func testCommentsAndInlineMaterialCannotSupplyRemoteDirective() async throws {
+        let root = try folder(); defer { try? FileManager.default.removeItem(at: root) }
+        let storeRoot = root.appendingPathComponent("store"), store = ProfileStore(root: storeRoot)
+        let source = root.appendingPathComponent("missing-remote.ovpn")
+        for text in ["client\ndev tun\n# remote vpn.example 1194\n<ca>\nCA\n</ca>",
+                     "client\ndev tun\n<ca>\nremote vpn.example 1194\n</ca>"] {
+            try ProfileFileIO.write(Data(text.utf8), to: source)
+            let result = try await ProfileBatchImporter(store: store).run([source], cancellation: .init())
+            XCTAssertEqual(result.first?.status, .failed(.invalidFile))
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: storeRoot.path), ["profiles.lock"])
+        }
+    }
+    func testMaterializedSizeLimitRejectsImportWithoutChangingLibrary() async throws {
+        let root = try folder(); defer { try? FileManager.default.removeItem(at: root) }
+        let storeRoot = root.appendingPathComponent("store"), store = ProfileStore(root: storeRoot)
+        let material = root.appendingPathComponent("material.pem"), source = root.appendingPathComponent("external.ovpn")
+        let text = "client\ndev tun\nremote vpn.example 1194\nca material.pem\ncert material.pem\nkey material.pem\n"
+        try ProfileFileIO.write(Data(text.utf8), to: source)
+        try ProfileFileIO.write(Data(repeating: 65, count: 600_000), to: material)
+        let profile = try await store.importProfile(from: source)
+        let runtime = try await store.runtimeConfig(for: profile)
+        XCTAssertGreaterThan(runtime.utf8.count, 1_800_000)
+        XCTAssertNoThrow(try ProfileSafety.validate(runtime))
+        let files = try FileManager.default.contentsOfDirectory(atPath: storeRoot.path).sorted()
+        let index = try Data(contentsOf: storeRoot.appendingPathComponent("profiles.json"))
+        try ProfileFileIO.write(Data(repeating: 65, count: 800_000), to: material)
+        let result = try await ProfileBatchImporter(store: store).run([source], cancellation: .init())
+        XCTAssertEqual(result.first?.status, .failed(.tooLarge))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: storeRoot.path).sorted(), files)
+        XCTAssertEqual(try Data(contentsOf: storeRoot.appendingPathComponent("profiles.json")), index)
+        let profiles = try await store.list(), preserved = try await store.runtimeConfig(for: profile)
+        XCTAssertEqual(profiles, [profile]); XCTAssertEqual(preserved, runtime)
+        XCTAssertEqual(try Data(contentsOf: source), Data(text.utf8))
+    }
+    func testImportAcceptsExactSizeLimitAndClassifiesOversizedSource() async throws {
+        let root = try folder(); defer { try? FileManager.default.removeItem(at: root) }
+        let store = ProfileStore(root: root.appendingPathComponent("store"))
+        let source = root.appendingPathComponent("boundary.ovpn")
+        let text = sample + "#" + String(repeating: "x", count: 2_000_000 - sample.utf8.count - 1)
+        try ProfileFileIO.write(Data(text.utf8), to: source)
+        let profile = try await store.importProfile(from: source)
+        let runtime = try await store.runtimeConfig(for: profile)
+        XCTAssertEqual(runtime.utf8.count, 2_000_000)
+        try ProfileFileIO.write(Data((text + "x").utf8), to: source)
+        let result = try await ProfileBatchImporter(store: store).run([source], cancellation: .init())
+        XCTAssertEqual(result.first?.status, .failed(.tooLarge))
+        let profiles = try await store.list(); XCTAssertEqual(profiles, [profile])
+    }
     func testPreviewIsSeparateAndPortablePreservesOriginalRoutes() throws {
         let source = sample + "route 10.0.0.0 255.0.0.0 vpn_gateway\n"
         let portable = try ProfileExport.render(runtime: source, kind: .portable, mode: .fullVPN, rules: nil)
@@ -127,7 +190,7 @@ final class ProfileTransferTests: XCTestCase {
         let absent = root.appendingPathComponent("absent-index")
         try FileManager.default.createSymbolicLink(at: storeRoot.appendingPathComponent("profiles.json"), withDestinationURL: absent)
         do { _ = try await store.importProfile(from: source); XCTFail("Unsafe index accepted") } catch {}
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: storeRoot.path), ["profiles.json"])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: storeRoot.path).sorted(), ["profiles.json", "profiles.lock"])
         XCTAssertFalse(FileManager.default.fileExists(atPath: absent.path))
     }
 }

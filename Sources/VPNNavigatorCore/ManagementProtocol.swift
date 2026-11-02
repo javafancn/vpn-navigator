@@ -25,6 +25,7 @@ public struct TunnelTraffic: Equatable, Sendable {
     }
 }
 public struct SessionReport: Codable, Equatable, Sendable {
+    public let connectionTimings: [ConnectionStageTiming]?
     public let failureCode: DiagnosticCode?
     public let ipStack: TunnelIPStack?
     public let state: TunnelState
@@ -43,7 +44,8 @@ public struct SessionReport: Codable, Equatable, Sendable {
     public let challenge: AuthenticationChallenge?
 
     public init(state: TunnelState, message: String, activeProfileID: UUID?,
-                receivedBytes: UInt64?, sentBytes: UInt64?, challenge: AuthenticationChallenge? = nil, firewallActive: Bool = false, firewallRecoveryRequired: Bool = false, attemptID: UUID? = nil, networkRecoveryRequired: Bool? = nil, routingMode: RoutingMode? = nil, routingRevision: UUID? = nil, customRuleDigest: String? = nil, customRuleCount: Int? = nil, ipStack: TunnelIPStack? = nil, failureCode: DiagnosticCode? = nil) {
+                receivedBytes: UInt64?, sentBytes: UInt64?, challenge: AuthenticationChallenge? = nil, firewallActive: Bool = false, firewallRecoveryRequired: Bool = false, attemptID: UUID? = nil, networkRecoveryRequired: Bool? = nil, routingMode: RoutingMode? = nil, routingRevision: UUID? = nil, customRuleDigest: String? = nil, customRuleCount: Int? = nil, ipStack: TunnelIPStack? = nil, failureCode: DiagnosticCode? = nil, connectionTimings: [ConnectionStageTiming]? = nil) {
+        self.connectionTimings = connectionTimings
         self.failureCode = failureCode
         self.ipStack = ipStack
         self.state = state

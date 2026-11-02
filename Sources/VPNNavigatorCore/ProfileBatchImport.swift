@@ -25,6 +25,9 @@ public enum ProfileImportFailure: String, Sendable {
     static func classify(_ error: Error) -> Self {
         if error is MaterializeError { return .material }
         if error is StoreError { return .invalidFile }
+        if let failure = error as? ProfileValidationError {
+            return failure == .tooLarge ? .tooLarge : .invalidFile
+        }
         if let failure = error as? ProfileFileIO.Failure, case .tooLarge = failure { return .tooLarge }
         return .storage
     }

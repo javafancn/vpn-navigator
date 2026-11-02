@@ -58,8 +58,8 @@ class PairedPerformanceTests(unittest.TestCase):
 
     def test_uncertainty_crossing_the_gate_does_not_pass(self):
         records, baselines = self.inputs()
-        records[('tcp', 'Full VPN')] = {'median_mbps': {'download': 100, 'upload': 52},
-            'samples_mbps': {'download': [100] * 9, 'upload': [40, 45, 49, 50, 52, 54, 55, 56, 60]}}
+        records[('tcp', 'Full VPN')] = {'median_mbps': {'download': 100, 'upload': 88},
+            'samples_mbps': {'download': [100] * 9, 'upload': [70, 80, 83, 85, 88, 90, 92, 95, 99]}}
         with self.assertRaises(performance.BaselineDriftError):
             self.run_gate(records, baselines)
 
@@ -70,9 +70,53 @@ class PairedPerformanceTests(unittest.TestCase):
         baselines['tcp'][1] = {'median_mbps': {'download': 130, 'upload': 130},
             'samples_mbps': {key: [90, 100, 110, 120, 130, 140, 150, 160, 170] for key in ['download', 'upload']}}
         records[('tcp', 'Full VPN')] = sample(150)
+        records[('tcp', 'China Direct')] = sample(150)
         # A 30% difference of point estimates alone does not establish drift.
         # All managed lower ratio bounds still comfortably exceed the gate.
         self.run_gate(records, baselines)
+
+    def test_twenty_percent_throughput_regression_cannot_pass(self):
+        records, baselines = self.inputs()
+        records[('udp', 'China Direct')] = sample(80)
+        with self.assertRaisesRegex(AssertionError, 'Stable paired performance'):
+            self.run_gate(records, baselines)
+
+    @staticmethod
+    def web_sample(seconds):
+        keys = ['time_namelookup', 'time_connect', 'time_appconnect', 'time_starttransfer', 'time_total']
+        return [dict(cache_state=cache, **{key: seconds for key in keys})
+                for cache in ['cold', 'warm'] for _ in range(9)]
+
+    def web_inputs(self):
+        records = {(protocol, mode): self.web_sample(.011) for protocol in ['tcp', 'udp'] for mode in ['Full VPN', 'China Direct']}
+        baselines = {protocol: [self.web_sample(.01) for _ in range(3)] for protocol in ['tcp', 'udp']}
+        return records, baselines
+
+    def test_paired_web_samples_accept_small_loopback_noise(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            performance.verify_web_performance(*self.web_inputs())
+
+    def test_web_regression_is_detected_independently_of_throughput(self):
+        records, baselines = self.web_inputs()
+        records[('tcp', 'Full VPN')][0]['time_total'] = .5
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(AssertionError, 'HTTPS latency regression'):
+            performance.verify_web_performance(records, baselines)
+
+    def test_web_baseline_drift_is_inconclusive(self):
+        records, baselines = self.web_inputs()
+        baselines['udp'][1] = self.web_sample(.2)
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(performance.BaselineDriftError):
+            performance.verify_web_performance(records, baselines)
+
+    def test_missing_or_invalid_web_samples_cannot_pass(self):
+        records, baselines = self.web_inputs()
+        records[('udp', 'China Direct')].pop()
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(AssertionError, 'fixed-count'):
+            performance.verify_web_performance(records, baselines)
+        records, baselines = self.web_inputs()
+        records[('udp', 'China Direct')][0]['time_namelookup'] = float('nan')
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(AssertionError, 'Invalid web latency'):
+            performance.verify_web_performance(records, baselines)
 
     def test_cpu_accounting_handles_clock_fields_and_spaced_paths(self):
         output = ('12 0:01.25 /Library/Application Support/VPNNavigator/Local/Payload/openvpn\n'

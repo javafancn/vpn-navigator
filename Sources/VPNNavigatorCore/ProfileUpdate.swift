@@ -39,6 +39,7 @@ struct ProfileUpdateReceipt: Codable {
 
 extension ProfileStore {
     func reviseTransaction(_ profile: VPNProfile, text: String) throws {
+        try beginTransaction(); defer { endTransaction() }
         guard let current = try list().first(where: { $0.id == profile.id }) else { throw StoreError.notFound }
         _ = try ProfileSafety.validate(text)
         let source = try ProfileFileIO.read(root.appendingPathComponent(current.relativePath))
@@ -53,6 +54,7 @@ extension ProfileStore {
         _ = try applyUpdate(preview)
     }
     public func healthReports(now: Date = Date()) throws -> [UUID: ProfileHealthReport] {
+        try beginTransaction(); defer { endTransaction() }
         let profiles = try list()
         guard profiles.count <= 1000 else { throw ProfileUpdateFailure.unsafe }
         var result: [UUID: ProfileHealthReport] = [:]
@@ -70,6 +72,7 @@ extension ProfileStore {
         return result
     }
     public func previewUpdate(id: UUID, from file: URL, now: Date = Date()) throws -> ProfileUpdatePreview {
+        try beginTransaction(); defer { endTransaction() }
         guard let profile = try list().first(where: { $0.id == id }), file.pathExtension.lowercased() == "ovpn" else { throw ProfileUpdateFailure.stale }
         let data = try ProfileFileIO.read(file, followSymlinks: true)
         guard !data.isEmpty, String(data: data, encoding: .utf8) != nil else { throw ProfileUpdateFailure.unsafe }
@@ -91,9 +94,11 @@ extension ProfileStore {
     /// The receipt is the commit point. Until it is marked committed, failure or
     /// process interruption restores the previous bytes, metadata and history.
     public func applyUpdate(_ preview: ProfileUpdatePreview) throws -> VPNProfile {
-        try applyUpdate(preview, checkpoint: { _ in })
+        try beginTransaction(); defer { endTransaction() }
+        return try applyUpdate(preview, checkpoint: { _ in })
     }
     func applyUpdate(_ preview: ProfileUpdatePreview, checkpoint: (Int) throws -> Void) throws -> VPNProfile {
+        try beginTransaction(); defer { endTransaction() }
         var profiles = try list()
         guard let position = profiles.firstIndex(where: { $0.id == preview.profile.id }), profiles[position] == preview.profile,
               try ProfileFileIO.read(root.appendingPathComponent(preview.profile.relativePath)) == preview.oldSource,
@@ -130,6 +135,7 @@ extension ProfileStore {
         return updated
     }
     func recoverProfileUpdate() throws {
+        try beginTransaction(); defer { endTransaction() }
         let receiptURL = root.appendingPathComponent("profile-update.json")
         guard let data = try optionalUpdateFile(receiptURL, maximumBytes: 6_000_000) else { return }
         guard let value = try? JSONDecoder().decode(ProfileUpdateReceipt.self, from: data), value.schema == 1,

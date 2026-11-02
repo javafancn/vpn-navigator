@@ -138,4 +138,7 @@ for ((i=1; i<=32; i++)); do
 done
 if [[ -f "$runtime/ci-managed-trace" ]]; then echo "VPNNAV DNS adapter phase=$script_type profile=$profile"; fi
 "${BASH_SOURCE[0]%/*}/VPNNavigatorHelper" --apply-dns "$dev" "$addresses" "$search" "$match" || exit 1
-/usr/bin/dscacheutil -flushcache
+# DNS ownership/application was verified by the native helper above. Cache
+# invalidation is advisory and must not turn a successful hook into an engine
+# failure (including Original mode, which also executes this hook).
+/usr/bin/dscacheutil -flushcache || true

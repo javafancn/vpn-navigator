@@ -21,7 +21,6 @@ final class DNSRecoveryJournal {
     init(file: URL = URL(fileURLWithPath: "/var/run/vpn-navigator/dns.journal"),
          flushCache: @escaping () throws -> Void = {
              _ = try RouteExecutor.command("/usr/bin/dscacheutil", ["-flushcache"])
-             _ = try RouteExecutor.command("/bin/launchctl", ["kill", "HUP", "system/com.apple.mDNSResponder"])
          }) { self.file = file; self.flushCache = flushCache }
     private let store = SCDynamicStoreCreate(nil, "VPNNavigator.DNSRecovery" as CFString, nil, nil)
     var exists: Bool { FileManager.default.fileExists(atPath: file.path) }
@@ -137,7 +136,7 @@ final class DNSRecoveryJournal {
             try confirm(tunnel: tunnel)
             record.previousApplied = nil
             try save(record)
-            try flushCache()
+            refreshCacheBestEffort()
         }
         record = try load()
         record.managedGlobal = record.applied?[primary]
@@ -170,7 +169,7 @@ final class DNSRecoveryJournal {
         guard let store, SCDynamicStoreSetValue(store, key as CFString, value as CFDictionary) else { throw DNSJournalError.unavailable }
         try confirm(tunnel: tunnel)
         record.previousApplied = nil; try save(record)
-        try flushCache()
+        refreshCacheBestEffort()
     }
     func confirm(tunnel: String) throws {
         guard DNSRecoveryPolicy.validTunnel(tunnel) else { throw DNSJournalError.unavailable }
@@ -218,10 +217,14 @@ final class DNSRecoveryJournal {
         for key in keys {
             guard try equal(restored[key], record.before[key]) else { throw DNSJournalError.conflict }
         }
-        if !set.isEmpty || !remove.isEmpty { try flushCache() }
+        if !set.isEmpty || !remove.isEmpty { refreshCacheBestEffort() }
         try FileManager.default.removeItem(at: file)
         primaryService = nil
     }
+    /// Cache invalidation is advisory. Only the verified dynamic-store values
+    /// determine DNS ownership and recovery; a failed optional tool must not
+    /// turn a completed restore into a persistent recovery/quit blocker.
+    private func refreshCacheBestEffort() { try? flushCache() }
     private func primaryKey(_ service: String) -> String { "Setup:/Network/Service/\(service)/DNS" }
     private func keys(_ record: Record) -> [String] {
         var keys = [primaryKey(record.service)]

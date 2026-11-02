@@ -262,8 +262,7 @@ final class RouteExecutor {
         let allowlisted: Set<String> = [
             "/sbin/route", "/usr/sbin/netstat", "/sbin/ifconfig", "/usr/bin/dscacheutil"
         ]
-        let dnsCacheSignal = executable == "/bin/launchctl" && arguments == ["kill", "HUP", "system/com.apple.mDNSResponder"]
-        guard allowlisted.contains(executable) || dnsCacheSignal else {
+        guard allowlisted.contains(executable) else {
             throw RouteExecutionError.disallowedExecutable
         }
         let task = Process()

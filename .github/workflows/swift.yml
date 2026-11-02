@@ -20,6 +20,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -p test_native_routes.py -v
       - name: Build
         run: swift build
+      - name: Verify DNS cache failure cannot block connection or recovery
+        run: 'python3 scripts/test-dns-cache-failure.py "$(swift build --show-bin-path)"'
       - name: Verify workspace keyboard and accessibility in the debug build
         if: ${{ !endsWith(matrix.runner, '-intel') }}
         run: |

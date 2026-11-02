@@ -1,6 +1,7 @@
 #if DEBUG
 import Foundation
 import SystemConfiguration
+import VPNNavigatorCore
 
 /// Exercises real SCDynamicStore and the write-ahead record on a synthetic
 /// service UUID. It never changes the DNS of an existing network service.
@@ -115,6 +116,41 @@ enum DNSJournalSelfTest {
         guard journal.exists, CFEqual(SCDynamicStoreCopyValue(store, key), other) else { throw DNSJournalError.unavailable }
         SCDynamicStoreSetValue(store, key, original)
         try journal.restore()
+
+        // Reproduce the 0.8.14 regression: optional cache commands fail after
+        // DNS has been applied/restored. None may prevent completion or leave
+        // a journal that subsequently blocks HelperQuitPolicy.
+        var failingFlushes = 0
+        let failing = DNSRecoveryJournal(file: folder.appendingPathComponent("cache-failure.journal"), flushCache: {
+            failingFlushes += 1
+            throw RouteExecutionError.commandFailed("/bin/launchctl")
+        })
+        try failing.begin(serviceOverride: id)
+        try failing.confirm(tunnel: "utun9999")
+        _ = try failing.prepareManaged(tunnel: "utun9999", has4: true, has6: false)
+        try failing.publishManagedResolver(tunnel: "utun9999", port: 54321)
+        try failing.confirm(tunnel: "utun9999")
+        try failing.publishManagedResolver(tunnel: "utun9999", port: 54322)
+        try failing.restore()
+        guard failingFlushes == 4, !failing.exists, failing.primaryService == nil,
+              CFEqual(SCDynamicStoreCopyValue(store, key), original) else { throw DNSJournalError.conflict }
+
+        // Optional failure must not weaken conflict protection.
+        try failing.begin(serviceOverride: id)
+        try failing.applyProvided(tunnel: "utun9999", servers: ["10.8.0.53"], search: [], match: [])
+        SCDynamicStoreSetValue(store, key, other)
+        do { try failing.restore(); throw DNSJournalError.unavailable }
+        catch DNSJournalError.conflict { }
+        guard failing.exists, CFEqual(SCDynamicStoreCopyValue(store, key), other), failingFlushes == 4 else { throw DNSJournalError.conflict }
+        let idle = SessionReport(state: .failed, message: "fixture", activeProfileID: nil,
+                                 receivedBytes: nil, sentBytes: nil, networkRecoveryRequired: false)
+        guard !HelperQuitPolicy.mayStop(idle, hasRecoveryEvidence: failing.exists, installationPending: false) else { throw DNSJournalError.conflict }
+        SCDynamicStoreSetValue(store, key, ["ServerAddresses": ["10.8.0.53"], "SearchOrder": 5000] as CFDictionary)
+        try failing.restore()
+        try failing.restore() // already restored: remains idempotent
+        guard !failing.exists, failingFlushes == 5, CFEqual(SCDynamicStoreCopyValue(store, key), original) else { throw DNSJournalError.conflict }
+        guard HelperQuitPolicy.mayStop(idle, hasRecoveryEvidence: failing.exists, installationPending: false) else { throw DNSJournalError.unavailable }
+        print("PASS: failing cache refresh cannot block resolver publication or verified restore; external DNS conflicts remain protected.")
     }
 }
 #endif

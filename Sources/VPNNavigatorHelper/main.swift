@@ -24,6 +24,29 @@ if CommandLine.arguments.dropFirst().first == "--apply-dns" {
     }
 }
 #if DEBUG
+if CommandLine.arguments.dropFirst().first == "--self-test-review-regressions" {
+    guard CommandLine.arguments.count == 3 else { exit(1) }
+    Task.detached {
+        do { try await ReviewRegressionSelfTest.run(seeds: URL(fileURLWithPath: CommandLine.arguments[2])); exit(0) }
+        catch { fputs("Review regression failed: \(error)\n", stderr); exit(1) }
+    }
+    dispatchMain()
+}
+if CommandLine.arguments.dropFirst().first == "--self-test-network-latency" {
+    do { try NetworkLatencySelfTest.run(); exit(0) }
+    catch { fputs("Network latency regression failed: \(error)\n", stderr); exit(1) }
+}
+if CommandLine.arguments.dropFirst().first == "--self-test-core-optimizations" {
+    Task.detached {
+        do { try await CoreOptimizationSelfTest.run(); exit(0) }
+        catch { fputs("Core optimization regression failed: \(error)\n", stderr); exit(1) }
+    }
+    dispatchMain()
+}
+if CommandLine.arguments.dropFirst().first == "--self-test-native-network" {
+    do { try NativeNetworkSelfTest.run(); exit(0) }
+    catch { fputs("Native network read regression failed: \(error)\n", stderr); exit(1) }
+}
 if CommandLine.arguments.dropFirst().first == "--self-test-management-startup" {
     guard CommandLine.arguments.count == 2 else { exit(1) }
     do { try ManagementStartupSelfTest.run(); exit(0) }
@@ -86,22 +109,50 @@ if BuildChannel.isLocal {
 final class HelperService: NSObject, VPNNavigatorHelperAPI {
     private let engine = ManagedTunnel()
     private var retiring = false
+    private let clientLock = NSLock()
+    private var clients = Set<UUID>()
+    private var acceptingClients = true
+    private var idleExit: DispatchWorkItem?
     // All tunnel actions and state transitions use one serial queue.
     private var queue: DispatchQueue { engine.queue }
     private var networkMonitor: NetworkChangeMonitor?
     private var terminationSignal: DispatchSourceSignal?
     override init() {
         super.init()
+        engine.onSessionEnded = { [weak self] in self?.scheduleIdleExit() }
         networkMonitor = NetworkChangeMonitor { [weak self] in
             self?.queue.async { [weak self] in self?.engine.verifyPhysicalNetwork() }
         }
         signal(SIGTERM, SIG_IGN)
         let termination = DispatchSource.makeSignalSource(signal: SIGTERM, queue: queue)
         termination.setEventHandler { [weak self] in
-            self?.engine.stop()
-            exit(0)
+            self?.engine.stop(completion: { exit(0) })
         }
         terminationSignal = termination; termination.resume()
+    }
+    func admitClient(_ id: UUID) -> Bool {
+        clientLock.lock(); defer { clientLock.unlock() }
+        guard acceptingClients else { return false }
+        clients.insert(id); return true
+    }
+    func clientClosed(_ id: UUID) {
+        clientLock.lock(); clients.remove(id); clientLock.unlock()
+        queue.async { self.scheduleIdleExit() }
+    }
+    private func scheduleIdleExit() {
+        idleExit?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.retiring,
+                  HelperQuitPolicy.mayStop(self.currentSessionReport(), hasRecoveryEvidence: LocalInstallation.hasRecoveryEvidence,
+                    installationPending: BuildChannel.isLocal && LocalInstallation.isInstallationPending) else { return }
+            self.clientLock.lock()
+            let idle = self.clients.isEmpty
+            if idle { self.acceptingClients = false }
+            self.clientLock.unlock()
+            guard idle else { return }
+            self.retiring = true; exit(0)
+        }
+        idleExit = work; queue.asyncAfter(deadline: .now() + 5, execute: work)
     }
 
     func stopWhenIdle(reply: @escaping (String) -> Void) {
@@ -183,11 +234,8 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
     func disconnect(cancelAttemptID: String, reply: @escaping (String) -> Void) {
         engine.cancellation.cancel(UUID(uuidString: cancelAttemptID))
         queue.async {
-            self.engine.stop(releaseProtection: true)
-            if self.engine.state == .disconnected {
-                reply("Disconnected")
-            } else {
-                reply("ERROR: " + self.engine.message)
+            self.engine.stop(releaseProtection: true) {
+                reply(self.engine.state == .disconnected ? "Disconnected" : "ERROR: " + self.engine.message)
             }
         }
     }
@@ -204,8 +252,9 @@ final class HelperService: NSObject, VPNNavigatorHelperAPI {
             // Identity check and stop execute on the same engine queue. A
             // stale request cannot cancel a newer attempt or its generation.
             self.engine.cancellation.cancel(attemptID)
-            self.engine.stop(releaseProtection: true)
-            reply(self.engine.state == .disconnected ? "Disconnected" : "ERROR: " + self.engine.message)
+            self.engine.stop(releaseProtection: true) {
+                reply(self.engine.state == .disconnected ? "Disconnected" : "ERROR: " + self.engine.message)
+            }
         }
     }
     private func currentSessionReport() -> SessionReport {
@@ -292,6 +341,9 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate {
     private let service = HelperService()
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
         guard let requirement = PeerVerifier.clientRequirement(uid: connection.effectiveUserIdentifier) else { return false }
+        let clientID = UUID()
+        guard service.admitClient(clientID) else { return false }
+        connection.invalidationHandler = { [weak service] in service?.clientClosed(clientID) }
         // macOS enforces this requirement against every incoming XPC message.
         connection.setCodeSigningRequirement(requirement)
         connection.exportedInterface = NSXPCInterface(with: VPNNavigatorHelperAPI.self)

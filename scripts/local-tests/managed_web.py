@@ -158,7 +158,7 @@ def web_fixture(run, folder, server_tunnel, upstream):
         assert pf('-sr').stdout == before, 'Root PF rules changed'
 
 
-def verify_web(run, probe, counts, client_tunnel, fallback=False, split=False, requests=3):
+def verify_web(run, probe, counts, client_tunnel, fallback=False, split=False, requests=3, managed=False):
     assert requests in (1, 3, 9)
     preflight = time.monotonic()
     resolver = '1.1.1.1' if fallback else DNS
@@ -166,7 +166,7 @@ def verify_web(run, probe, counts, client_tunnel, fallback=False, split=False, r
     assert re.search(r'^\s*interface:\s*' + re.escape(client_tunnel) + r'\s*$', path, re.M), 'DNS bypassed the VPN: ' + path
     receipt = run(['/usr/sbin/scutil', '--dns']).stdout.split('resolver #2', 1)[0]
     active = re.findall(r'nameserver\[[0-9]+\]\s*:\s*([0-9.]+)', receipt)
-    if split:
+    if managed or split:
         # Some macOS scutil versions display the uint16 port as signed.
         # Compare the actual 16 bits with the native dictionary recorded before
         # publication, rather than assuming that display text is positive.
@@ -174,10 +174,62 @@ def verify_web(run, probe, counts, client_tunnel, fallback=False, split=False, r
         key = 'Setup:/Network/Service/' + journal['service'] + '/DNS'
         published = plistlib.loads(base64.b64decode(journal['applied'][key], validate=True))
         shown = re.search(r'port\s*:\s*(-?[0-9]+)', receipt)
-        assert active == ['127.0.0.1'] and published['ServerAddresses'] == active and shown and \
-            1023 < published['ServerPort'] <= 65535 and (int(shown[1]) & 65535) == published['ServerPort'], \
+        port = published.get('ServerPort', 53)
+        assert active == ['127.0.0.1'] and published['ServerAddresses'] == active and \
+            (port == 53 or 1023 < port <= 65535) and \
+            ((int(shown[1]) & 65535) == port if shown else port == 53), \
             'Loopback split DNS was not actually applied: ' + receipt
-        for server in ['223.5.5.5', '223.6.6.6']:
+        # IPv4-only fixture; retain a physical IPv6 resolver only if the host
+        # actually has that physical path. Candidate policy is covered by core
+        # tests; here verify the selected resolver's real kernel route.
+        physical6 = run(['/sbin/route', '-n', 'get', '-inet6', 'default'], ok=False).stdout
+        has6 = re.search(r'^\s*interface:\s*en[0-9]+\s*$', physical6, re.M)
+        global_dns = plistlib.loads(base64.b64decode(journal['managedGlobal'], validate=True))['ServerAddresses']
+        candidates = journal.get('physicalResolvers', []) + ['223.5.5.5', '223.6.6.6', '119.29.29.29']
+        country_file = Path(probe).parent / 'managed-rules.txt'
+        country = [ipaddress.ip_network(line) for line in country_file.read_text().splitlines() if line and not line.startswith('#')]
+        private = [ipaddress.ip_network(prefix) for prefix in ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7']]
+        special = [ipaddress.ip_network(prefix) for prefix in ['0.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8',
+            '169.254.0.0/16', '192.0.0.0/24', '192.0.2.0/24', '192.88.99.0/24', '198.18.0.0/15',
+            '198.51.100.0/24', '203.0.113.0/24', '224.0.0.0/4', '240.0.0.0/4']]
+        local = []
+        for family in ['inet', 'inet6']:
+            table = run(['/usr/sbin/netstat', '-rn', '-f', family]).stdout
+            for line in table.splitlines():
+                fields = line.split()
+                if len(fields) < 4 or not fields[1].startswith('link#') or 'H' in fields[2] or not re.fullmatch('en[0-9]+', fields[3]):
+                    continue
+                value = fields[0]
+                if family == 'inet':
+                    address, _, mask = value.partition('/')
+                    octets = address.split('.')
+                    value = '.'.join(octets + ['0'] * (4 - len(octets))) + '/' + (mask or str(len(octets) * 8))
+                try:
+                    local.append(ipaddress.ip_network(value, strict=False))
+                except ValueError:
+                    pass
+        known = {'223.5.5.5', '223.6.6.6', '119.29.29.29', '2400:3200::1', '2400:3200:baba::1', '2402:4e00::', '2402:4e00:1::'}
+        selected = []
+        for raw in candidates:
+            try:
+                ip = ipaddress.ip_address(raw)
+            except ValueError:
+                continue
+            if str(ip) in global_dns or ip.is_unspecified or ip.is_loopback or ip.is_multicast or ip.is_link_local:
+                continue
+            if ip.version == 6 and (not has6 or '%' in raw or ip.ipv4_mapped):
+                continue
+            on_link = any(ip.version == net.version and ip in net for net in local)
+            if not on_link:
+                if any(ip.version == net.version and ip in net for net in special):
+                    continue
+                if str(ip) not in known and not any(ip.version == net.version and ip in net for net in private + country):
+                    continue
+            if str(ip) not in selected:
+                selected.append(str(ip))
+            if len(selected) == 2:
+                break
+        for server in selected if split else []:
             direct = run(['/sbin/route', '-n', 'get', server]).stdout
             assert re.search(r'^\s*interface:\s*en[0-9]+\s*$', direct, re.M), 'Domestic DNS did not use physical route: ' + direct
     else:

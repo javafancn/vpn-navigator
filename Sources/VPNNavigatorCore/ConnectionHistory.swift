@@ -149,12 +149,15 @@ public struct ConnectionHistoryTracker: Sendable {
             finished[i].outcome = .interrupted; finished[i].endedAt = finished[i].lastObservedAt
             finished[i].add(.observationEnded, at: finished[i].lastObservedAt)
         }
+        finished.sort { $0.lastObservedAt > $1.lastObservedAt }
         prune(now: now)
     }
     public var records: [ConnectionHistoryRecord] {
         var result = finished
-        if recordingActive, let active { result.append(active) }
-        return Array(result.sorted { $0.lastObservedAt > $1.lastObservedAt }.prefix(200))
+        if recordingActive, let active {
+            result.insert(active, at: result.firstIndex { $0.lastObservedAt < active.lastObservedAt } ?? result.count)
+        }
+        return Array(result.prefix(200))
     }
     public var archive: ConnectionHistoryArchive {
         var value = ConnectionHistoryArchive(); value.preferences = preferences; value.records = records; return value
@@ -185,7 +188,7 @@ public struct ConnectionHistoryTracker: Sendable {
     private mutating func finish(_ outcome: ConnectionHistoryOutcome, kind: ConnectionHistoryEventKind, at now: Date, failure: DiagnosticCode? = nil) {
         guard var value = active else { return }
         value.outcome = outcome; value.endedAt = now; value.lastObservedAt = now; value.add(kind, at: now, failure: failure)
-        if recordingActive { finished.append(value) }
+        if recordingActive { finished.insert(value, at: finished.firstIndex { $0.lastObservedAt < value.lastObservedAt } ?? finished.count) }
         active = nil; recordingActive = false; sample = nil; verifiedTick = nil; verified = false; lastState = nil; lastMode = nil
         quality = .init()
     }
@@ -288,7 +291,7 @@ public struct ConnectionHistoryTracker: Sendable {
     }
     private mutating func prune(now: Date) {
         let cutoff = now.addingTimeInterval(-Double(preferences.retentionDays) * 86_400)
-        finished = Array(finished.filter { $0.lastObservedAt >= cutoff }.sorted { $0.lastObservedAt > $1.lastObservedAt }.prefix(recordingActive ? 199 : 200))
+        finished = Array(finished.filter { $0.lastObservedAt >= cutoff }.prefix(recordingActive ? 199 : 200))
     }
 }
 public enum ConnectionHistoryFailure: Error, LocalizedError {

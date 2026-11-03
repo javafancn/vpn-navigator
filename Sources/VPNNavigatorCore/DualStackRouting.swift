@@ -67,8 +67,8 @@ public enum LocalIPv6Networks {
         var found = Set<IPv6CIDR>()
         for line in netstat.components(separatedBy: .newlines) {
             let parts = line.split(whereSeparator: { $0.isWhitespace }).map(String.init)
-            guard parts.count >= 4, parts[3] == physicalInterface, parts[1].hasPrefix("link#"),
-                  let prefix = try? IPv6CIDR(parts[0]), prefix.prefix >= 3,
+            guard parts.count >= 4, parts[3] == physicalInterface, parts[1].hasPrefix("link#"), !parts[2].contains("H"),
+                  let prefix = try? IPv6CIDR(parts[0].contains("/") ? parts[0] : parts[0] + "/128"), prefix.prefix >= 3,
                   !prefix.address.hasPrefix("fe80:"), !prefix.address.hasPrefix("ff") else { continue }
             found.insert(prefix)
         }
@@ -127,17 +127,19 @@ public struct DualStackRoutePlan: Sendable {
               !dns6.contains(where: { item in local6.contains { $0.overlaps(item) } }) else { throw CustomRouteError.protectedNetwork }
         let directDNS = directDNSServers.isEmpty ? [] : try ManagedDNSPolicy.servers(provided: directDNSServers, has4: path4 != nil, has6: path6 != nil)
         guard mode == .chinaDirect || directDNS.isEmpty, Set(directDNS).isDisjoint(with: dns), !directDNS.contains(endpoint) else { throw CustomRouteError.protectedNetwork }
+        guard directDNS.allSatisfy({ SplitDNSPolicy.permitsPhysicalResolver($0, local4: local4, local6: local6,
+            country4: country4, country6: country6) }) else { throw CustomRouteError.invalidPrefix }
         let directDNS4 = try directDNS.filter { !IPAddress.isIPv6($0) }.map { try IPv4CIDR($0 + "/32") }
         let directDNS6 = try directDNS.filter { IPAddress.isIPv6($0) }.map { try IPv6CIDR($0 + "/128") }
-        guard !directDNS4.contains(where: { item in local4.contains { $0.overlaps(item) } }),
-              !directDNS6.contains(where: { item in local6.contains { $0.overlaps(item) } }) else { throw CustomRouteError.protectedNetwork }
         let compiled4 = try custom.directPrefixes(country: has4 && mode == .chinaDirect ? country4 : nil, local: local4, endpoint: endpoint, protectedVPN: dns4 + directDNS4)
         let compiled6 = try custom.directPrefixes6(country: has6 && mode == .chinaDirect ? country6 : nil, local: local6, endpoint: endpoint, protectedVPN: dns6 + directDNS6)
         // Carve fixed physical resolver hosts out of all other direct prefixes
         // before adding them. This avoids duplicate routes and lets these DNS
         // paths override custom VPN ranges without changing application traffic.
-        let prefixes4 = (compiled4 + directDNS4).sorted()
-        let prefixes6 = (compiled6 + directDNS6).sorted()
+        // A router's LAN resolver is already on-link. Installing a host route
+        // via the default gateway would replace its correct neighbor path.
+        let prefixes4 = (compiled4 + directDNS4.filter { item in !local4.contains { $0.overlaps(item) } }).sorted()
+        let prefixes6 = (compiled6 + directDNS6.filter { item in !local6.contains { $0.overlaps(item) } }).sorted()
         guard prefixes4.isEmpty || path4 != nil, prefixes6.isEmpty || path6 != nil else { throw DualStackError.missingPhysical }
         return try .init(endpoint4: endpoint4, endpoint6: endpoint6,
             direct4: prefixes4.map { RouteTarget($0, .viaGateway(path4!.gateway)) },

@@ -2,6 +2,19 @@ import XCTest
 @testable import VPNNavigatorCore
 
 final class SplitDNSTests: XCTestCase {
+    func testPhysicalResolverScopeRejectsForeignAndOffLinkSpecialAddresses() throws {
+        let country = try RuleSet(text: "114.114.114.0/24")
+        let lan = [try IPv4CIDR("192.168.1.0/24")]
+        XCTAssertEqual(SplitDNSPolicy.domesticServers(path4: true, path6: false, protectedVPN: [],
+            preferred: ["8.8.8.8", "1.1.1.1", "100.100.2.136", "198.18.0.2"], local4: lan, country4: country),
+            ["223.5.5.5", "223.6.6.6"])
+        XCTAssertEqual(SplitDNSPolicy.domesticServers(path4: true, path6: false, protectedVPN: [],
+            preferred: ["192.168.1.1", "114.114.114.114"], local4: lan, country4: country),
+            ["192.168.1.1", "114.114.114.114"])
+        let sharedLAN = [try IPv4CIDR("100.100.2.0/24")]
+        XCTAssertTrue(SplitDNSPolicy.permitsPhysicalResolver("100.100.2.136", local4: sharedLAN))
+        XCTAssertFalse(SplitDNSPolicy.permitsPhysicalResolver("198.18.0.2", country4: country))
+    }
     func testDomainBoundariesAndCase() throws {
         let rules = try ChinaDNSDomains(text: "baidu.com\nbilibili.com\nexample.cn\nxn--fiqs8s.cn\n")
         for name in ["baidu.com", "WWW.BaiDu.Com.", "a.b.bilibili.com", "example.cn", "www.xn--fiqs8s.cn"] { XCTAssertTrue(rules.contains(name), name) }
@@ -34,6 +47,8 @@ final class SplitDNSTests: XCTestCase {
         }
     }
     func testPhysicalDNSExceptionsNeverOverlapVPNOrFullMode() throws {
+        XCTAssertEqual(SplitDNSPolicy.domesticServers(path4: true, path6: false, protectedVPN: ["10.8.0.53"],
+            preferred: ["::1", "127.0.0.1", "10.8.0.53", "192.168.1.1"]), ["192.168.1.1", "223.5.5.5"])
         XCTAssertEqual(SplitDNSPolicy.domesticServers(path4: true, path6: true, protectedVPN: ["223.5.5.5"]), ["223.6.6.6", "119.29.29.29"])
         XCTAssertEqual(SplitDNSPolicy.domesticServers(path4: true, path6: false, protectedVPN: ["223.5.5.5", "223.6.6.6"]), ["119.29.29.29"])
         XCTAssertEqual(SplitDNSPolicy.domesticServers(path4: false, path6: true, protectedVPN: ["2400:3200::1", "2400:3200:baba::1"]), ["2402:4e00::", "2402:4e00:1::"])

@@ -19,7 +19,7 @@ final class LeakGuardPolicyTests: XCTestCase {
         let after = try policy.rules(tunnel: "utun4")
         XCTAssertTrue(after.contains("pass out quick on utun4 inet"))
         XCTAssertTrue(after.contains("block drop out quick inet from any to any"))
-        XCTAssertTrue(after.contains("block drop out quick inet6 from any to any"))
+        XCTAssertTrue(after.contains("block return out quick inet6 from any to any"))
         XCTAssertFalse(after.contains("pass out quick on en0 all"))
         XCTAssertFalse(after.contains("pass out quick on utun4 inet6"))
         XCTAssertTrue(after.contains("on utun4 inet from any to any keep state (if-bound)"))

@@ -37,7 +37,7 @@ public actor RuleUpdater {
     }
 
     public func cached() throws -> RuleSet? {
-        try RuleCacheStore.read(folder).ipv4.map { try RuleSet(text: $0) }
+        try RuleCacheStore.read(folder).parsed4
     }
     public func localCandidate(_ url: URL) throws -> RuleSet {
         let attrs = try FileManager.default.attributesOfItem(atPath: url.path)

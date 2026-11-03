@@ -216,7 +216,7 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
                         with context as counts:
                             if counts is not None:
                                 measured_web = verify_web(run, probe, counts, client_tunnel, fallback=not provided_dns,
-                                    split=mode == 'China Direct', requests=9)
+                                    split=mode == 'China Direct', requests=9, managed=mode != 'Original')
                                 if dns_kind == 'legacy':
                                     web_performance[(protocol, mode)] = measured_web
                                     if mode == 'Original':
@@ -231,7 +231,7 @@ def exercise_managed(run, folder, probe, config, profile, port, start_server, st
                                     'baseline_index': len(baselines[protocol]) - 1 if mode == 'Original' else None, **measured}), flush=True)
                             if counts is not None:
                                 verify_web(run, probe, counts, client_tunnel, fallback=not provided_dns,
-                                    split=mode == 'China Direct', requests=1)
+                                    split=mode == 'China Direct', requests=1, managed=mode != 'Original')
                                 print('PASS: system DNS/HTTP remains healthy after encrypted payload transfer.', flush=True)
                             run(['sudo', '-n', 'cp', app_approval, MANIFEST])
                             exercise_quit(run, cleanup_timeout=240)

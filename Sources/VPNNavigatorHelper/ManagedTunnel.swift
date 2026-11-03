@@ -4,6 +4,9 @@ import VPNNavigatorCore
 
 /// Root-owned, single-session OpenVPN process. The caller has already passed code-signing verification.
 final class ManagedTunnel {
+    var onSessionEnded: (() -> Void)?
+    private lazy var processExit = ProcessExitWaiter(queue: queue)
+    private var stopReplies: [() -> Void] = []
     let queue = DispatchQueue(label: "VPNNavigator.ManagedTunnel")
     let cancellation = SessionCancellation()
     private(set) var activeAttemptID: UUID?
@@ -22,6 +25,8 @@ final class ManagedTunnel {
         let password: String
     }
     private var reconnectContext: ReconnectContext?
+    private var guardedEndpoints: [GuardEndpointCandidate] = []
+    private var initialGuardDeadline: UInt64?
     private var retryBudget = ReconnectBudget()
     private var retryWork: DispatchWorkItem?
     private var attemptExpiresAt: UInt64?
@@ -42,7 +47,6 @@ final class ManagedTunnel {
     private var splitDNS: SplitDNSProxy?
     private var splitDNSMode: RoutingMode?
     private var chinaDNSDomains: ChinaDNSDomains?
-    private var domesticDNSServers: [String] = []
     private var managedDNSServers: [String] = []
     private let packetGuard = PacketFilterGuard()
     private var guardPolicy: LeakGuardPolicy?
@@ -69,6 +73,10 @@ final class ManagedTunnel {
     var customRuleCount: Int? { activeProfileID == nil ? nil : custom.active.count }
     private var rules: RuleSet?
     private var activePlan: DualStackRoutePlan?
+    private var activeVerification: RouteVerificationPlan?
+    private let verificationQueue = DispatchQueue(label: "VPNNavigator.NetworkVerification", qos: .utility)
+    private var verificationInFlight = false
+    private var verificationDirty = false
     private var rules6: IPv6RuleSet?
     private(set) var ipStack: TunnelIPStack?
     private var protectedLocalNetworks: [IPv4CIDR] = []
@@ -116,8 +124,8 @@ final class ManagedTunnel {
     var activeSplitRoutes: Bool { activeMode == .chinaDirect && routing != nil }
 
     func start(profile text: String, profileID: UUID, mode: RoutingMode, ruleText: String,
-               username: String, password: String, preferences: SessionPreferences = .init(), reusingGuard: Bool = false, attemptID: UUID = UUID(), cancellationGeneration: UInt64? = nil) throws {
-        let expiresAt = DispatchTime.now().uptimeNanoseconds + UInt64(preferences.connectionTimeout) * 1_000_000_000
+               username: String, password: String, preferences: SessionPreferences = .init(), reusingGuard: Bool = false, attemptID: UUID = UUID(), cancellationGeneration: UInt64? = nil, connectionDeadline: UInt64? = nil) throws {
+        let expiresAt = connectionDeadline ?? (DispatchTime.now().uptimeNanoseconds + UInt64(preferences.connectionTimeout) * 1_000_000_000)
         let capturedGeneration = cancellationGeneration ?? cancellation.snapshot()
         guard !cancellation.isCancelled(attemptID, generation: capturedGeneration) else { throw CancellationError() }
         guard getuid() == 0 else { throw TunnelError.needRoot }
@@ -129,12 +137,14 @@ final class ManagedTunnel {
             throw TunnelError.unresolvedRoutes
         }
         if reusingGuard {
-            guard packetGuard.active, preferences.killSwitch, preferences.reconnectManaged else { throw LeakGuardError.unresolved }
+            guard packetGuard.active, preferences.killSwitch else { throw LeakGuardError.unresolved }
             try packetGuard.verify()
         } else {
             guard !packetGuard.requiresRecovery else { throw LeakGuardError.unresolved }
             retryBudget = ReconnectBudget()
             reconnectContext = nil
+            guardedEndpoints = []
+            initialGuardDeadline = expiresAt
         }
         releaseProtectionOnExit = false
         protectionTeardownBlocked = false
@@ -190,16 +200,22 @@ final class ManagedTunnel {
             }
         }
         if mode != .original && preferences.killSwitch {
-            let endpoint = try GuardEndpoint.parse(validated.text)
-            let numeric: String
-            if let literal = IPAddress.canonical(endpoint.host) { numeric = literal }
-            else {
-                let answer = try RouteExecutor.command("/usr/bin/dscacheutil", ["-q", "host", "-a", "name", endpoint.host])
-                let v4 = Self.parseValue("ip_address:", in: answer).flatMap(IPAddress.canonical)
-                let v6 = Self.parseValue("ipv6_address:", in: answer).flatMap(IPAddress.canonical)
-                guard let value = endpoint.preferredFamily == 6 ? v6 : endpoint.preferredFamily == 4 ? v4 : (v4 ?? v6) else { throw LeakGuardError.invalid }
-                numeric = value
+            let originalProfile = validated.text
+            if !reusingGuard {
+                guardedEndpoints = try GuardEndpoint.resolveCandidates(originalProfile) { host in
+                    try self.ensureAttempt()
+                    let answer = (try? RouteExecutor.command("/usr/bin/dscacheutil", ["-q", "host", "-a", "name", host])) ?? ""
+                    try self.ensureAttempt()
+                    return answer.components(separatedBy: .newlines).compactMap { line in
+                        let parts = line.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+                        guard parts.count == 2, ["ip_address", "ipv6_address"].contains(parts[0]) else { return nil }
+                        return IPAddress.canonical(parts[1])
+                    }
+                }
             }
+            guard !guardedEndpoints.isEmpty else { throw LeakGuardError.invalidEndpoint }
+            let selected = guardedEndpoints[retryBudget.attempts % guardedEndpoints.count]
+            let endpoint = selected.endpoint, numeric = selected.address
             let paths = try physicalPaths(endpoint: numeric)
             guard let physical = IPAddress.isIPv6(numeric) ? paths.1 : paths.0 else { throw TunnelError.noPhysicalGateway }
             let local = try localNetworks(paths: paths)
@@ -212,11 +228,18 @@ final class ManagedTunnel {
             if reusingGuard { try packetGuard.replaceRules(policy.rules(tunnel: nil), resetExistingStates: true) }
             else { try packetGuard.activate(policy.rules(tunnel: nil)) }
             guardPolicy = policy
-            reconnectContext = ReconnectContext(profile: validated.text, profileID: profileID, attemptID: attemptID, mode: mode, username: username, password: password)
+            reconnectContext = ReconnectContext(profile: originalProfile, profileID: profileID, attemptID: attemptID, mode: mode, username: username, password: password)
         }
         try validated.text.write(to: configFile, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configFile.path)
         var options = ["--config", configFile.path]
+        options += OpenVPNCommand.latencyArguments(for: validated.text)
+        if initialGuardDeadline != nil {
+            let now = DispatchTime.now().uptimeNanoseconds
+            let seconds = expiresAt > now ? Int((expiresAt - now) / 1_000_000_000) : 0
+            options += OpenVPNCommand.candidateTimeoutArguments(for: validated.text,
+                remainingSeconds: seconds, candidateCount: guardedEndpoints.count)
+        }
         options += ManagedRoutingPolicy.openVPNArguments(mode: mode)
         if validated.requestsCredentials { options += ManagementAuthentication.openVPNArguments }
         let managementPath = workdir.appendingPathComponent("management.sock").path
@@ -350,6 +373,8 @@ final class ManagedTunnel {
                 process: task, output: startupOutput, check: { try self.ensureAttempt() })
             performance?.record(.engineStartup)
         } catch {
+            if let startup = error as? OpenVPNStartupError, [.transport, .dns].contains(startup.code),
+               scheduleGuardedReconnect() { return }
             // stop() deliberately clears old failures for an explicit
             // disconnect. Preserve this attempt's startup cause AFTER cleanup,
             // while retaining any more serious unresolved recovery state.
@@ -357,7 +382,7 @@ final class ManagedTunnel {
             if let startup = error as? OpenVPNStartupError {
                 failureCode = startup.code
                 eventStore.append(startup.code)
-                if state == .disconnected {
+                if state == .disconnected || state == .stopping {
                     lastError = startup.localizedDescription
                     state = .failed
                     message = startup.localizedDescription
@@ -367,6 +392,9 @@ final class ManagedTunnel {
         }
     }
     private func handleUnexpectedExit() {
+        if let process, processExit.isWaiting(for: process) {
+            processExit.didExit(process); return
+        }
         // EOF and Process.terminationHandler may arrive in either order.
         // Both must offer a guarded retry before stop() clears its context.
         // Cleanup retires both identities, making the other callback stale.
@@ -376,40 +404,52 @@ final class ManagedTunnel {
             lastError = lastError ?? "OpenVPN 意外退出，请查看诊断报告。"
         }
         let failure = lastError
-        stop()
-        if state == .disconnected, let failure {
-            state = .failed; lastError = failure; message = failure
+        stop { [weak self] in
+            guard let self, self.state == .disconnected, let failure else { return }
+            self.state = .failed; self.lastError = failure; self.message = failure
         }
     }
     @discardableResult
     private func scheduleGuardedReconnect() -> Bool {
+        // Cycling the configured remotes before the first connection is one
+        // connection attempt, with its original total deadline. Reconnecting
+        // an established session still requires the user's explicit opt-in.
+        let initialFailover = initialGuardDeadline.map {
+            DispatchTime.now().uptimeNanoseconds < $0 && guardedEndpoints.count > retryBudget.attempts + 1
+        } ?? false
+        let deadline = initialGuardDeadline
+        if let deadline, DispatchTime.now().uptimeNanoseconds >= deadline { return false }
         guard !cancellationRequested, let context = reconnectContext,
-              let delay = retryBudget.nextDelay(guardVerified: packetGuard.active, optedIn: preferences.reconnectManaged) else { return false }
+              let delay = retryBudget.nextDelay(guardVerified: packetGuard.active,
+                  optedIn: preferences.reconnectManaged || initialFailover) else { return false }
         do { try packetGuard.verify() } catch { return false }
         // Keep PF installed while the old child exits, DNS is restored and
         // owned routes roll back. Only a new root-owned start may reuse it.
-        stop(preservingReconnectContext: true)
-        guard process == nil, !dnsRecovery.exists,
-              !FileManager.default.fileExists(atPath: workdir.appendingPathComponent("routes.journal").path),
-              packetGuard.active else { return false }
-        state = .reconnecting
-        message = "断线保护保留，\(delay) 秒后尝试重连（\(retryBudget.attempts)/3）"
-        activeProfileID = context.profileID
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, self.state == .reconnecting, self.reconnectContext != nil else { return }
-            self.retryWork = nil
-            let ruleText = RoutingRuleBundle(ipv4: (self.rules?.routes ?? []).map(\.description).joined(separator: "\n"), ipv6: self.rules6.map { $0.routes.map(\.description).joined(separator: "\n") }).json
-            do {
-                try self.start(profile: context.profile, profileID: context.profileID,
-                    mode: context.mode, ruleText: ruleText, username: context.username,
-                    password: context.password, preferences: self.preferences, reusingGuard: true, attemptID: context.attemptID)
-            } catch {
-                self.state = .failed; self.lastError = error.localizedDescription
-                self.message = "安全重连未成功，保护保留：" + error.localizedDescription
+        stop(preservingReconnectContext: true) { [weak self] in
+            guard let self, self.reconnectContext != nil, !self.cancellationRequested else { return }
+            guard self.process == nil, !self.dnsRecovery.exists,
+                  !FileManager.default.fileExists(atPath: self.workdir.appendingPathComponent("routes.journal").path),
+                  self.packetGuard.active else { return }
+            self.state = .reconnecting
+            self.message = "断线保护保留，\(delay) 秒后尝试重连（\(self.retryBudget.attempts)/3）"
+            self.activeProfileID = context.profileID
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, self.state == .reconnecting, self.reconnectContext != nil else { return }
+                self.retryWork = nil
+                let ruleText = context.mode == .chinaDirect ? RoutingRuleBundle(ipv4: (self.rules?.routes ?? []).map(\.description).joined(separator: "\n"), ipv6: self.rules6.map { $0.routes.map(\.description).joined(separator: "\n") }).json : ""
+                do {
+                    try self.start(profile: context.profile, profileID: context.profileID,
+                        mode: context.mode, ruleText: ruleText, username: context.username,
+                        password: context.password, preferences: self.preferences, reusingGuard: true, attemptID: context.attemptID,
+                        connectionDeadline: deadline)
+                } catch {
+                    self.state = .failed; self.lastError = error.localizedDescription
+                    self.message = "安全重连未成功，保护保留：" + error.localizedDescription
+                }
             }
+            self.retryWork = work
+            self.queue.asyncAfter(deadline: .now() + .seconds(delay), execute: work)
         }
-        retryWork = work
-        queue.asyncAfter(deadline: .now() + .seconds(delay), execute: work)
         return true
     }
 
@@ -424,6 +464,7 @@ final class ManagedTunnel {
         if attemptExpired { eventStore.append(.timeout); throw TunnelError.connectionTimedOut }
     }
     private func completeAttempt() {
+        initialGuardDeadline = nil
         attemptExpiresAt = nil
         attemptTimer?.cancel(); attemptTimer = nil
     }
@@ -470,26 +511,17 @@ final class ManagedTunnel {
     }
 
     private func checkIPv6Bypass() throws {
-        // The IPv6 policy must never treat a failed command as absence of
-        // IPv6. In dual-stack networks a physical IPv6 default bypasses
-        // an IPv4-only VPN split policy.
-        let routes: String
-        do {
-            routes = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet6"])
-        } catch {
-            throw TunnelError.ipv6CheckUnavailable
-        }
-        switch IPv6RouteSafety.evaluate(routes) {
+        try Self.checkIPv6Bypass(snapshot: NativeNetworkSnapshot())
+    }
+    private static func checkIPv6Bypass(snapshot: NativeNetworkSnapshot) throws {
+        switch IPv6RouteSafety.evaluate(try KernelRouteReader.ipv6Defaults(), interfaces: snapshot.ipv6InterfaceText) {
         case .noDefaultRoute, .linkLocalOnly: return
-        case .tunnelOnly:
-            let interfaces: String
-            do { interfaces = try RouteExecutor.command("/sbin/ifconfig", ["-a"]) }
-            catch { throw TunnelError.ipv6CheckUnavailable }
-            guard IPv6RouteSafety.evaluate(routes, interfaces: interfaces) == .linkLocalOnly else { throw TunnelError.ipv6TunnelConflict }
         case .physicalBypass: throw TunnelError.ipv6Unsafe
+        case .tunnelOnly: throw TunnelError.ipv6TunnelConflict
         case .unknown: throw TunnelError.ipv6CheckUnavailable
         }
     }
+
     private func handle(_ snapshot: TunnelSnapshot) {
         if snapshot.state == .failed {
             let failure = "VPN authentication failed: \(snapshot.message)"
@@ -552,11 +584,13 @@ final class ManagedTunnel {
             let dnsServers = try dnsRecovery.prepareManaged(tunnel: utun, has4: has4, has6: has6)
             performance?.record(.dns)
             managedDNSServers = dnsServers
-            domesticDNSServers = SplitDNSPolicy.domesticServers(path4: paths.0 != nil, path6: paths.1 != nil, protectedVPN: dnsServers + [remote])
+            let domestic = SplitDNSPolicy.domesticServers(path4: paths.0 != nil, path6: paths.1 != nil,
+                protectedVPN: dnsServers + [remote], preferred: try dnsRecovery.physicalResolvers(),
+                local4: local.0, local6: local.1, country4: rules, country6: rules6)
             let plan = try DualStackRoutePlan.build(endpoint: remote, tunnel: utun, has4: has4, has6: has6,
                 path4: paths.0, path6: paths.1, local4: local.0, local6: local.1,
                 mode: activeMode, country4: rules, country6: rules6, custom: custom, dnsServers: dnsServers,
-                directDNSServers: activeMode == .chinaDirect ? domesticDNSServers : [])
+                directDNSServers: activeMode == .chinaDirect ? domestic : [])
             performance?.record(.routePlanning)
             let executor = RouteExecutor(journal: workdir.appendingPathComponent("routes.journal"), shouldCancel: { [weak self] in self?.cancellationRequested == true || self?.attemptExpired == true })
             routing = executor
@@ -568,9 +602,9 @@ final class ManagedTunnel {
                 try packetGuard.verify()
             }
             performance?.record(.verification)
-            try configureSplitDNS(mode: activeMode, tunnel: utun)
+            try configureSplitDNS(mode: activeMode, plan: plan)
             performance?.record(.resolver)
-            activePlan = plan; protectedLocalNetworks = local.0
+            activePlan = plan; activeVerification = try RouteVerificationPlan(plan: plan, custom: custom); protectedLocalNetworks = local.0
             protectedPhysicalInterface = (IPAddress.isIPv6(remote) ? paths.1 : paths.0)?.interface
             protectedVPNInterface = utun
             try ensureAttempt(); completeAttempt(); routingRevision = UUID(); ipStack = plan.stack
@@ -583,7 +617,7 @@ final class ManagedTunnel {
             failureCode = .route; eventStore.append(.route)
         }
     }
-    private func configureSplitDNS(mode: RoutingMode, tunnel: String) throws {
+    private func configureSplitDNS(mode: RoutingMode, plan: DualStackRoutePlan) throws {
         guard mode != .original else { return }
         if let splitDNS, splitDNSMode == mode { try splitDNS.verify(); return }
         let domains: ChinaDNSDomains
@@ -595,11 +629,18 @@ final class ManagedTunnel {
             // No domestic group in Full VPN, including for listed names.
             domains = .empty
         }
-        let proxy = SplitDNSProxy(domains: domains,
-            domestic: domesticDNSServers.map { .init(address: $0) },
-            vpn: try dnsRecovery.managedGlobalServers().map { .init(address: $0) }, mode: mode)
+        let domestic = plan.physicalDNS.map { SplitDNSProxy.Upstream(address: $0) }
+        let vpn = try dnsRecovery.managedGlobalServers().map { SplitDNSProxy.Upstream(address: $0) }
+        if let proxy = splitDNS {
+            try proxy.reconfigure(domains: domains, domestic: domestic, vpn: vpn, mode: mode,
+                hasIPv4: !plan.defaults4.isEmpty, hasIPv6: !plan.defaults6.isEmpty)
+            try dnsRecovery.publishManagedResolver(tunnel: plan.tunnel, port: proxy.port)
+            splitDNSMode = mode; return
+        }
+        let proxy = SplitDNSProxy(domains: domains, domestic: domestic, vpn: vpn, mode: mode,
+            hasIPv4: !plan.defaults4.isEmpty, hasIPv6: !plan.defaults6.isEmpty)
         try proxy.start()
-        do { try dnsRecovery.publishManagedResolver(tunnel: tunnel, port: proxy.port) }
+        do { try dnsRecovery.publishManagedResolver(tunnel: plan.tunnel, port: proxy.port) }
         catch { proxy.stop(); throw error }
         splitDNS?.stop(); splitDNS = proxy; splitDNSMode = mode
     }
@@ -613,10 +654,8 @@ final class ManagedTunnel {
         return (try path(endpoint, ipv6: false), try? path("default", ipv6: true))
     }
     private func localNetworks(paths: (PhysicalIPPath?, PhysicalIPPath?)) throws -> ([IPv4CIDR], [IPv6CIDR]) {
-        let v4 = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet"])
-        let v6 = try RouteExecutor.command("/usr/sbin/netstat", ["-rn", "-f", "inet6"])
-        let local4 = paths.0.map { LocalIPv4Networks.parse(netstat: v4, physicalInterface: $0.interface) } ?? []
-        let local6 = paths.1.map { LocalIPv6Networks.parse(netstat: v6, physicalInterface: $0.interface) } ?? []
+        let snapshot = try NativeNetworkSnapshot()
+        let local4 = snapshot.local4(on: paths.0?.interface), local6 = snapshot.local6(on: paths.1?.interface)
         if paths.0 != nil && local4.isEmpty { throw TunnelError.noPhysicalGateway }
         return (local4, local6)
     }
@@ -647,42 +686,7 @@ final class ManagedTunnel {
         return nil
     }
     private func verifyManagedRoutes(plan: DualStackRoutePlan, allCustom: Bool = false) throws {
-        for route in (plan.endpoint4.map { [$0] } ?? []) + plan.dns4 + plan.defaults4 {
-            try ensureAttempt()
-            let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", "-net", route.prefix.description])
-            guard ObservedIPv4Route(commandOutput: raw).isExactly(route) else { throw TunnelError.routeVerificationFailed }
-        }
-        for route in (plan.endpoint6.map { [$0] } ?? []) + plan.dns6 + plan.defaults6 {
-            try ensureAttempt()
-            let raw = try RouteExecutor.command("/sbin/route", ["-n", "get", "-inet6", "-net", route.prefix.description])
-            guard ObservedIPv6Route(commandOutput: raw).isExactly(route) else { throw TunnelError.routeVerificationFailed }
-        }
-        func verify(_ ip: String, vpn: Bool) throws {
-            let v6 = IPAddress.isIPv6(ip), path = v6 ? plan.path6 : plan.path4
-            let raw = try RouteExecutor.command("/sbin/route", ["-n", "get"] + (v6 ? ["-inet6"] : []) + [ip])
-            let iface = Self.parseValue("interface:", in: raw) ?? "", gateway = Self.parseValue("gateway:", in: raw) ?? ""
-            if vpn { guard iface == plan.tunnel else { throw TunnelError.routeVerificationFailed } }
-            else {
-                guard let path, iface == path.interface,
-                      (v6 ? IPAddress.gateway6(gateway, interface: iface) == IPAddress.gateway6(path.gateway, interface: iface) : gateway == path.gateway) else { throw TunnelError.routeVerificationFailed }
-            }
-        }
-        for ip in plan.physicalDNS { try ensureAttempt(); try verify(ip, vpn: false) }
-        if let route = plan.direct4.first { try verify(IPv4CIDR.parseAddressString(route.prefix.network), vpn: false) }
-        if let route = plan.direct6.first { try verify(route.prefix.address, vpn: false) }
-        if !plan.defaults4.isEmpty, let sample = ["8.8.8.8", "1.1.1.1", "9.9.9.9", "208.67.222.222"].first(where: { ip in
-            ip != plan.endpoint && !plan.direct4.contains { $0.prefix.contains(IPv4CIDR.parseAddress(ip)!) } && !plan.local4.contains { $0.contains(IPv4CIDR.parseAddress(ip)!) }
-        }) { try verify(sample, vpn: true) }
-        if !plan.defaults6.isEmpty, let sample = ["2606:4700:4700::1111", "2001:4860:4860::8888", "2620:fe::fe"].first(where: { ip in
-            ip != plan.endpoint && !plan.direct6.contains { $0.prefix.contains(ip) } && !plan.local6.contains { $0.contains(ip) }
-        }) { try verify(sample, vpn: true) }
-        let checks = allCustom ? custom.active : [false, true].flatMap { v6 in CustomRouteAction.allCases.compactMap { action in custom.active.first { $0.action == action && $0.cidr.contains(":") == v6 } } }
-        for rule in checks {
-            try ensureAttempt()
-            let ip = rule.cidr.contains(":") ? try CustomRuleSet.prefix6(rule.cidr).address : IPv4CIDR.parseAddressString(try CustomRuleSet.prefix(rule.cidr).network)
-            let protectedDNS = plan.dns4.contains { $0.prefix.contains(IPv4CIDR.parseAddress(ip) ?? 0) } || plan.dns6.contains { $0.prefix.contains(ip) }
-            try verify(ip, vpn: protectedDNS || (rule.action == .vpn && !plan.physicalDNS.contains(ip)))
-        }
+        try RouteVerificationPlan(plan: plan, custom: custom).verify(reader: KernelRouteReader(), allCustom: allCustom, check: ensureAttempt)
     }
     func explainRoute(_ request: RouteLookupRequest) throws -> RouteLookupResult {
         guard state == .connected, process?.isRunning == true, activeProfileID == request.profileID,
@@ -707,28 +711,32 @@ final class ManagedTunnel {
         return RouteLookupResult(request: request, decision: decision, expectedInterface: expected,
             observedInterface: observed, observedGateway: gateway, matchesExpected: matches)
     }
-    private func verifyManagedEnvironment() throws {
+    private func verifyManagedEnvironment() throws { try environmentCheck()() }
+    private func environmentCheck() throws -> () throws -> Void {
         guard let plan = activePlan else { throw TunnelError.noActiveRoutePlan }
-        try dnsRecovery.confirm(tunnel: plan.tunnel)
-        try splitDNS?.verify()
-        if packetGuard.active { try packetGuard.verify() }
-        else { if plan.defaults6.isEmpty { try checkIPv6Bypass() }; if plan.defaults4.isEmpty { throw DualStackError.unsafeFallback } }
-        for (v6, path) in [(false, plan.path4), (true, plan.path6)] {
-            guard let path else {
-                if let found = try? RouteExecutor.command("/sbin/route", ["-n", "get"] + (v6 ? ["-inet6"] : []) + ["default"]),
-                   let iface = Self.parseValue("interface:", in: found), LeakGuardPolicy.validPhysical(iface) {
-                    throw TunnelError.noPhysicalGateway
-                }
-                continue
+        let dns = try dnsRecovery.verificationCheck(tunnel: plan.tunnel)
+        let proxy = splitDNS
+        let protection = packetGuard.active ? try packetGuard.verificationSnapshot() : nil
+        let verification = try activeVerification ?? RouteVerificationPlan(plan: plan, custom: custom)
+        return {
+            try dns(); try proxy?.verify()
+            let reader = try KernelRouteReader(), snapshot = try NativeNetworkSnapshot()
+            if protection == nil {
+                if plan.defaults6.isEmpty { try Self.checkIPv6Bypass(snapshot: snapshot) }
+                if plan.defaults4.isEmpty { throw DualStackError.unsafeFallback }
             }
-            let observed = try RouteExecutor.command("/sbin/route", ["-n", "get"] + (v6 ? ["-inet6"] : []) + ["default"])
-            guard Self.parseValue("interface:", in: observed) == path.interface,
-                  let gateway = Self.parseValue("gateway:", in: observed),
-                  (v6 ? IPAddress.gateway6(gateway, interface: path.interface) == path.gateway : gateway == path.gateway) else { throw TunnelError.noPhysicalGateway }
+            for (v6, path) in [(false, plan.path4), (true, plan.path6)] {
+                let observed = try reader.defaultPath(ipv6: v6)
+                if let path {
+                    guard observed.interface == path.interface,
+                          (v6 ? IPAddress.gateway6(observed.gateway, interface: observed.interface) == path.gateway : observed.gateway == path.gateway) else { throw TunnelError.noPhysicalGateway }
+                } else if LeakGuardPolicy.validPhysical(observed.interface) { throw TunnelError.noPhysicalGateway }
+            }
+            guard snapshot.local4(on: plan.path4?.interface) == plan.local4,
+                  snapshot.local6(on: plan.path6?.interface) == plan.local6 else { throw TunnelError.noPhysicalGateway }
+            try verification.verify(reader: reader)
+            if let protection { try PacketFilterGuard.verify(protection) }
         }
-        let local = try localNetworks(paths: (plan.path4, plan.path6))
-        guard Set(local.0) == Set(plan.local4), Set(local.1) == Set(plan.local6) else { throw TunnelError.noPhysicalGateway }
-        try verifyManagedRoutes(plan: plan)
     }
 
     private func startNetworkWatchdog() {
@@ -742,19 +750,31 @@ final class ManagedTunnel {
 
     func verifyPhysicalNetwork() {
         guard state == .connected, activeMode != .original, !cancellationRequested else { return }
-        do {
-            try verifyManagedEnvironment()
-        } catch {
-            if cancellationRequested { stop(releaseProtection: true); return }
-            eventStore.append(.networkChanged)
-            failureCode = .networkChanged
-            if scheduleGuardedReconnect() { return }
-            let failure = "Network route/IPv6 protection changed; VPN disconnected: \(error.localizedDescription)"
-            stop()
-            lastError = failure
-            state = .failed
-            message = failure
+        if verificationInFlight { verificationDirty = true; return }
+        let check: () throws -> Void
+        do { check = try environmentCheck() } catch { handleNetworkVerificationFailure(error); return }
+        let attempt = activeAttemptID, revision = routingRevision
+        verificationInFlight = true; verificationDirty = false
+        verificationQueue.async { [weak self] in
+            let result = Result { try check() }
+            self?.queue.async { [weak self] in
+                guard let self else { return }
+                self.verificationInFlight = false
+                guard self.state == .connected, !self.cancellationRequested else { return }
+                guard self.activeAttemptID == attempt, self.routingRevision == revision else {
+                    self.verifyPhysicalNetwork(); return
+                }
+                if case .failure(let error) = result { self.handleNetworkVerificationFailure(error) }
+                else if self.verificationDirty { self.verifyPhysicalNetwork() }
+            }
         }
+    }
+    private func handleNetworkVerificationFailure(_ error: Error) {
+        if cancellationRequested { stop(releaseProtection: true); return }
+        eventStore.append(.networkChanged); failureCode = .networkChanged
+        if scheduleGuardedReconnect() { return }
+        let failure = "Network route/IPv6 protection changed; VPN disconnected: \(error.localizedDescription)"
+        stop(); lastError = failure; state = .failed; message = failure
     }
 
     func retryRouteRecovery() -> String {
@@ -842,33 +862,60 @@ final class ManagedTunnel {
         let next6 = mode == .chinaDirect ? try bundle.ipv6.map { try IPv6RuleSet(text: $0) } ?? rules6 : nil
         if let next4, next4.routes.count < 100 { throw TunnelError.missingRules }
         if let next6, next6.routes.count < 100 { throw DualStackError.missingRules }
+        let domestic = mode == .chinaDirect ? SplitDNSPolicy.domesticServers(path4: old.path4 != nil, path6: old.path6 != nil,
+            protectedVPN: managedDNSServers + [old.endpoint], preferred: try dnsRecovery.physicalResolvers(),
+            local4: old.local4, local6: old.local6, country4: next4, country6: next6) : []
         let plan = try DualStackRoutePlan.build(endpoint: old.endpoint, tunnel: old.tunnel,
             has4: !old.defaults4.isEmpty, has6: !old.defaults6.isEmpty, path4: old.path4, path6: old.path6,
             local4: old.local4, local6: old.local6, mode: mode, country4: next4, country6: next6, custom: custom,
-            dnsServers: managedDNSServers, directDNSServers: mode == .chinaDirect ? domesticDNSServers : [])
+            dnsServers: managedDNSServers, directDNSServers: domestic)
         let nextProtection = try policy(for: plan)
+        var stage = RoutingTransitionStage.environment
         do {
             try ensureAttempt(); try verifyManagedEnvironment()
             try DualStackTransitionExecutor.apply(from: old, to: plan, executor: executor, updateProtection: { tightens in
                 if let nextProtection { try self.packetGuard.replaceRules(nextProtection.rules(tunnel: plan.tunnel), resetExistingStates: tightens); self.guardPolicy = nextProtection }
-            }, verify: { try self.ensureAttempt(); try self.verifyManagedRoutes(plan: plan, allCustom: true) })
+            }, verify: { try self.ensureAttempt(); try self.verifyManagedRoutes(plan: plan, allCustom: true) },
+               onStage: { stage = $0 })
+            stage = .commit
             try ensureAttempt(); guard process?.isRunning == true else { throw RoutingModeSwitchError.stale }
-            try configureSplitDNS(mode: mode, tunnel: plan.tunnel)
-            activePlan = plan; rules = next4; rules6 = next6; activeMode = mode; routingRevision = UUID()
+            stage = .resolver
+            try configureSplitDNS(mode: mode, plan: plan)
+            activePlan = plan; activeVerification = try RouteVerificationPlan(plan: plan, custom: custom); rules = next4; rules6 = next6; activeMode = mode; routingRevision = UUID()
             if let context = reconnectContext { reconnectContext = ReconnectContext(profile: context.profile, profileID: context.profileID,
                 attemptID: context.attemptID, mode: mode, username: context.username, password: context.password) }
             message = "已连接 · " + mode.title + " · " + plan.stack.title
         } catch {
+            let systemError: Int?
+            if case RouteExecutionError.kernelRouteFailed(let value) = error { systemError = value }
+            else { systemError = nil }
             let cause = error.localizedDescription; stop()
+            // stop() may record a teardown error. Preserve the initiating
+            // switch failure afterwards so recovery/reconnect cannot erase it.
+            failureCode = .route
+            eventStore.append(.route, routingStage: stage, systemError: systemError)
             let pending = networkRecoveryRequired || process?.isRunning == true
             let reason = (pending ? "双栈路由切换失败，恢复未完成：" : "双栈路由切换失败，VPN 已断开：") + cause
             lastError = reason; state = .failed; message = reason; throw error
         }
     }
-    func stop(releaseProtection: Bool = false, preservingReconnectContext: Bool = false) {
+    func stop(releaseProtection: Bool = false, preservingReconnectContext: Bool = false, completion: (() -> Void)? = nil) {
+        if let completion { stopReplies.append(completion) }
         releaseProtectionOnExit = releaseProtectionOnExit || releaseProtection
         retryWork?.cancel(); retryWork = nil
-        if !preservingReconnectContext { reconnectContext = nil }
+        if !preservingReconnectContext { reconnectContext = nil; guardedEndpoints = []; initialGuardDeadline = nil }
+        if let process, processExit.isWaiting(for: process) {
+            if !process.isRunning { processExit.didExit(process); return }
+            // The first deadline already reported failure. A repeated request
+            // must return that result, while retaining the child for its later
+            // exit notification and preserving all network recovery evidence.
+            if processExit.hasTimedOut(for: process) { finishStopReplies(); return }
+            if releaseProtection {
+                lastError = nil; state = .stopping
+                message = "Stopping OpenVPN before restoring network routes"
+            }
+            return
+        }
         if packetGuard.active, let policy = guardPolicy {
             do {
                 try packetGuard.replaceRules(policy.rules(tunnel: nil))
@@ -885,6 +932,7 @@ final class ManagedTunnel {
             hasPersistentSessionEvidence: hasPersistentSessionEvidence) {
             state = .failed
             message = "Previous OpenVPN session is unverified. Use Safe Network Recovery; Disconnect cannot clear its evidence."
+            finishStopReplies()
             return
         }
         networkWatchdog?.cancel()
@@ -900,23 +948,23 @@ final class ManagedTunnel {
         // connections over the physical default gateway. Terminate the child
         // before restoring routes, and never erase crash evidence on uncertainty.
         if let task = process, task.isRunning {
+            processExit.wait(for: task, onExit: { [weak self] in
+                self?.stopRoutesAndReset(); self?.finishStopReplies()
+            }, onTimeout: { [weak self] in
+                guard let self else { return }
+                self.lastError = "OpenVPN did not exit after graceful termination. Routes and session marker were retained; inspect the child before retrying."
+                self.state = .failed; self.message = self.lastError!
+                self.finishStopReplies()
+            })
             task.terminate()
-            let gracefulDeadline = Date().addingTimeInterval(2.0)
-            while task.isRunning && Date() < gracefulDeadline {
-                Thread.sleep(forTimeInterval: 0.05)
-            }
-            // Do not send SIGKILL to a numeric PID from a delayed callback:
-            // PID reuse could target an unrelated process. Process.terminate()
-            // targets the child object, and an unresolved child is kept as
-            // recovery evidence rather than force-killed.
-            if task.isRunning {
-                lastError = "OpenVPN did not exit after graceful termination. Routes and session marker were retained; inspect the child before retrying."
-                state = .failed
-                message = lastError!
-                return
-            }
+            return
         }
         stopRoutesAndReset()
+        finishStopReplies()
+    }
+    private func finishStopReplies() {
+        let replies = stopReplies; stopReplies.removeAll()
+        replies.forEach { $0() }
     }
 
     private func stopRoutesAndReset() {
@@ -953,10 +1001,10 @@ final class ManagedTunnel {
         do { try dnsRecovery.restore() }
         catch { lastError = error.localizedDescription; eventStore.append(.dns) }
         splitDNS?.stop(); splitDNS = nil; splitDNSMode = nil
-        domesticDNSServers = []; managedDNSServers = []
+        managedDNSServers = []
         routing?.rollback()
         routing = nil
-        activePlan = nil; ipStack = nil
+        activePlan = nil; activeVerification = nil; ipStack = nil
         protectedLocalNetworks = []
         protectedPhysicalInterface = nil
         protectedVPNInterface = nil
@@ -980,6 +1028,7 @@ final class ManagedTunnel {
         for name in ["active.ovpn", "management.sock", "auth.txt", "openvpn-child.json"] {
             try? FileManager.default.removeItem(at: workdir.appendingPathComponent(name))
         }
+        onSessionEnded?()
     }
 }
 enum TunnelError: Error, LocalizedError {

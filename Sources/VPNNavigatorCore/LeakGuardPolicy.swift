@@ -58,7 +58,7 @@ public struct LeakGuardPolicy: Sendable {
         \(tunnelRule)pass out quick on \(physical) \(endpointFamily) proto \(transport.rawValue) from any to \(endpoint) port \(port) keep state (if-bound)
         pass out quick on \(physical) inet proto udp from any port 68 to 255.255.255.255 port 67 keep state (if-bound)
         \(direct4Rule)\(direct6Rule)\(discovery)block drop out quick inet from any to any
-        block drop out quick inet6 from any to any
+        block return out quick inet6 from any to any
         """
     }
     public static func validPhysical(_ value: String) -> Bool {
@@ -99,6 +99,10 @@ public struct GuardEndpoint: Sendable {
     public let transport: FirewallRulePreview.Transport
     public let preferredFamily: Int?
     public static func parse(_ profile: String) throws -> Self {
+        guard let first = try candidates(profile).first else { throw LeakGuardError.invalidEndpoint }
+        return first
+    }
+    public static func candidates(_ profile: String) throws -> [Self] {
         var inline: String?, remotes: [[String]] = [], proto = "udp"
         for line in profile.components(separatedBy: .newlines) {
             let text = line.trimmingCharacters(in: .whitespaces)
@@ -108,15 +112,57 @@ public struct GuardEndpoint: Sendable {
             if tokens.first == "proto", tokens.count == 2 { proto = tokens[1] }
             if tokens.first == "remote" { remotes.append(tokens) }
         }
-        guard let remote = remotes.first, (2...4).contains(remote.count),
-              (DiagnosticTargetPolicy.validHostname(remote[1]) || IPAddress.canonical(remote[1]) != nil),
-              let port = remote.count >= 3 ? UInt16(remote[2]) : 1194, port > 0 else { throw LeakGuardError.invalidEndpoint }
-        if remote.count == 4 { proto = remote[3] }
-        let transport: FirewallRulePreview.Transport
-        if ["udp", "udp4", "udp6"].contains(proto) { transport = .udp }
-        else if ["tcp", "tcp4", "tcp6", "tcp-client", "tcp4-client", "tcp6-client"].contains(proto) { transport = .tcp }
-        else { throw LeakGuardError.invalidEndpoint }
-        return .init(host: remote[1], port: port, transport: transport, preferredFamily: proto.contains("6") ? 6 : proto.contains("4") ? 4 : nil)
+        guard !remotes.isEmpty, remotes.count <= 64 else { throw LeakGuardError.invalidEndpoint }
+        return try remotes.map { remote in
+            guard (2...4).contains(remote.count),
+                  (DiagnosticTargetPolicy.validHostname(remote[1]) || IPAddress.canonical(remote[1]) != nil),
+                  let port = remote.count >= 3 ? UInt16(remote[2]) : 1194, port > 0 else { throw LeakGuardError.invalidEndpoint }
+            let proto = remote.count == 4 ? remote[3] : proto
+            let transport: FirewallRulePreview.Transport
+            if ["udp", "udp4", "udp6"].contains(proto) { transport = .udp }
+            else if ["tcp", "tcp4", "tcp6", "tcp-client", "tcp4-client", "tcp6-client"].contains(proto) { transport = .tcp }
+            else { throw LeakGuardError.invalidEndpoint }
+            return .init(host: remote[1], port: port, transport: transport, preferredFamily: proto.contains("6") ? 6 : proto.contains("4") ? 4 : nil)
+        }
+    }
+    /// Resolve every permitted remote before PF is armed. Later retries select
+    /// from numeric candidates without reopening physical DNS through the guard.
+    public static func resolveCandidates(_ profile: String, lookup: (String) throws -> [String]) throws -> [GuardEndpointCandidate] {
+        var endpoints = try candidates(profile)
+        var inline: String?, random = false
+        for line in profile.components(separatedBy: .newlines) {
+            let text = line.trimmingCharacters(in: .whitespaces)
+            if let tag = inline { if text == "</\(tag)>" { inline = nil }; continue }
+            if text.hasPrefix("<"), text.hasSuffix(">") { inline = String(text.dropFirst().dropLast()); continue }
+            if try OpenVPNOptionLexer.tokens(text).first == "remote-random" { random = true }
+        }
+        if random { endpoints.shuffle() }
+        var resolved: [[GuardEndpointCandidate]] = [], seen = Set<String>(), answers: [String: [String]] = [:]
+        for endpoint in endpoints {
+            let addresses: [String]
+            if let literal = IPAddress.canonical(endpoint.host) { addresses = [literal] }
+            else if let cached = answers[endpoint.host] { addresses = cached }
+            else {
+                addresses = try lookup(endpoint.host).compactMap(IPAddress.canonical)
+                answers[endpoint.host] = addresses
+            }
+            let eligible = addresses.filter { ip in
+                endpoint.preferredFamily.map { ($0 == 6) == IPAddress.isIPv6(ip) } ?? true
+            }
+            let ordered = eligible.filter { !IPAddress.isIPv6($0) } + eligible.filter(IPAddress.isIPv6)
+            resolved.append(ordered.prefix(8).compactMap { ip in
+                let key = "\(endpoint.transport.rawValue):\(endpoint.port):\(ip)"
+                guard seen.insert(key).inserted else { return nil }
+                return GuardEndpointCandidate(endpoint: endpoint, address: ip)
+            })
+        }
+        // Try the next configured remote before the second IP of the first.
+        var result: [GuardEndpointCandidate] = []
+        for index in 0..<8 {
+            for group in resolved where index < group.count { result.append(group[index]) }
+        }
+        guard !result.isEmpty else { throw LeakGuardError.invalidEndpoint }
+        return Array(result.prefix(64))
     }
     public func pinnedProfile(_ source: String, address: String) throws -> String {
         guard IPAddress.canonical(address) != nil else { throw LeakGuardError.invalid }
@@ -133,4 +179,8 @@ public struct GuardEndpoint: Sendable {
         result += ["remote \(address) \(port)", "proto \(proto)"]
         return result.joined(separator: "\n")
     }
+}
+public struct GuardEndpointCandidate: Sendable {
+    public let endpoint: GuardEndpoint
+    public let address: String
 }

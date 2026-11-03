@@ -15,6 +15,7 @@ final class DNSRecoveryJournal {
         var serverProvided: Bool?
         var previousApplied: [String: Data]?
         var managedGlobal: Data?
+        var physicalResolvers: [String]?
     }
     private let file: URL
     private let flushCache: () throws -> Void
@@ -36,7 +37,17 @@ final class DNSRecoveryJournal {
         let owned = SCDynamicStoreCopyKeyList(store, "State:/Network/Service/openvpn-utun[0-9]+/(DNS|DnsBackup)" as CFString) as? [String] ?? []
         guard owned.count < 128 else { throw DNSJournalError.unavailable }
         keys += owned
-        try save(.init(service: service, before: try snapshot(keys), tunnel: nil, applied: nil))
+        // DHCP DNS normally lives under State, while manual DNS lives under
+        // Setup. Capture it before OpenVPN's hook replaces either policy.
+        let configured = SCDynamicStoreCopyValue(store, primaryKey(service) as CFString) as? [String: Any]
+        let automatic = SCDynamicStoreCopyValue(store, "State:/Network/Service/\(service)/DNS" as CFString) as? [String: Any]
+        func addresses(_ value: [String: Any]?) -> [String] {
+            guard value?["ServerPort"] == nil || value?["ServerPort"] as? Int == 53 else { return [] }
+            return Array((value?["ServerAddresses"] as? [String] ?? []).prefix(16))
+        }
+        let manual = addresses(configured)
+        try save(.init(service: service, before: try snapshot(keys), tunnel: nil, applied: nil,
+                       physicalResolvers: manual.isEmpty ? addresses(automatic) : manual))
         primaryService = service
     }
     func commit(tunnel: String) throws {
@@ -150,8 +161,9 @@ final class DNSRecoveryJournal {
               let servers = value["ServerAddresses"] as? [String], !servers.isEmpty else { throw DNSJournalError.unavailable }
         return servers
     }
+    func physicalResolvers() throws -> [String] { try load().physicalResolvers ?? [] }
     /// Publish only after both loopback transports and all resolver routes are
-    /// ready. Port is per-session; no /etc/resolver files or privileged port 53.
+    /// ready. A busy standard port falls back to a per-session ServerPort.
     func publishManagedResolver(tunnel: String, port: UInt16?) throws {
         try confirm(tunnel: tunnel)
         var record = try load()
@@ -159,9 +171,10 @@ final class DNSRecoveryJournal {
         guard let saved = record.managedGlobal,
               var value = try PropertyListSerialization.propertyList(from: saved, options: [], format: nil) as? [String: Any] else { throw DNSJournalError.unavailable }
         if let port {
-            guard port > 1023 else { throw DNSJournalError.unavailable }
+            guard port == 53 || port > 1023 else { throw DNSJournalError.unavailable }
             value["ServerAddresses"] = ["127.0.0.1"]
-            value["ServerPort"] = Int(port)
+            if port == 53 { value.removeValue(forKey: "ServerPort") }
+            else { value["ServerPort"] = Int(port) }
         }
         record.previousApplied = record.applied
         record.applied?[key] = try PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0)
@@ -189,6 +202,23 @@ final class DNSRecoveryJournal {
                 guard try equal(current[key], record.before[key]) else { throw DNSJournalError.conflict }
             }
             record.applied = current; try save(record)
+        }
+    }
+    /// Capture immutable expected values on the owner queue. The watchdog can
+    /// read the dynamic store off that queue without reading/writing journals.
+    func verificationCheck(tunnel: String) throws -> () throws -> Void {
+        let record = try load()
+        guard record.tunnel == tunnel, let expected = record.applied, record.previousApplied == nil else { throw DNSJournalError.conflict }
+        let tracked = keys(record)
+        return {
+            guard let store = SCDynamicStoreCreate(nil, "VPNNavigator.DNSVerification" as CFString, nil, nil) else { throw DNSJournalError.unavailable }
+            for key in tracked {
+                let current = SCDynamicStoreCopyValue(store, key as CFString)
+                if let data = expected[key] {
+                    let previous = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+                    guard let current, CFEqual(current, previous as CFTypeRef) else { throw DNSJournalError.conflict }
+                } else if current != nil { throw DNSJournalError.conflict }
+            }
         }
     }
     func restore() throws {

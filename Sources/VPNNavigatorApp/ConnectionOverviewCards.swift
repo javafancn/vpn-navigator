@@ -6,7 +6,7 @@ import VPNNavigatorCore
 struct ConnectionOverviewCards: View {
     @EnvironmentObject private var model: AppModel
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { _ in
+        TimelineView(.animation(minimumInterval: 1, paused: !model.connected)) { _ in
             let now = Date(), uptime = ProcessInfo.processInfo.systemUptime
             HStack(spacing: 12) {
                 LiveTrafficCard(now: now, uptime: uptime)

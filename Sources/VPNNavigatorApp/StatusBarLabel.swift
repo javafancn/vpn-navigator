@@ -43,7 +43,6 @@ enum AppBranding {
 struct StatusBarLabel: View {
     @EnvironmentObject private var model: AppModel
     @State private var tick = Date()
-    private let clock = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     var body: some View {
         // TimelineView's dynamic schedule in a MenuBarExtra label can keep
         // SwiftUI's native status-item image extraction from settling at launch.
@@ -58,6 +57,12 @@ struct StatusBarLabel: View {
                 .frame(width: model.connected ? 84 : 22, height: 22)
                 .accessibilityLabel(description)
                 .help(description)
-                .onReceive(clock) { tick = $0 }
+                .task(id: model.connected) {
+                    guard model.connected else { return }
+                    while !Task.isCancelled {
+                        do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
+                        tick = Date()
+                    }
+                }
     }
 }

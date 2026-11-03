@@ -50,21 +50,10 @@ enum RouteJournalRecovery {
     static func reconcileAbsentAdds(_ journal: URL, run: (String, [String]) throws -> String = RouteExecutor.command) throws {
         guard let (original, replay) = try validate(journal, run: run),
               !replay.permitsAutomaticRecovery else { return }
-        var compact = Data()
-        func append<T: Encodable>(_ event: T) throws {
-            compact.append(try JSONEncoder().encode(event))
-            compact.append(10)
-        }
-        for route in replay.installed {
-            let mutation = RouteMutation(action: .add, route: route)
-            try append(RouteLedgerEvent(phase: .begun, mutation: mutation))
-            try append(RouteLedgerEvent(phase: .committed, mutation: mutation))
-        }
-        for route in replay.installed6 {
-            let mutation = IPv6RouteMutation(action: .add, route: route)
-            try append(IPv6RouteLedgerEvent(phase: .begun, ipv6Mutation: mutation))
-            try append(IPv6RouteLedgerEvent(phase: .committed, ipv6Mutation: mutation))
-        }
+        let checkpoint = RouteLedgerCheckpoint(installed: replay.installed, installed6: replay.installed6)
+        guard checkpoint.isValid else { throw RouteExecutionError.ambiguousJournal }
+        var compact = try JSONEncoder().encode(checkpoint)
+        compact.append(10)
         let checked = RouteLedgerReplay(data: compact)
         guard checked.permitsAutomaticRecovery, checked.installed == replay.installed,
               checked.installed6 == replay.installed6 else { throw RouteExecutionError.ambiguousJournal }

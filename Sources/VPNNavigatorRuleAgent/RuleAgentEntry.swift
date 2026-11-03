@@ -22,7 +22,19 @@ enum RuleAgent {
             }
             // If the signed root helper has an active split-tunnel, use its typed update API.
             // Inactive/uninstalled helpers do not prevent caching for a future connection.
-            let enabled = BuildChannel.isLocal ? FileManager.default.fileExists(atPath: LocalInstallation.manifest.path) : SMAppService.daemon(plistName: HelperIdentity.plistName).status == .enabled
+            let registered = BuildChannel.isLocal ? FileManager.default.fileExists(atPath: LocalInstallation.manifest.path) : SMAppService.daemon(plistName: HelperIdentity.plistName).status == .enabled
+            // Printing launchd state does not send an XPC demand or launch an
+            // idle helper. Cache-only updates must not wake a root process.
+            let label = BuildChannel.isLocal ? LocalInstallation.daemonLabel : HelperIdentity.machService
+            func helperRunning() throws -> Bool {
+                guard registered else { return false }
+                let state = try UserServices.launchctl(["print", "system/" + label])
+                let lines = state.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+                if lines.contains("state = running") { return true }
+                if lines.contains("state = not running") || lines.contains("state = waiting") { return false }
+                throw LocalInstallError.command
+            }
+            let enabled = try helperRunning()
             let status: String
             if enabled {
                 status = await HelperMessage.request { api, reply in api.connectionStatus(reply: reply) }
@@ -32,7 +44,10 @@ enum RuleAgent {
                 }
             } else { status = "disconnected: helper not enabled" }
             try await RoutingRuleUpdate.commit(root: support, ipv4: candidate, ipv6: candidate6) { text in
-                guard enabled else { return "NO_ACTIVE_SPLIT" }
+                // Recheck before publication: a connection may have started
+                // while feeds/cache preparation were in progress.
+                do { guard try helperRunning() else { return "NO_ACTIVE_SPLIT" } }
+                catch { return "ERROR: Helper runtime state is unavailable" }
                 return await HelperMessage.request { api, reply in api.updateRules(text, reply: reply) }
             }
             print("China IPv4/IPv6 rules updated: \(candidate.routes.count) prefixes.")

@@ -221,7 +221,7 @@ struct ClientPreferencesView: View {
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 Toggle(L10n.text("受管模式安全重连（最多 3 次 / 10 分钟）"), isOn: $model.reconnectManaged)
                     .disabled(!model.killSwitch)
-                Text(L10n.text("重连期间持续保留防火墙，旧进程、DNS 和路由未安全恢复时不会启动新会话。服务器地址固定为本次已解析的 IPv4 或 IPv6。"))
+                Text(L10n.text("重连期间持续保留防火墙，旧进程、DNS 和路由未安全恢复时不会启动新会话。按配置中的节点和已解析地址依次重试，每次只允许当前节点。"))
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 Divider().opacity(0.25)
                 Toggle(L10n.text("每天自动更新国内 IPv4／IPv6 规则"), isOn: Binding(

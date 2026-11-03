@@ -6,6 +6,16 @@ final class ProfileCompatibilityTests: XCTestCase {
     private let base = "client\ndev tun\nproto udp\nremote fixture.example 1194\nauth-user-pass\n<ca>\nSYNTHETIC_CA\n</ca>\n"
     private let hints = "ignore-unknown-option block-outside-dns\nsetenv opt block-outside-dns # Windows-only DNS hint\n"
 
+    func testExplicitServerTimeoutAndTCPNoDelayHaveStrictParameters() throws {
+        for option in ["server-poll-timeout 10", "socket-flags TCP_NODELAY"] {
+            XCTAssertEqual(try ProfileSafety.validate(base + option).text, base + option)
+        }
+        for option in ["server-poll-timeout 0", "server-poll-timeout -1", "server-poll-timeout 3601",
+                       "server-poll-timeout 10 extra", "socket-flags TCP_NODELAY extra", "socket-flags SO_MARK"] {
+            XCTAssertThrowsError(try ProfileSafety.validate(base + option), option)
+        }
+    }
+
     func testCrossPlatformHintsPreserveValidatedProfileAndCredentials() throws {
         let text = base + hints
         let validated = try ProfileSafety.validate(text)

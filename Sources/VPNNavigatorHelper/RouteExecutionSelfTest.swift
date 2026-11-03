@@ -4,6 +4,9 @@ import VPNNavigatorCore
 
 enum RouteExecutionSelfTest {
     static func run() throws {
+        try testRoutingDiagnostics()
+        try RouteBatchSelfTest.run()
+        try ProcessExitSelfTest.run()
         try RouteCompactionSelfTest.run()
         try RouteCommandPressureSelfTest.observeLegacyBehavior()
         try RouteCommandPressureSelfTest.run()
@@ -55,6 +58,36 @@ enum RouteExecutionSelfTest {
         })
         try inherited.apply([host], inheriting: [host])
         guard inherited.installed.isEmpty, !FileManager.default.fileExists(atPath: hostJournal.path) else { throw RouteExecutionError.journalFailure }
+    }
+
+    private static func testRoutingDiagnostics() throws {
+        let legacy = Data(#"{"id":"00000000-0000-0000-0000-000000000001","date":0,"code":"route"}"#.utf8)
+        let decoded = try JSONDecoder().decode(DiagnosticEvent.self, from: legacy)
+        guard decoded.code == .route, decoded.routingStage == nil, decoded.systemError == nil else {
+            throw RouteExecutionError.journalFailure
+        }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("events.json")
+        try JSONEncoder().encode([decoded]).write(to: file)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        let store = DiagnosticEventStore(file: file)
+        store.append(.route, routingStage: .ipv4Routes, systemError: 60)
+        store.append(.route, routingStage: .ipv4Routes, systemError: 60)
+        store.append(.route, routingStage: .ipv6Routes, systemError: 60)
+        store.append(.recovery); store.append(.starting)
+        let events = DiagnosticEventStore(file: file).events()
+        guard events.count == 5, events[1].routingStage == .ipv4Routes, events[1].systemError == 60,
+              events[2].routingStage == .ipv6Routes, events.last?.code == .starting else {
+            throw RouteExecutionError.journalFailure
+        }
+        let data = try JSONEncoder().encode(events[1])
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let object, Set(object.keys) == ["id", "date", "code", "routingStage", "systemError"] else {
+            throw RouteExecutionError.journalFailure
+        }
+        print("PASS: switch failure stage/errno survives recovery and reconnect, preserves legacy events and deduplicates only identical failures; no raw error text.")
     }
 
     private static func testOccupiedIPv4Prefixes() throws {

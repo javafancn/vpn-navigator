@@ -21,6 +21,7 @@ enum DNSJournalSelfTest {
         let journal = DNSRecoveryJournal(file: folder.appendingPathComponent("dns.journal"), flushCache: { cacheFlushes += 1 })
         guard SCDynamicStoreSetValue(store, key, original) else { throw DNSJournalError.unavailable }
         try journal.begin(serviceOverride: id)
+        guard try journal.physicalResolvers() == ["192.0.2.53", "2001:db8::53"] else { throw DNSJournalError.conflict }
         guard SCDynamicStoreSetValue(store, key, applied) else { throw DNSJournalError.unavailable }
         try journal.commit(tunnel: "utun9999")
         try journal.confirm(tunnel: "utun9999")
@@ -34,17 +35,40 @@ enum DNSJournalSelfTest {
         try journal.restore()
         guard CFEqual(SCDynamicStoreCopyValue(store, key), original) else { throw DNSJournalError.conflict }
 
+        // DHCP-only DNS must be captured before the hook, without writing or
+        // claiming ownership of the physical service's State dictionary.
+        let stateKey = "State:/Network/Service/\(id)/DNS" as CFString
+        SCDynamicStoreRemoveValue(store, key)
+        let dhcp = ["ServerAddresses": ["192.168.1.1"]] as CFDictionary
+        SCDynamicStoreSetValue(store, stateKey, dhcp)
+        defer { SCDynamicStoreRemoveValue(store, stateKey) }
+        try journal.begin(serviceOverride: id)
+        try journal.applyProvided(tunnel: "utun9999", servers: ["10.8.0.53"], search: [], match: [])
+        _ = try journal.prepareManaged(tunnel: "utun9999", has4: true, has6: false)
+        guard try journal.physicalResolvers() == ["192.168.1.1"] else { throw DNSJournalError.conflict }
+        try journal.publishManagedResolver(tunnel: "utun9999", port: 53)
+        let conventional = SCDynamicStoreCopyValue(store, key) as? [String: Any]
+        guard conventional?["ServerAddresses"] as? [String] == ["127.0.0.1"], conventional?["ServerPort"] == nil else { throw DNSJournalError.conflict }
+        try journal.restore()
+        guard SCDynamicStoreCopyValue(store, key) == nil, CFEqual(SCDynamicStoreCopyValue(store, stateKey), dhcp) else { throw DNSJournalError.conflict }
+        SCDynamicStoreRemoveValue(store, stateKey)
+        SCDynamicStoreSetValue(store, key, original)
+
         // Session loopback port publication must be reversible on a live
         // mode switch and an external DNS edit must still be refused.
         try journal.begin(serviceOverride: id)
         try journal.applyProvided(tunnel: "utun9999", servers: ["10.8.0.53"], search: [], match: [])
         _ = try journal.prepareManaged(tunnel: "utun9999", has4: true, has6: false)
         try journal.publishManagedResolver(tunnel: "utun9999", port: 54321)
+        let check = try journal.verificationCheck(tunnel: "utun9999")
+        try check()
         let firstPortFlushes = cacheFlushes
         let proxyDNS = SCDynamicStoreCopyValue(store, key) as? [String: Any]
         guard proxyDNS?["ServerAddresses"] as? [String] == ["127.0.0.1"], proxyDNS?["ServerPort"] as? Int == 54321,
               try journal.managedGlobalServers() == ["10.8.0.53"] else { throw DNSJournalError.conflict }
         try journal.publishManagedResolver(tunnel: "utun9999", port: nil)
+        do { try check(); throw DNSJournalError.unavailable }
+        catch DNSJournalError.conflict { }
         guard cacheFlushes == firstPortFlushes + 1 else { throw DNSJournalError.unavailable }
         let fullDNS = SCDynamicStoreCopyValue(store, key) as? [String: Any]
         guard fullDNS?["ServerAddresses"] as? [String] == ["10.8.0.53"], fullDNS?["ServerPort"] == nil else { throw DNSJournalError.conflict }

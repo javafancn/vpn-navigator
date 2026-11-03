@@ -4,7 +4,7 @@ import Foundation
 /// mutation is ambiguous after a crash: the OS operation may or may not have
 /// happened, so automatically deleting the route would be unsafe.
 public struct RouteLedgerEvent: Codable, Equatable, Sendable {
-    public enum Phase: String, Codable, Sendable { case begun, committed }
+    public enum Phase: String, Codable, Sendable { case begun, committed, cancelled }
     public let phase: Phase
     public let mutation: RouteMutation
 
@@ -56,16 +56,17 @@ public struct RouteLedgerReplay: Sendable {
             installed = []; uncertain = []; malformed = true
             return
         }
-        var live: [RouteTarget] = []
+        var live = OrderedRouteSet<RouteTarget>()
         var pending: [UUID: RouteMutation] = [:]
-        var live6: [IPv6RouteTarget] = [], pending6: [UUID: IPv6RouteMutation] = [:]
+        var live6 = OrderedRouteSet<IPv6RouteTarget>()
+        var pending6: [UUID: IPv6RouteMutation] = [:]
         var corrupt = false
         var first = true
         for row in text.split(separator: "\n", omittingEmptySubsequences: true) {
             let bytes = Data(row.utf8)
             if first, let checkpoint = try? decoder.decode(RouteLedgerCheckpoint.self, from: bytes) {
                 first = false
-                if checkpoint.isValid { live = checkpoint.installed; live6 = checkpoint.installed6 }
+                if checkpoint.isValid { live = .init(checkpoint.installed); live6 = .init(checkpoint.installed6) }
                 else { corrupt = true }
                 continue
             }
@@ -75,16 +76,17 @@ public struct RouteLedgerReplay: Sendable {
                 case .begun:
                     if pending[event.mutation.id] != nil { corrupt = true }
                     else { pending[event.mutation.id] = event.mutation }
-                case .committed:
+                case .committed, .cancelled:
                     guard pending[event.mutation.id] == event.mutation else {
                         corrupt = true
                         continue
                     }
                     pending.removeValue(forKey: event.mutation.id)
+                    if event.phase == .cancelled { continue }
                     if event.mutation.action == .add {
-                        if !live.contains(event.mutation.route) { live.append(event.mutation.route) }
+                        live.insert(event.mutation.route)
                     } else {
-                        live.removeAll { $0 == event.mutation.route }
+                        live.remove(event.mutation.route)
                     }
                 }
             } else if let event = try? decoder.decode(IPv6RouteLedgerEvent.self, from: bytes) {
@@ -94,21 +96,22 @@ public struct RouteLedgerReplay: Sendable {
                 } else {
                     guard pending6[mutation.id] == mutation else { corrupt = true; continue }
                     pending6.removeValue(forKey: mutation.id)
-                    if mutation.action == .add { if !live6.contains(mutation.route) { live6.append(mutation.route) } }
-                    else { live6.removeAll { $0 == mutation.route } }
+                    if event.phase == .cancelled { continue }
+                    if mutation.action == .add { live6.insert(mutation.route) }
+                    else { live6.remove(mutation.route) }
                 }
             } else if let old = try? decoder.decode(RouteTarget.self, from: bytes) {
                 // Old installer journals recorded only successful route adds.
-                if !live.contains(old) { live.append(old) }
+                live.insert(old)
             } else if let legacy = try? decoder.decode([RouteTarget].self, from: bytes) {
                 // Legacy JSON-array followed by a new operation log.
-                legacy.forEach { if !live.contains($0) { live.append($0) } }
+                legacy.forEach { live.insert($0) }
             } else {
                 corrupt = true
             }
         }
-        installed = live
-        installed6 = live6; uncertain6 = pending6.values.sorted { $0.id.uuidString < $1.id.uuidString }
+        installed = live.elements
+        installed6 = live6.elements; uncertain6 = pending6.values.sorted { $0.id.uuidString < $1.id.uuidString }
         uncertain = pending.values.sorted { $0.id.uuidString < $1.id.uuidString }
         malformed = corrupt
     }

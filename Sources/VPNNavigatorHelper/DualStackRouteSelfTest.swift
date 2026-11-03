@@ -53,15 +53,19 @@ enum DualStackRouteSelfTest {
         let file = root.appendingPathComponent("routes")
         let executor = RouteExecutor(journal: file, run: os.run)
         try executor.apply(full.ipv4); try executor.applyIPv6(full.ipv6); os.trace = []
+        var stages: [RoutingTransitionStage] = []
         try DualStackTransitionExecutor.apply(from: full, to: split, executor: executor,
-            updateProtection: { _ in os.trace.append("PF") }, verify: { os.trace.append("verified") })
+            updateProtection: { _ in os.trace.append("PF") }, verify: { os.trace.append("verified") }, onStage: { stages.append($0) })
         guard os.trace.suffix(2).elementsEqual(["verified", "PF"]),
+              stages == [.ipv4Routes, .ipv6Routes, .verification, .protection],
               Set(executor.installed6) == Set(split.ipv6), Set(executor.installed) == Set(split.ipv4),
               !executor.installed6.contains(where: { split.direct6.contains($0) && $0.prefix.contains("240e:1::1") }) else { throw Failure.check }
         os.trace = []
+        stages = []
         try DualStackTransitionExecutor.apply(from: split, to: full, executor: executor,
-            updateProtection: { tightens in guard tightens else { throw Failure.check }; os.trace.append("PF") }, verify: { os.trace.append("verified") })
-        guard os.trace.first == "PF", Set(executor.installed6) == Set(full.ipv6) else { throw Failure.check }
+            updateProtection: { tightens in guard tightens else { throw Failure.check }; os.trace.append("PF") }, verify: { os.trace.append("verified") }, onStage: { stages.append($0) })
+        guard os.trace.first == "PF", Set(executor.installed6) == Set(full.ipv6),
+              stages == [.protection, .ipv4Routes, .ipv6Routes, .verification] else { throw Failure.check }
         let replay = RouteLedgerReplay(data: try Data(contentsOf: file))
         guard replay.permitsAutomaticRecovery, Set(replay.installed6) == Set(full.ipv6), Set(replay.installed) == Set(full.ipv4) else { throw Failure.check }
         executor.rollback()

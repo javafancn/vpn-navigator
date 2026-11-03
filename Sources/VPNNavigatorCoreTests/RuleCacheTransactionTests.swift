@@ -5,6 +5,18 @@ final class RuleCacheTransactionTests: XCTestCase {
     private func root() -> URL { FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString) }
     private func rules4(_ start: Int) throws -> RuleSet { try RuleSet(text: (start..<(start + 100)).map { "11.0.\($0).0/24" }.joined(separator: "\n")) }
     private func rules6(_ start: Int) throws -> IPv6RuleSet { try IPv6RuleSet(text: (start..<(start + 100)).map { "2400:100:\(String($0, radix: 16))::/48" }.joined(separator: "\n")) }
+    func testBootstrapFillsMissingIPv6WithoutReplacingExistingIPv4() async throws {
+        let folder = root(); defer { try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let old4 = try rules4(0), seed6 = try rules6(0)
+        try await RoutingRuleUpdate.commit(root: folder, ipv4: old4) { _ in "NO_ACTIVE_SPLIT" }
+        let seed = folder.appendingPathComponent("seed6.txt")
+        try seed6.routes.map(\.description).joined(separator: "\n").write(to: seed, atomically: true, encoding: .utf8)
+        try await RoutingRuleUpdate.bootstrap(root: folder, ipv4Seed: folder.appendingPathComponent("absent4"), ipv6Seed: seed)
+        let saved = try await RoutingRuleUpdate.cached(root: folder)
+        XCTAssertEqual(saved.ipv4?.routes, old4.routes)
+        XCTAssertEqual(saved.ipv6?.routes, seed6.routes)
+    }
     func testRejectsBothBeforeApplyingWhenIPv6ChangeIsSuspicious() async throws {
         let folder = root(); defer { try? FileManager.default.removeItem(at: folder) }
         let old4 = try rules4(0), old6 = try rules6(0)

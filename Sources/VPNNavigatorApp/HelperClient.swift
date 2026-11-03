@@ -9,6 +9,7 @@ final class HelperClient {
     static let shared = HelperClient()
     private init() {}
     private let activity = HelperActivityGate()
+    private let transport = HelperTransport()
 
     func resumeAfterCancelledQuit() { activity.resume() }
 
@@ -61,6 +62,7 @@ final class HelperClient {
         }
         let result = await ask(duringQuit: true) { $0.stopWhenIdle(reply: $1) }
         guard let receipt = HelperQuitReceipt.decode(result) else { throw LocalInstallError.command }
+        transport.closeIfIdle()
         for _ in 0..<50 {
             // This is a read-only existence check. A root-owned process yields
             // EPERM while alive; only ESRCH confirms it has actually exited.
@@ -107,35 +109,11 @@ final class HelperClient {
     private func ask(timeout: TimeInterval = 12, duringQuit: Bool = false, _ call: @escaping (VPNNavigatorHelperAPI, @escaping (String) -> Void) -> Void) async -> String {
         guard activity.enter(duringQuit: duringQuit) else { return "ERROR: Application is quitting" }
         defer { activity.leave() }
-        return await withCheckedContinuation { continuation in
-            let connection = NSXPCConnection(machServiceName: HelperIdentity.machService,
-                                           options: .privileged)
-            let completion = OnceReply { value in
-                connection.invalidate()
-                continuation.resume(returning: value)
-            }
-            // Validate the *server* identity as well as the server's incoming
-            // client requirement. Never send VPN credentials to a fake daemon.
-            guard let requirement = PrivilegedServiceTrust.helperRequirement() else {
-                completion.finish(L10n.text("ERROR: 当前程序身份或安装批准未通过检查，请安装或修复对应通道的安装包"))
-                return
-            }
-            connection.setCodeSigningRequirement(requirement)
-            connection.remoteObjectInterface = NSXPCInterface(with: VPNNavigatorHelperAPI.self)
-            connection.interruptionHandler = { completion.finish("ERROR: Helper interrupted") }
-            connection.invalidationHandler = { completion.finish("ERROR: Helper unavailable or not authorized") }
-            connection.resume()
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
-                completion.finish("ERROR: Privileged helper did not respond before the operation deadline")
-            }
-            guard let proxy = connection.remoteObjectProxyWithErrorHandler({ error in
-                completion.finish("ERROR: \(error.localizedDescription)")
-            }) as? VPNNavigatorHelperAPI else {
-                completion.finish("ERROR: Invalid privileged service interface")
-                return
-            }
-            call(proxy) { completion.finish($0) }
+        guard let requirement = PrivilegedServiceTrust.helperRequirement() else {
+            transport.invalidate()
+            return L10n.text("ERROR: 当前程序身份或安装批准未通过检查，请安装或修复对应通道的安装包")
         }
+        return await transport.ask(requirement: requirement, timeout: timeout, call: call)
     }
     func ping() async -> String {
         await ask { helper, reply in helper.health(reply: reply) }
@@ -224,20 +202,5 @@ private final class HelperActivityGate: @unchecked Sendable {
         active += 1; return true
     }
     func leave() { lock.lock(); active -= 1; lock.unlock() }
-}
-
-/// NSXPC errors and callbacks can arrive concurrently. Resume continuations exactly once.
-private final class OnceReply: @unchecked Sendable {
-    private let lock = NSLock()
-    private var finished = false
-    private let done: (String) -> Void
-    init(_ done: @escaping (String) -> Void) { self.done = done }
-    func finish(_ result: String) {
-        lock.lock()
-        let shouldFire = !finished
-        finished = true
-        lock.unlock()
-        if shouldFire { done(result) }
-    }
 }
 

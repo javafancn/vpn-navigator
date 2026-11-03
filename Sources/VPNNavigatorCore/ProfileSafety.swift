@@ -14,7 +14,7 @@ public enum ProfileSafety {
         "data-ciphers", "data-ciphers-fallback", "remote-cert-tls", "verb", "mute",
         "mute-replay-warnings", "auth-nocache", "tls-version-min", "tls-cipher",
         "tls-ciphersuites", "key-direction", "auth-user-pass", "reneg-sec",
-        "explicit-exit-notify", "push-peer-info", "connect-retry", "connect-timeout",
+        "explicit-exit-notify", "push-peer-info", "connect-retry", "connect-timeout", "server-poll-timeout", "socket-flags",
         "keepalive", "ping", "ping-restart", "tun-mtu", "mssfix", "sndbuf",
         "rcvbuf", "float", "verify-x509-name", "auth-retry", "tls-timeout",
         "remote-random-hostname", "topology", "pull", "allow-compression", "static-challenge",
@@ -72,6 +72,12 @@ public enum ProfileSafety {
                 throw ProfileValidationError.unsupported(offset + 1, line)
             }
             switch cmd {
+            case "server-poll-timeout":
+                guard tokens.count == 2, let seconds = UInt32(tokens[1]), (1...3600).contains(seconds) else {
+                    throw ProfileValidationError.invalidLine(offset + 1)
+                }
+            case "socket-flags":
+                guard tokens == ["socket-flags", "TCP_NODELAY"] else { throw ProfileValidationError.unsupported(offset + 1, line) }
             case "remote":
                 guard (2...4).contains(tokens.count),
                       let host = tokens.dropFirst().first, isSafeHost(host) else {

@@ -45,7 +45,8 @@ def answer(packet, path, tcp):
         ip = socket.inet_pton(socket.AF_INET6, '2001:db8::' + ('1' if direct else '2'))
     else:
         ip = socket.inet_aton('192.0.2.' + ('1' if direct else '2'))
-    record = b'\xc0\x0c' + struct.pack('!HHIH', kind, 1, 0, len(ip)) + ip
+    ttl = 2 if name.startswith('cache.') else 0
+    record = b'\xc0\x0c' + struct.pack('!HHIH', kind, 1, ttl, len(ip)) + ip
     return packet[:2] + struct.pack('!HHHHH', 0x8180, 1, 1, 0, 0) + packet[12:end] + record
 
 
@@ -109,8 +110,8 @@ try:
     port = int(line.split('=')[1])
     assert port > 1023
 
-    def query(name, tcp=False, kind=1, stream=None):
-        ident = os.urandom(2)
+    def query(name, tcp=False, kind=1, stream=None, ident=None):
+        ident = os.urandom(2) if ident is None else ident
         question = b''.join(bytes([len(s)])+s.encode() for s in name.strip('.').split('.') if s) + b'\0' + struct.pack('!HH', kind, 1)
         packet = ident + struct.pack('!HHHHH', 0x100, 1, 0, 0, 0) + question
         owned = stream is None
@@ -139,12 +140,11 @@ try:
         assert query(f'healthy.churn{i}.baidu.com')[-1] == 1
     print(f'METRIC: 1000 independent first-attempt UDP queries seconds={time.monotonic()-started:.3f}')
 
-    # More than 64 genuinely active flows must fit within the 128-request
-    # budget. Every primary delays these names, so idle eviction alone cannot
-    # make this test pass. No retries or extra listener limits are used.
+    # A burst beyond the 128 active-request budget must queue without losing
+    # requests. Every primary delays these names. No client retries are used.
     burst = []
     try:
-        for i in range(96):
+        for i in range(160):
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.connect(('127.0.0.1', port)); sock.settimeout(8)
             name = f'slow.burst{i}.baidu.com'
@@ -158,7 +158,17 @@ try:
     finally:
         for sock, _ in burst:
             sock.close()
-    print('PASS: 96 distinct active UDP flows complete without eviction or retry.')
+    print('PASS: 160 distinct UDP queries survive the 128-active-request budget without client retry.')
+
+    # Independent local clients can reuse the same original transaction ID.
+    # Pooling upstream sockets must keep their questions and policy groups
+    # separate and restore each client's original ID after demultiplexing.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=32) as pool:
+        results = list(pool.map(lambda i: query(
+            f'slow.shared-id{i}.' + ('baidu.com' if i % 2 else 'foreign.test'),
+            ident=b'\xab\xcd'), range(64)))
+        assert [response[-1] for response in results] == [1 if i % 2 else 2 for i in range(64)]
+    print('PASS: concurrent UDP clients sharing a transaction ID retain question and resolver-policy isolation.')
 
     for tcp in [False, True]:
         assert query('healthy.baidu.com', tcp)[-1] == 1
@@ -232,19 +242,50 @@ try:
     assert not any(name == 'healthy.foreign.test' for name, _ in counts['vpn-backup']), 'Healthy VPN queries broadcast to backup'
     print('PASS: real loopback-only split DNS UDP/TCP, A/AAAA, concurrent requests, framed persistent TCP, TC retry, forged/refused response failover, VPN-only failure and domain boundaries.')
     print(f'METRIC: domestic DNS {sum(direct)/len(direct)*1000:.1f}ms vs simulated remote DNS {sum(remote)/len(remote)*1000:.1f}ms; no user network latency claim.')
-    helper.stdin.write('STOP\n'); helper.stdin.flush(); helper.stdin.close()
-    helper.wait(timeout=5)
-    assert helper.returncode == 0 and helper.stdout.readline().strip() == 'DNS_PROXY_STOPPED'
-    helper = subprocess.Popen([sys.argv[1], '--self-test-split-dns',
-        *[str(services[i].server_address[1]) for i in [0, 2, 4, 6]],
-        str(Path('Resources/Rules/china-dns-domains.txt').resolve()), '--full-vpn'],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
-    assert select.select([helper.stdout], [], [], 12)[0], 'Full VPN relay readiness timed out'
+
+    # TTL wire caching must restore each caller's ID, age TTLs, expire, and
+    # keep UDP/TCP responses isolated. Other fixture answers retain TTL zero.
+    for tcp in [False, True]:
+        name = 'cache.ttl.baidu.com'
+        before = sum(1 for n, t in counts['direct'] if n == name and t == tcp)
+        first = query(name, tcp=tcp)
+        assert query(name, tcp=tcp, ident=b'\x98\x76')[-1] == 1
+        assert sum(1 for n, t in counts['direct'] if n == name and t == tcp) == before + 1
+        time.sleep(1.05)
+        aged = query(name, tcp=tcp)
+        assert struct.unpack('!I', aged[-10:-6])[0] == 1, 'Cache did not age the RR TTL'
+        time.sleep(1.05)
+        assert query(name, tcp=tcp)[-1] == 1
+        assert sum(1 for n, t in counts['direct'] if n == name and t == tcp) == before + 2, 'Expired response was reused'
+    barrier = threading.Barrier(32)
+    def shared_query(_):
+        barrier.wait(timeout=5)
+        return query('coalesce.foreign.test')
+    with concurrent.futures.ThreadPoolExecutor(max_workers=32) as pool:
+        assert all(packet[-1] == 2 for packet in pool.map(shared_query, range(32)))
+    assert sum(1 for name, _ in counts['vpn'] if name == 'coalesce.foreign.test') == 1, 'Identical in-flight queries were not coalesced'
+    assert query('coalesce.foreign.test')[-1] == 2
+    assert sum(1 for name, _ in counts['vpn'] if name == 'coalesce.foreign.test') == 2, 'TTL-zero answer was cached'
+    print('PASS: positive wire cache restores IDs, ages/expires TTLs, separates UDP/TCP and coalesces concurrent queries without caching TTL-zero answers.')
+    for tcp in [False, True]:
+        assert query('cache.switch.baidu.com', tcp=tcp)[-1] == 1
+    crossing = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    crossing.settimeout(3)
+    crossing_name = b'\x07timeout\x05baidu\x03com\0\0\1\0\1'
+    crossing.sendto(b'\x55\x66' + struct.pack('!HHHHH', 0x100, 1, 0, 0, 0) + crossing_name, ('127.0.0.1', port))
+    time.sleep(.03)
+    previous_port = port
+    helper.stdin.write('FULL\n'); helper.stdin.flush()
+    assert select.select([helper.stdout], [], [], 12)[0], 'Full VPN policy switch timed out'
     line = helper.stdout.readline().strip()
     assert line.startswith('DNS_PROXY_PORT='), line
     port = int(line.split('=')[1])
+    assert port == previous_port, 'Live policy switch changed the resolver port'
+    retired = crossing.recv(65535); crossing.close()
+    assert retired[:2] == b'\x55\x66' and retired[3] & 15 == 2, 'Old-policy request survived a mode switch'
     before_direct = sum(len(counts[path]) for path in ['direct', 'direct-backup'])
     for tcp in [False, True]:
+        assert query('cache.switch.baidu.com', tcp=tcp)[-1] == 2, 'Old domestic cache crossed the mode boundary'
         for name in ['www.baidu.com', 'www.bilibili.com', 'www.google.com']:
             assert query(name, tcp=tcp)[-1] == 2
         start = time.monotonic()
@@ -252,6 +293,51 @@ try:
         assert time.monotonic() - start < 1.5, 'Full VPN retained a stalled primary resolver'
     assert sum(len(counts[path]) for path in ['direct', 'direct-backup']) == before_direct, 'Full VPN sent a query to domestic DNS'
     print('PASS: Full VPN domestic/foreign queries remain VPN-only, with bounded primary DNS failover over UDP/TCP.')
+
+    def restart(*options):
+        global helper, port
+        helper.stdin.write('STOP\n'); helper.stdin.flush(); helper.stdin.close()
+        helper.wait(timeout=5)
+        assert helper.returncode == 0
+        helper = subprocess.Popen([sys.argv[1], '--self-test-split-dns',
+            *[str(services[i].server_address[1]) for i in [0, 2, 4, 6]],
+            str(Path('Resources/Rules/china-dns-domains.txt').resolve()), *options],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        assert select.select([helper.stdout], [], [], 12)[0], 'Relay restart timed out'
+        line = helper.stdout.readline().strip()
+        assert line.startswith('DNS_PROXY_PORT='), line
+        port = int(line.split('=')[1])
+
+    for option, missing in [('--ipv4-only', 28), ('--ipv6-only', 1)]:
+        restart(option)
+        before = sum(len(values) for values in counts.values())
+        for tcp in [False, True]:
+            for domain in ['www.baidu.com', 'www.google.com']:
+                started = time.monotonic()
+                empty = query(domain, tcp=tcp, kind=missing)
+                assert empty[3] & 15 == 0 and empty[6:12] == b'\0' * 6
+                assert time.monotonic() - started < .5, 'Unavailable family waited for an upstream timeout'
+        assert sum(len(values) for values in counts.values()) == before, 'Unavailable family reached upstream'
+        assert query('www.google.com', kind=1 if missing == 28 else 28)[-1] == 2
+    print('PASS: negotiated IPv4-only/IPv6-only policy returns immediate UDP/TCP NODATA for the unavailable family while retaining the available family.')
+
+    # A listener must own UDP and TCP together, without stealing a busy port.
+    # Exercise each one-transport conflict with disposable high ports.
+    for socktype in [socket.SOCK_STREAM, socket.SOCK_DGRAM]:
+        with socket.socket(socket.AF_INET, socktype) as occupied:
+            occupied.bind(('127.0.0.1', 0))
+            if socktype == socket.SOCK_STREAM:
+                occupied.listen()
+            busy = occupied.getsockname()[1]
+            restart('--port=' + str(busy))
+            assert port != busy
+            assert query('healthy.baidu.com')[-1] == 1 and query('healthy.baidu.com', tcp=True)[-1] == 1
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as available:
+        available.bind(('127.0.0.1', 0)); selected = available.getsockname()[1]
+    restart('--port=' + str(selected))
+    assert port == selected
+    assert query('healthy.baidu.com')[-1] == 1 and query('healthy.baidu.com', tcp=True)[-1] == 1
+    print('PASS: preferred port binds both transports; either UDP or TCP conflict falls back without displacing the existing service.')
 finally:
     pending = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     if helper.poll() is None and 'port' in locals():

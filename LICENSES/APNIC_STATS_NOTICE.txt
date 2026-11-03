@@ -1,0 +1,34 @@
+######################################################################
+#
+# 	CONDITIONS OF USE
+# ____________________________________________________________________
+#
+#
+# The files are freely available for download and use on the condition
+# that APNIC will not be held responsible for any loss or damage
+# arising from the use of the information contained in these reports.
+#
+# APNIC endeavours to the best of its ability to ensure the accuracy
+# of these reports; however, APNIC makes no guarantee in this regard.
+#
+# In particular, it should be noted that these reports seek to
+# indicate where resources were first allocated or assigned. It is not
+# intended that these reports be considered as an authoritative
+# statement of the location in which any specific resource may
+# currently be in use.
+#
+# For more information see:
+#
+#       http://www.apnic.net/db/rir-stats-format.html
+# or
+#	ftp://ftp.apnic.net/pub/apnic/stats/apnic/README.TXT
+#
+######################################################################
+#
+
+Bundled Mainland China IPv6 seed, extracted from CN IPv6 allocated/assigned rows.
+Source: https://ftp.apnic.net/stats/apnic/delegated-apnic-20261103
+Retrieved: 2026-11-03
+Upstream MD5: 7b3b630ee778a4533bfcfb4adba6a964
+Upstream SHA-256: 4f9352db3c90ff3dfbfe365e695dfc64242718d275510ffea282d94151837d1b
+Seed SHA-256: 8aa585cc2ac005d709e0fb20fe679ae797149c966f26a5c1ab6151bb82da9533

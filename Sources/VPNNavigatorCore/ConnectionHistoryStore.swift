@@ -1,7 +1,7 @@
 import Foundation
 import Darwin
 
-public struct ConnectionHistoryState: Sendable {
+public struct ConnectionHistoryState: Equatable, Sendable {
     public let records: [ConnectionHistoryRecord]
     public let preferences: ConnectionHistoryPreferences
     public let quality: ConnectionQualitySnapshot
@@ -47,7 +47,7 @@ public actor ConnectionHistoryStore {
         return state()
     }
     public func consume(_ input: ConnectionHistoryInput, date: Date, uptime: Double) -> ConnectionHistoryState {
-        _ = open(now: date, uptime: uptime)
+        if !loaded { _ = open(now: date, uptime: uptime) }
         let previous = tracker.archive
         tracker.consume(input, at: date, uptime: uptime)
         let next = tracker.archive
@@ -57,7 +57,7 @@ public actor ConnectionHistoryStore {
             do { try write(next); dirty = false; lastSave = uptime; problem = nil }
             catch { problem = ConnectionHistoryFailure.storage.errorDescription }
         }
-        return state()
+        return .init(records: next.records, preferences: next.preferences, quality: tracker.quality, problem: problem)
     }
     public func configure(_ preferences: ConnectionHistoryPreferences, now: Date = Date()) throws -> ConnectionHistoryState {
         _ = open(now: now)

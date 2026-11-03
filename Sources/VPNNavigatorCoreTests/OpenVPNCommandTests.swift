@@ -2,6 +2,13 @@ import XCTest
 @testable import VPNNavigatorCore
 
 final class OpenVPNCommandTests: XCTestCase {
+    func testLatencyTuningPreservesTransportAndExplicitTimeout() {
+        let tcp = "proto tcp-client\nremote vpn.example 443"
+        XCTAssertEqual(OpenVPNCommand.latencyArguments(for: tcp), ["--socket-flags", "TCP_NODELAY"])
+        XCTAssertTrue(OpenVPNCommand.latencyArguments(for: "proto udp\nremote vpn.example 1194").isEmpty)
+        XCTAssertEqual(OpenVPNCommand.candidateTimeoutArguments(for: tcp, remainingSeconds: 60, candidateCount: 3), ["--server-poll-timeout", "10"])
+        XCTAssertTrue(OpenVPNCommand.candidateTimeoutArguments(for: tcp + "\nconnect-timeout 30", remainingSeconds: 60, candidateCount: 3).isEmpty)
+    }
     func testDNSHookUsesOneWhitespaceFreeFilenameAndItsTrustedDirectory() throws {
         for path in [
             "/Library/Application Support/VPNNavigator/Local/Payload/macos-dns-updown.sh",

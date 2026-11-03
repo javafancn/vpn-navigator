@@ -7,6 +7,10 @@ import VPNNavigatorCore
 /// Strict opt-in resets existing PF states when protection changes; new pass
 /// states are bound to their interface so a dead tunnel cannot float outward.
 final class PacketFilterGuard {
+    struct VerificationSnapshot {
+        let rules: String
+        let table: String?
+    }
     private struct Record: Codable { var token: String?; var enabled: Bool; var resetsStates: Bool? }
     private let folder = URL(fileURLWithPath: "/var/run/vpn-navigator")
     private var journal: URL { folder.appendingPathComponent("pf-guard.json") }
@@ -19,7 +23,7 @@ final class PacketFilterGuard {
 
     func activate(_ rules: String, resetExistingStates: Bool = true) throws {
         guard !requiresRecovery else { throw LeakGuardError.unresolved }
-        try preflight()
+        try Self.preflight()
         try prepareDirectory()
         try save(.init(token: nil, enabled: false, resetsStates: resetExistingStates))
         try load(rules)
@@ -39,19 +43,25 @@ final class PacketFilterGuard {
     }
     func replaceRules(_ rules: String, resetExistingStates: Bool = false) throws {
         guard active else { throw LeakGuardError.notActive }
-        try preflight(); try load(rules)
+        try Self.preflight(); try load(rules)
         // Tightening exceptions or rebuilding the protected session invalidates
         // existing states. The explicit opt-in UI discloses this network reset.
         if resetExistingStates { _ = try Self.command(["-F", "states"]) }
         try verify()
     }
     func verify() throws {
+        try Self.verify(verificationSnapshot())
+    }
+    func verificationSnapshot() throws -> VerificationSnapshot {
         guard active, let expectedRules else { throw LeakGuardError.notActive }
-        try preflight()
+        return .init(rules: expectedRules, table: expectedTable)
+    }
+    static func verify(_ snapshot: VerificationSnapshot) throws {
+        try Self.preflight()
         let status = try Self.command(["-s", "info"])
         let rules = try Self.command(["-a", LeakGuardPolicy.anchor, "-sr"])
-        guard status.contains("Status: Enabled"), rules == expectedRules else { throw LeakGuardError.notActive }
-        if let expectedTable {
+        guard status.contains("Status: Enabled"), rules == snapshot.rules else { throw LeakGuardError.notActive }
+        if let expectedTable = snapshot.table {
             guard try Self.command(["-a", LeakGuardPolicy.anchor, "-t", "vpnnav_direct4", "-T", "show"]) == expectedTable else { throw LeakGuardError.notActive }
         }
     }
@@ -75,7 +85,7 @@ final class PacketFilterGuard {
         try? FileManager.default.removeItem(at: receipt)
         active = false; expectedRules = nil; expectedTable = nil
     }
-    private func preflight() throws {
+    private static func preflight() throws {
         guard getuid() == 0,
               LeakGuardPolicy.compatibleRootRules(try Self.command(["-sr"])) else { throw LeakGuardError.incompatibleHost }
         let anchors = Self.cleaned(try Self.command(["-a", "com.apple", "-s", "Anchors"]))

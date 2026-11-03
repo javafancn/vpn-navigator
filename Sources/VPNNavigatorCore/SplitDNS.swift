@@ -62,14 +62,52 @@ public struct DNSQuestion: Equatable, Sendable {
         for i in 6...11 { bytes[i] = 0 }
         return Data(bytes)
     }
+    /// Policy NODATA, not NXDOMAIN: the name can still have usable A records.
+    /// No AD bit or negative TTL is asserted for this locally generated answer.
+    public func noData(for request: Data) -> Data {
+        var bytes = [UInt8](request.prefix(end))
+        bytes[2] = 0x80 | (bytes[2] & 1); bytes[3] = 0x80 | (bytes[3] & 0x10)
+        for i in 6...11 { bytes[i] = 0 }
+        return Data(bytes)
+    }
 }
 
 public enum SplitDNSPolicy {
+    private static let knownResolvers: Set<String> = ["223.5.5.5", "223.6.6.6", "119.29.29.29",
+        "2400:3200::1", "2400:3200:baba::1", "2402:4e00::", "2402:4e00:1::"]
+    /// DNS addresses need the same scope policy at selection and route planning.
+    /// Only observed on-link networks may admit special-use addresses; an
+    /// arbitrary DHCP/manual address never becomes a general bypass exception.
+    public static func permitsPhysicalResolver(_ text: String, local4: [IPv4CIDR] = [], local6: [IPv6CIDR] = [],
+        country4: RuleSet? = nil, country6: IPv6RuleSet? = nil) -> Bool {
+        guard let ip = try? ManagedDNSPolicy.servers(provided: [text], has4: true, has6: true).first else { return false }
+        if let address = IPv4CIDR.parseAddress(ip) {
+            if local4.contains(where: { $0.contains(address) }) { return true }
+            guard (try? CustomRuleSet.prefix(ip)) != nil else { return false }
+            let privateAddress = address >> 24 == 10 || address >> 20 == 0xac1 || address >> 16 == 0xc0a8
+            return knownResolvers.contains(ip) || privateAddress || country4?.contains(ip: ip) == true
+        }
+        if local6.contains(where: { $0.contains(ip) }) { return true }
+        guard (try? CustomRuleSet.prefix6(ip)) != nil else { return false }
+        let privateAddress = IPv6CIDR.parseAddress(ip).map { $0[0] & 0xfe == 0xfc } ?? false
+        return knownResolvers.contains(ip) || privateAddress || country6?.contains(ip) == true
+    }
     /// Only China Direct adds these explicit physical DNS exceptions.
-    public static func domesticServers(path4: Bool, path6: Bool, protectedVPN: [String]) -> [String] {
-        let candidates = path4 ? ["223.5.5.5", "223.6.6.6", "119.29.29.29"]
+    public static func domesticServers(path4: Bool, path6: Bool, protectedVPN: [String], preferred: [String] = [],
+        local4: [IPv4CIDR] = [], local6: [IPv6CIDR] = [], country4: RuleSet? = nil, country6: IPv6RuleSet? = nil) -> [String] {
+        let fallback = path4 ? ["223.5.5.5", "223.6.6.6", "119.29.29.29"]
             : path6 ? ["2400:3200::1", "2400:3200:baba::1", "2402:4e00::", "2402:4e00:1::"] : []
         let excluded = Set(protectedVPN.compactMap(IPAddress.canonical))
-        return Array(candidates.filter { !excluded.contains($0) }.prefix(2))
+        var result: [String] = []
+        for raw in preferred + fallback {
+            // Reuse the unicast/family validation, including rejecting loopback
+            // and scoped/link-local IPv6 resolvers which require another path.
+            guard let ip = try? ManagedDNSPolicy.servers(provided: [raw], has4: path4, has6: path6).first,
+                  !excluded.contains(ip), !result.contains(ip),
+                  permitsPhysicalResolver(ip, local4: local4, local6: local6, country4: country4, country6: country6) else { continue }
+            result.append(ip)
+            if result.count == 2 { break }
+        }
+        return result
     }
 }

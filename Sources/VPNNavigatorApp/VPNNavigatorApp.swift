@@ -6,16 +6,29 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class AppModel: ObservableObject {
-    @Published var profiles: [VPNProfile] = []
+    @Published var profiles: [VPNProfile] = [] {
+        didSet { if oldValue != profiles { cachedLibraryProfiles = nil; cachedLibraryGroups = nil } }
+    }
+    private var cachedLibraryProfiles: [VPNProfile]?
+    private var cachedLibraryGroups: [ProfileGroupSummary]?
+    @Published private(set) var profileHistoryRevisions: [UUID: UUID] = [:]
+    @Published private(set) var checkingForUpdates = false
     @Published var profileLibrary: ProfileLibraryQuery {
         didSet {
+            if oldValue != profileLibrary { cachedLibraryProfiles = nil }
             if oldValue.sort != profileLibrary.sort { libraryDefaults.set(profileLibrary.sort.rawValue, forKey: "profileLibrarySort") }
         }
     }
     private let libraryDefaults: UserDefaults
     @Published private(set) var profileMetadataInProgress = false
-    var libraryProfiles: [VPNProfile] { profileLibrary.results(profiles) }
-    var libraryGroups: [ProfileGroupSummary] { ProfileLibraryQuery.groups(profiles) }
+    var libraryProfiles: [VPNProfile] {
+        if let cachedLibraryProfiles { return cachedLibraryProfiles }
+        let value = profileLibrary.results(profiles); cachedLibraryProfiles = value; return value
+    }
+    var libraryGroups: [ProfileGroupSummary] {
+        if let cachedLibraryGroups { return cachedLibraryGroups }
+        let value = ProfileLibraryQuery.groups(profiles); cachedLibraryGroups = value; return value
+    }
 
     @Published var showingImportReport = false
     @Published private(set) var importResults: [ProfileImportResult] = []
@@ -133,7 +146,7 @@ final class AppModel: ObservableObject {
     private var helperAttemptID: UUID?
     private var helperStateVerified = true
     private var repairExitAuthorized = false
-    private let localEvents = DiagnosticEventStore(file: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("VPNNavigator/Diagnostics/events.json"))
+    private let localEvents: DiagnosticEventStore
     private var profileMutations = 0
     @Published private(set) var maintenanceInProgress = false
     private var helperPollingPaused = false
@@ -150,7 +163,14 @@ final class AppModel: ObservableObject {
     @Published var installationIssue: String?
     @Published var availableInstaller: URL?
     @Published var availableReleasePage: URL?
-    @Published var connectionStatus = "disconnected: Not connected"
+    @Published var connectionStatus = "disconnected: Not connected" {
+        didSet {
+            if oldValue.prefix(while: { $0 != ":" }) != connectionStatus.prefix(while: { $0 != ":" }) { wakeStatusPoll() }
+        }
+    }
+    private var statusPollWait: CheckedContinuation<Void, Never>?
+    private var statusPollDeadline: DispatchWorkItem?
+    private var statusPollToken: UUID?
     @Published private(set) var activeRoutingMode: RoutingMode?
     @Published private(set) var routingModeTarget: RoutingMode?
     var routingModeSwitching: Bool { routingModeTarget != nil }
@@ -193,9 +213,11 @@ final class AppModel: ObservableObject {
             existingLoginEnabled: UserServices.loginStatus == .enabled)
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("VPNNavigator", isDirectory: true)
+        let repositoryRoot = profileStoreRoot?.deletingLastPathComponent() ?? root
+        localEvents = DiagnosticEventStore(file: repositoryRoot.appendingPathComponent("Diagnostics/events.json"))
         connectionHistoryDirectory = (profileStoreRoot?.deletingLastPathComponent() ?? root).appendingPathComponent("ConnectionHistory")
         store = ProfileStore(root: profileStoreRoot ?? root.appendingPathComponent("Profiles"))
-        ruleCacheRoot = routingRuleCacheRoot ?? root.appendingPathComponent("Rules")
+        ruleCacheRoot = routingRuleCacheRoot ?? repositoryRoot.appendingPathComponent("Rules")
         updater = RuleUpdater(folder: ruleCacheRoot)
         ipv6Updater = APNICIPv6PreviewStore(root: ruleCacheRoot)
         automaticRulesEnabled = backgroundPreferences.rulesEnabled
@@ -243,12 +265,29 @@ final class AppModel: ObservableObject {
         Task {
             while !Task.isCancelled {
                 await refreshConnectionStatus()
-                try? await Task.sleep(nanoseconds: connected || connecting ? 1_000_000_000 : 3_000_000_000)
+                let idle = helperStateVerified && sessionState == .disconnected && activeProfileID == nil &&
+                    !networkRecoveryRequired && !firewallRecoveryRequired
+                await waitForStatusPoll(seconds: connected || connecting ? 1 : idle ? 30 : 3)
             }
         }
     }
 
     var selected: VPNProfile? { profiles.first { $0.id == selectedID } }
+    private func waitForStatusPoll(seconds: TimeInterval) async {
+        await withCheckedContinuation { continuation in
+            statusPollWait = continuation
+            let token = UUID(); statusPollToken = token
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, self.statusPollToken == token else { return }
+                self.wakeStatusPoll()
+            }
+            statusPollDeadline = work; DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+        }
+    }
+    private func wakeStatusPoll() {
+        statusPollDeadline?.cancel(); statusPollDeadline = nil; statusPollToken = nil
+        let continuation = statusPollWait; statusPollWait = nil; continuation?.resume()
+    }
     var activeProfile: VPNProfile? { profiles.first { $0.id == activeProfileID } }
     var sessionState: TunnelState {
         TunnelState(rawValue: String(connectionStatus.prefix { $0 != ":" })) ?? .failed
@@ -320,14 +359,16 @@ final class AppModel: ObservableObject {
 
     func load() async {
         do { try await loadProfiles() } catch { /* Persistent recovery banner owns this failure. */ }
+        do { try await bootstrapRuleCache() } catch { message = error.localizedDescription }
         do {
-            try await reloadRuleCache()
-            if rules == nil, let seed = Bundle.main.url(forResource: "china-ipv4", withExtension: "txt", subdirectory: "Rules") {
-                rules = try await updater.bootstrap(seed)
-            }
             try await reloadRuleCache()
             ruleSnapshots = try await updater.snapshots()
         } catch { message = error.localizedDescription }
+    }
+    private func bootstrapRuleCache() async throws {
+        try await RoutingRuleUpdate.bootstrap(root: ruleCacheRoot,
+            ipv4Seed: Bundle.main.url(forResource: "china-ipv4", withExtension: "txt", subdirectory: "Rules"),
+            ipv6Seed: Bundle.main.url(forResource: "china-ipv6", withExtension: "txt", subdirectory: "Rules"))
     }
     private func loadProfiles() async throws {
         do {
@@ -669,6 +710,7 @@ final class AppModel: ObservableObject {
         }
         do {
             try await store.revise(profile, text: text)
+            profileHistoryRevisions[profile.id] = UUID()
             try await loadProfiles()
             if profiles.first(where: { $0.id == profile.id })?.credentialID != profile.credentialID {
                 username = ""; password = ""; KeychainVault.remove(id: profile.credentialID)
@@ -699,6 +741,7 @@ final class AppModel: ObservableObject {
         }
         do {
             try await store.restore(profile, revision: revision)
+            profileHistoryRevisions[profile.id] = UUID()
             try await loadProfiles()
             if profiles.first(where: { $0.id == profile.id })?.credentialID != profile.credentialID {
                 username = ""; password = ""; KeychainVault.remove(id: profile.credentialID)
@@ -771,6 +814,7 @@ final class AppModel: ObservableObject {
     }
 
     func checkForUpdates() async {
+        guard !checkingForUpdates else { return }
         availableInstaller = nil
         availableReleasePage = nil
         if BuildChannel.isLocal {
@@ -778,6 +822,8 @@ final class AppModel: ObservableObject {
             showingMaintenance = true
             return
         }
+        checkingForUpdates = true
+        defer { checkingForUpdates = false }
         do {
             let release = try await UpdateChecker.latestRelease()
             guard ReleaseAssetPolicy.isApprovedReleasePage(release.html_url) else {
@@ -966,27 +1012,30 @@ final class AppModel: ObservableObject {
     }
     func applyVerifiedSessionReport(_ report: SessionReport, at date: Date = Date(), uptime: Double = ProcessInfo.processInfo.systemUptime) {
         guard !disconnectRequestInFlight else { return }
-        connectionTimings = ConnectionStageTiming.validated(report.connectionTimings) ?? []
+        let timings = ConnectionStageTiming.validated(report.connectionTimings) ?? []
+        if connectionTimings != timings { connectionTimings = timings }
         menuTraffic.observe(report, at: date, uptime: uptime)
         if !(busy && connectionAttempt != nil && sessionState == .connecting && report.state == .disconnected) {
             connectionHistory.observe(.report(.init(report)), at: date, uptime: uptime)
         }
-        activeIPStack = report.ipStack; activeCustomRuleDigest = report.customRuleDigest; activeCustomRuleCount = report.customRuleCount
-        helperStateVerified = true
+        if activeIPStack != report.ipStack { activeIPStack = report.ipStack }
+        if activeCustomRuleDigest != report.customRuleDigest { activeCustomRuleDigest = report.customRuleDigest }
+        if activeCustomRuleCount != report.customRuleCount { activeCustomRuleCount = report.customRuleCount }
+        if !helperStateVerified { helperStateVerified = true }
         if !(busy && connectionAttempt != nil && sessionState == .connecting && report.state == .disconnected) {
-            connectionStatus = report.statusText
+            if connectionStatus != report.statusText { connectionStatus = report.statusText }
         }
-        helperAttemptID = report.attemptID
-        activeProfileID = report.activeProfileID
-        authenticationChallenge = report.challenge
-        firewallActive = report.firewallActive
-        firewallRecoveryRequired = report.firewallRecoveryRequired
-        networkRecoveryRequired = report.requiresNetworkRecovery
+        if helperAttemptID != report.attemptID { helperAttemptID = report.attemptID }
+        if activeProfileID != report.activeProfileID { activeProfileID = report.activeProfileID }
+        if authenticationChallenge != report.challenge { authenticationChallenge = report.challenge }
+        if firewallActive != report.firewallActive { firewallActive = report.firewallActive }
+        if firewallRecoveryRequired != report.firewallRecoveryRequired { firewallRecoveryRequired = report.firewallRecoveryRequired }
+        if networkRecoveryRequired != report.requiresNetworkRecovery { networkRecoveryRequired = report.requiresNetworkRecovery }
         if report.state == .failed, let pending = pendingManualFailureAttempt, report.attemptID == pending {
             pendingManualFailureAttempt = nil
             message = L10n.format("连接失败：{0}", [report.message])
         }
-        traffic = report.traffic
+        if traffic != report.traffic { traffic = report.traffic }
         if report.state == .connected, let value = report.traffic {
             receiveTrend.record(cumulativeBytes: value.receivedBytes)
             sendTrend.record(cumulativeBytes: value.sentBytes)
@@ -994,8 +1043,8 @@ final class AppModel: ObservableObject {
             receiveTrend.reset()
             sendTrend.reset()
         }
-        activeRoutingMode = report.routingMode
-        routingRevision = report.routingRevision
+        if activeRoutingMode != report.routingMode { activeRoutingMode = report.routingMode }
+        if routingRevision != report.routingRevision { routingRevision = report.routingRevision }
         smartConnection.observe(report)
     }
     func refreshConnectionStatus() async {
@@ -1064,9 +1113,9 @@ final class AppModel: ObservableObject {
     var menuStatusSymbol: String {
         connected ? "checkmark.shield.fill" : sessionState == .failed ? "exclamationmark.shield" : connecting ? "arrow.triangle.2.circlepath" : "network"
     }
-    func connectSelected(automatically: Bool = false, automationPermit: (() -> Bool)? = nil) async {
+    func connectSelected(automatically: Bool = false, automationPermit: (() async -> Bool)? = nil) async {
         if automatically {
-            guard automationPermit?() == true,
+            guard await automationPermit?() == true,
                   !smartConnectionContext().occupied, helperStateVerified, helper.installationStatus == .enabled,
                   sessionState == .disconnected, activeProfileID == nil, !networkRecoveryRequired, !firewallRecoveryRequired else { return }
         } else { smartConnection.cancelPending() }
@@ -1086,6 +1135,7 @@ final class AppModel: ObservableObject {
             let text = try await store.runtimeConfig(for: selected)
             let validated = try ProfileSafety.validateForConnection(text)
             try ManagedRoutingPolicy.validate(validated, mode: selected.mode)
+            if selected.mode == .chinaDirect { try await bootstrapRuleCache(); try await reloadRuleCache() }
             if selected.mode == .chinaDirect && rules == nil {
                 message = L10n.text("请先下载或导入中国 IPv4 规则。")
                 connectionStatus = L10n.text("failed: 缺少中国 IPv4 规则")
@@ -1097,7 +1147,7 @@ final class AppModel: ObservableObject {
             }
             var connectionUsername = username, connectionPassword = password
             if automatically {
-                guard automationPermit?() == true else { throw SmartConnectionError.cancelled }
+                guard await automationPermit?() == true else { throw SmartConnectionError.cancelled }
                 connectionUsername = ""; connectionPassword = ""
                 if validated.requestsCredentials {
                     guard rememberCredentials, let secret = KeychainVault.load(id: selected.credentialID, allowInteraction: false),
@@ -1119,11 +1169,11 @@ final class AppModel: ObservableObject {
                 }
                 connectionUsername = username; connectionPassword = password
             }
-            if selected.mode != .original { try await reloadRuleCache() }
-            let rulesText = routingRuleText()
+            if selected.mode == .chinaDirect { try await reloadRuleCache() }
+            let rulesText = selected.mode == .chinaDirect ? routingRuleText() : ""
             guard connectionAttempt == attempt else { return }
             if automatically {
-                guard automationPermit?() == true, selectedID == selected.id, profiles.contains(selected),
+                guard await automationPermit?() == true, selectedID == selected.id, profiles.contains(selected),
                       !smartConnectionContext(preparingAutomatic: true).occupied,
                       helperStateVerified, helper.installationStatus == .enabled,
                       activeProfileID == nil, !networkRecoveryRequired, !firewallRecoveryRequired else { throw SmartConnectionError.cancelled }
@@ -1414,6 +1464,7 @@ final class AppModel: ObservableObject {
         let updated = try await store.applyUpdate(preview)
         if let position = profiles.firstIndex(where: { $0.id == updated.id }) { profiles[position] = updated }
         profileSizes[updated.id] = preview.sourceByteCount
+        profileHistoryRevisions[updated.id] = UUID()
         if preview.identityChanged {
             username = ""; password = ""; KeychainVault.remove(id: preview.profile.credentialID)
         }

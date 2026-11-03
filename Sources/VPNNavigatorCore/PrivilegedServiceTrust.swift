@@ -10,15 +10,7 @@ public enum PrivilegedServiceTrust {
                   LocalInstallation.selfMatches([.app, .agent, .setup], approval: approval) else { return nil }
             return try? approval.requirement(for: [.helper])
         }
-        var selfCode: SecCode?
-        var staticCode: SecStaticCode?
-        guard SecCodeCopySelf([], &selfCode) == errSecSuccess, let selfCode,
-              SecCodeCopyStaticCode(selfCode, [], &staticCode) == errSecSuccess,
-              let staticCode else { return nil }
-        var info: CFDictionary?
-        guard SecCodeCopySigningInformation(staticCode, [], &info) == errSecSuccess,
-              let values = info as? [String: Any],
-              let team = values[kSecCodeInfoTeamIdentifier as String] as? String,
+        guard let team = ProcessSigningIdentity.current?.team,
               !team.isEmpty else { return nil }
         let requirement =
             "anchor apple generic and certificate leaf[subject.OU] = \"\(team)\" and identifier \"com.javafancn.vpn-navigator.helper\""

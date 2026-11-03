@@ -36,7 +36,14 @@ struct NativeProfileList: NSViewRepresentable {
     let profiles: [VPNProfile]
     @Binding var selection: UUID?
     let keyboard: ProfileListKeyboard
+    let connectedProfileID: UUID?
     let row: (VPNProfile) -> AnyView
+    struct RenderState: Equatable {
+        let selected: UUID?
+        let connected: UUID?
+        let focused: Bool
+        let locale: String
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> NSScrollView {
@@ -61,13 +68,21 @@ struct NativeProfileList: NSViewRepresentable {
     private func update(_ scroll: NSScrollView, coordinator: Coordinator) {
         guard let table = scroll.documentView as? NSTableView else { return }
         let dataChanged = coordinator.profiles != profiles
+        let state = RenderState(selected: selection, connected: connectedProfileID, focused: keyboard.focused, locale: L10n.locale.identifier)
+        let presentationChanged = coordinator.renderState != state
+        coordinator.renderState = state
         coordinator.applying = true
         coordinator.profiles = profiles; coordinator.selection = $selection; coordinator.row = row
         if dataChanged { table.reloadData() }
         // Refresh visible SwiftUI cells without recreating the native responder.
-        for index in 0..<profiles.count {
-            if let host = table.view(atColumn: 0, row: index, makeIfNecessary: false) as? NSHostingView<AnyView> {
-                host.rootView = row(profiles[index])
+        if !dataChanged && presentationChanged {
+            let visible = table.rows(in: table.visibleRect)
+            if visible.location != NSNotFound {
+                for index in visible.location..<min(profiles.count, NSMaxRange(visible)) {
+                    if let host = table.view(atColumn: 0, row: index, makeIfNecessary: false) as? NSHostingView<AnyView> {
+                        host.rootView = row(profiles[index])
+                    }
+                }
             }
         }
         let target = profiles.firstIndex { $0.id == selection }
@@ -86,6 +101,7 @@ struct NativeProfileList: NSViewRepresentable {
         table.onFocus = nil; table.delegate = nil; table.dataSource = nil
     }
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+        var renderState: RenderState?
         var profiles: [VPNProfile] = []
         var selection: Binding<UUID?>?
         var row: ((VPNProfile) -> AnyView)?

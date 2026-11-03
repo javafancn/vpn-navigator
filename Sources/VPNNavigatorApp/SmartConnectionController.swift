@@ -19,10 +19,14 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
     private let store: SmartConnectionStore
     private var monitor: NWPathMonitor?
     private var path: NWPath?
-    private var timer: Timer?
+    private var configurationStore: SCDynamicStore?
+    private var configurationSource: CFRunLoopSource?
+    private let networkQueue = DispatchQueue(label: "VPNNavigator.SmartNetworkSnapshot", qos: .utility)
+    private var networkGeneration = UUID()
     private var observers: [NSObjectProtocol] = []
     private var subscription: AnyCancellable?
     private var pending: Task<Void, Never>?
+    private var pendingTrigger: SmartTrigger?
     private var generation = UUID()
     private var sleeping = false
     private var stopped = false
@@ -53,17 +57,18 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
         observers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor [weak self] in self?.sleeping = false; self?.refreshNetwork(); self?.schedule(.wake) }
         })
-        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in Task { @MainActor [weak self] in self?.refreshNetwork() } }
+        configureNetworkMonitoring()
         if preferences.notifications { Task { await refreshNotificationPermission() } }
     }
     func stop() {
-        stopped = true; cancelPending(); timer?.invalidate(); timer = nil; monitor?.cancel(); monitor = nil
+        stopped = true; cancelPending(); monitor?.cancel(); monitor = nil
+        if let configurationSource { CFRunLoopSourceInvalidate(configurationSource) }; configurationSource = nil; configurationStore = nil
         for observer in observers { NSWorkspace.shared.notificationCenter.removeObserver(observer) }; observers.removeAll()
     }
     func update(_ edit: (inout SmartConnectionPreferences) -> Void) {
         var value = preferences; edit(&value)
         do {
-            try store.save(value); preferences = value; cancelPending()
+            try store.save(value); preferences = value; cancelPending(); configureNetworkMonitoring(); refreshNetwork()
             status = value.enabled ? (value.paused ? L10n.text("自动连接已暂停") : L10n.text("设置已保存，等待下一次触发")) : L10n.text("自动连接未开启")
         } catch { model?.message = error.localizedDescription }
     }
@@ -71,7 +76,7 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
     func expectDisconnect() { expectedDisconnect = true }
     func pauseForManualDisconnect() { expectedDisconnect = true; if preferences.enabled { update { $0.paused = true } } else { cancelPending() } }
     func togglePause() { update { $0.paused.toggle() } }
-    func cancelPending() { generation = UUID(); pending?.cancel(); pending = nil }
+    func cancelPending() { generation = UUID(); pending?.cancel(); pending = nil; pendingTrigger = nil }
     func target(automatic: Bool) -> VPNProfile? {
         SmartConnectionPlanner.target(profiles: model?.profiles ?? [], successes: store.successes(), preferred: preferences.profileID, automatic: automatic)
     }
@@ -83,8 +88,50 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
         // Reuse the existing confirmation panel when a different VPN is active.
         model.quickAccess.show(); model.quickAccess.select(target.id); model.quickAccess.activateSelection()
     }
+    private func configureNetworkMonitoring() {
+        guard monitor != nil else { return }
+        if !preferences.enabled {
+            if let configurationSource { CFRunLoopSourceInvalidate(configurationSource) }
+            configurationSource = nil; configurationStore = nil; networkGeneration = UUID()
+            return
+        }
+        guard configurationStore == nil else { return }
+        var context = SCDynamicStoreContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
+        configurationStore = SCDynamicStoreCreate(nil, "VPNNavigator.SmartNetwork" as CFString, { _, _, context in
+            guard let context else { return }
+            let owner = Unmanaged<SmartConnectionController>.fromOpaque(context).takeUnretainedValue()
+            Task { @MainActor [weak owner] in owner?.refreshNetwork() }
+        }, &context)
+        guard let configurationStore else { return }
+        let patterns = ["State:/Network/Global/IPv[46]", "State:/Network/Interface/.*/(IPv[46]|AirPort|Link)"]
+        guard SCDynamicStoreSetNotificationKeys(configurationStore, nil, patterns as CFArray),
+              let source = SCDynamicStoreCreateRunLoopSource(nil, configurationStore, 0) else { return }
+        configurationSource = source; CFRunLoopAddSource(CFRunLoopGetMain(), source, .defaultMode)
+    }
     private func refreshNetwork() {
-        guard !stopped, let path else { return }
+        Task { @MainActor [weak self] in
+            guard let self, let next = await self.freshNetwork() else { return }
+            self.applyNetwork(next)
+        }
+    }
+    /// Await the physical snapshot before allowing automation. Publishing a
+    /// permission check must not schedule a second trigger or cancel itself.
+    private func freshNetwork() async -> SmartNetworkState? {
+        for _ in 0..<3 {
+            guard !stopped, preferences.enabled, !Task.isCancelled, let path else { return nil }
+            let token = UUID(); networkGeneration = token
+            let preferences = self.preferences
+            let next = await withCheckedContinuation { continuation in
+                networkQueue.async { continuation.resume(returning: Self.readNetwork(path: path, preferences: preferences)) }
+            }
+            guard !stopped, !Task.isCancelled, self.preferences == preferences else { return nil }
+            // A newer monitor request superseded the path; read the new one.
+            guard networkGeneration == token else { continue }
+            return next
+        }
+        return nil
+    }
+    nonisolated private static func readNetwork(path: NWPath, preferences: SmartConnectionPreferences) -> SmartNetworkState {
         // Ignore utun identities: our own VPN must not trigger another attempt.
         let interfaces = path.availableInterfaces.filter { $0.name.hasPrefix("en") }
         func entity(_ name: String, _ family: String) -> [String: Any] {
@@ -102,24 +149,48 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
         let kind: SmartNetworkState.Kind = physical?.type == .wifi ? .wifi : physical?.type == .wiredEthernet ? .wired : .other
         let name = kind == .wifi && preferences.networkScope == .specifiedWiFi ? CWWiFiClient.shared().interface(withName: physical?.name)?.ssid() : nil
         let routers = physical.map { "\(entity($0.name, "IPv4")["Router"] ?? "")|\(entity($0.name, "IPv6")["Router"] ?? "")" } ?? ""
-        let next = SmartNetworkState(online: path.status == .satisfied && physical != nil, kind: kind, wifiName: name,
+        return SmartNetworkState(online: path.status == .satisfied && physical != nil, kind: kind, wifiName: name,
                                     expensive: path.isExpensive, identity: "\(physical?.name ?? "")|\(routers)|\(name ?? "")")
-        let old = network; network = next
+    }
+    private func applyNetwork(_ next: SmartNetworkState) {
+        let old = network
+        if next != old { network = next }
         if !initializedNetwork {
             if next.online {
                 initializedNetwork = true
                 schedule(preferences.onLaunch || !startupWaitedForNetwork ? .launch : .networkRestored)
             } else { startupWaitedForNetwork = true }
         }
-        else if !next.online { cancelPending(); status = preferences.enabled ? L10n.text("等待可用网络") : L10n.text("自动连接未开启") }
-        else if !old.online || old.identity != next.identity || old.expensive != next.expensive { schedule(.networkRestored) }
+        else if !next.online {
+            if pendingTrigger != .wake { cancelPending() }
+            status = preferences.enabled ? L10n.text("等待可用网络") : L10n.text("自动连接未开启")
+        }
+        else if (!old.online || old.identity != next.identity || old.expensive != next.expensive) && pendingTrigger != .wake {
+            schedule(.networkRestored)
+        }
     }
     func schedule(_ trigger: SmartTrigger) {
         guard !stopped, preferences.enabled, !preferences.paused, preferences.accepts(trigger) else { return }
         cancelPending(); let token = generation
+        pendingTrigger = trigger
         pending = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_500_000_000)
             guard let self, !Task.isCancelled, token == self.generation, let model = self.model else { return }
+            defer {
+                if token == self.generation { self.pending = nil; self.pendingTrigger = nil }
+            }
+            var snapshot = await self.freshNetwork()
+            // Wi-Fi commonly becomes available after the wake notification.
+            // Keep this wake intent for a bounded interval, independently of
+            // the separate "network restored" preference.
+            let wakeDeadline = ProcessInfo.processInfo.systemUptime + 30
+            while trigger == .wake && snapshot?.online != true && ProcessInfo.processInfo.systemUptime < wakeDeadline {
+                guard !Task.isCancelled, token == self.generation else { return }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                snapshot = await self.freshNetwork()
+            }
+            guard !Task.isCancelled, token == self.generation, let snapshot else { return }
+            if self.network != snapshot { self.network = snapshot }
             await model.refreshConnectionStatus()
             guard !Task.isCancelled, token == self.generation else { return }
             let decision = SmartConnectionPlanner.decide(preferences: self.preferences, trigger: trigger, network: self.network,
@@ -131,10 +202,10 @@ final class SmartConnectionController: NSObject, ObservableObject, CLLocationMan
                 self.status = L10n.text("正在智能连接…")
                 model.selectedID = id
                 await model.connectSelected(automatically: true, automationPermit: { [weak self] in
-                    guard let self else { return false }
-                    self.refreshNetwork()
-                    guard token == self.generation, !self.stopped, self.target(automatic: true)?.id == id else { return false }
-                    return SmartConnectionPlanner.decide(preferences: self.preferences, trigger: trigger, network: self.network,
+                    guard let self, let snapshot = await self.freshNetwork(),
+                          token == self.generation, !self.stopped, self.target(automatic: true)?.id == id else { return false }
+                    if self.network != snapshot { self.network = snapshot }
+                    return SmartConnectionPlanner.decide(preferences: self.preferences, trigger: trigger, network: snapshot,
                         context: .init(state: .disconnected, helperReady: true, sleeping: self.sleeping), target: id) == .connect(id)
                 })
                 if token == self.generation {

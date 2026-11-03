@@ -227,13 +227,8 @@ public enum LocalInstallation {
         try FileManager.default.removeItem(at: transaction)
     }
     public static func selfMatches(_ roles: [LocalRole], approval: LocalApproval) -> Bool {
-        var code: SecCode?, staticCode: SecStaticCode?, info: CFDictionary?
-        guard SecCodeCopySelf([], &code) == errSecSuccess, let code,
-              SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
-              SecCodeCopySigningInformation(staticCode, [], &info) == errSecSuccess,
-              let values = info as? [String: Any], let hash = values[kSecCodeInfoUnique as String] as? Data else { return false }
-        let hex = hash.map { String(format: "%02x", $0) }.joined()
-        return roles.contains { approval.binaries[$0.rawValue]?.cdhash == hex && values[kSecCodeInfoIdentifier as String] as? String == $0.identifier }
+        guard let identity = ProcessSigningIdentity.current else { return false }
+        return roles.contains { approval.binaries[$0.rawValue]?.cdhash == identity.cdhash && identity.identifier == $0.identifier }
     }
     public static var hasRecoveryEvidence: Bool {
         let fm = FileManager.default

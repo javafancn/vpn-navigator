@@ -5615,9 +5615,9 @@
     "en": "Retry shortcut registration"
   },
   {
-    "key": "重连期间持续保留防火墙，旧进程、DNS 和路由未安全恢复时不会启动新会话。服务器地址固定为本次已解析的 IPv4 或 IPv6。",
-    "zh": "重连期间持续保留防火墙，旧进程、DNS 和路由未安全恢复时不会启动新会话。服务器地址固定为本次已解析的 IPv4 或 IPv6。",
-    "en": "The firewall stays active during reconnection. A new session starts only after the old process, DNS and routes are safely cleared. The server remains pinned to the resolved IPv4 or IPv6 address."
+    "key": "重连期间持续保留防火墙，旧进程、DNS 和路由未安全恢复时不会启动新会话。按配置中的节点和已解析地址依次重试，每次只允许当前节点。",
+    "zh": "重连期间持续保留防火墙，旧进程、DNS 和路由未安全恢复时不会启动新会话。按配置中的节点和已解析地址依次重试，每次只允许当前节点。",
+    "en": "The firewall stays active during reconnection. A new session starts only after the old process, DNS and routes are safely cleared. Retries cycle through configured servers and resolved addresses, allowing only the current server each time."
   },
   {
     "key": "键盘与辅助功能",

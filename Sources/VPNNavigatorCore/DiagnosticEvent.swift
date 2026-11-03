@@ -32,12 +32,20 @@ public enum DiagnosticCode: String, Codable, Sendable {
         }
     }
 }
+/// Fixed stage names and numeric errno only; never persist a route or raw error.
+public enum RoutingTransitionStage: String, Codable, Sendable {
+    case environment, protection, ipv4Routes, ipv6Routes, verification, resolver, commit
+}
 public struct DiagnosticEvent: Codable, Identifiable, Sendable {
     public let id: UUID
     public let date: Date
     public let code: DiagnosticCode
-    public init(_ code: DiagnosticCode, date: Date = Date()) {
+    public let routingStage: RoutingTransitionStage?
+    public let systemError: Int?
+    public init(_ code: DiagnosticCode, date: Date = Date(),
+                routingStage: RoutingTransitionStage? = nil, systemError: Int? = nil) {
         id = UUID(); self.date = date; self.code = code
+        self.routingStage = routingStage; self.systemError = systemError
     }
 }
 public enum OpenVPNLogClassifier {
@@ -83,7 +91,7 @@ public final class DiagnosticEventStore: @unchecked Sendable {
               let values = try? JSONDecoder().decode([DiagnosticEvent].self, from: data) else { return [] }
         return Array(values.suffix(150))
     }
-    public func append(_ code: DiagnosticCode) {
+    public func append(_ code: DiagnosticCode, routingStage: RoutingTransitionStage? = nil, systemError: Int? = nil) {
         lock.lock(); defer { lock.unlock() }
         let fm = FileManager.default, parent = file.deletingLastPathComponent()
         do {
@@ -95,9 +103,10 @@ public final class DiagnosticEventStore: @unchecked Sendable {
                   ((attrs[.posixPermissions] as? NSNumber)?.intValue ?? 0o777) & 0o077 == 0,
                   !fm.fileExists(atPath: file.path) || file.resolvingSymlinksInPath() == file.standardizedFileURL else { return }
             var values = read()
-            if values.last?.code == code, let last = values.last,
+            if let last = values.last, last.code == code,
+               last.routingStage == routingStage, last.systemError == systemError,
                Date().timeIntervalSince(last.date) < 2 { return }
-            values.append(DiagnosticEvent(code)); values = Array(values.suffix(150))
+            values.append(DiagnosticEvent(code, routingStage: routingStage, systemError: systemError)); values = Array(values.suffix(150))
             try JSONEncoder().encode(values).write(to: file, options: .atomic)
             try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         } catch { /* A full disk cannot disable session teardown. */ }

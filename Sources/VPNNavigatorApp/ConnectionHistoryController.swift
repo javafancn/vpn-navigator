@@ -21,7 +21,9 @@ final class ConnectionHistoryController: ObservableObject {
     private var drain: Task<Void, Never>?
     init(model: AppModel, directory: URL) {
         self.model = model; store = .init(directory: directory)
-        subscription = objectWillChange.sink { [weak model] _ in model?.objectWillChange.send() }
+        subscription = objectWillChange.sink { [weak model] _ in
+            if model?.showingConnectionHistory == true { model?.objectWillChange.send() }
+        }
     }
     func start() async {
         guard !started, !loading, !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-demo-snapshot") else { return }
@@ -41,7 +43,8 @@ final class ConnectionHistoryController: ObservableObject {
             guard let self else { return }
             while !self.pending.isEmpty {
                 let next = self.pending.removeFirst()
-                self.state = await self.store.consume(next.input, date: next.date, uptime: next.uptime)
+                let updated = await self.store.consume(next.input, date: next.date, uptime: next.uptime)
+                if updated != self.state { self.state = updated }
             }
             self.drain = nil
         }

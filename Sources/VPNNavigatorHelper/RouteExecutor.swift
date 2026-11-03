@@ -2,12 +2,21 @@ import Foundation
 import Darwin
 import VPNNavigatorCore
 
-/// Root-only route executor. Every OS mutation is bracketed by durable
-/// begin/commit records. A crash between them is considered ambiguous:
+/// Root-only route executor. Bounded batches have durable intents before any
+/// mutation and durable receipts before the next batch. An unfinished intent is ambiguous:
 /// never delete an unproven route or silently start another VPN.
 final class RouteExecutor {
-    private(set) var installed: [RouteTarget] = []
-    private(set) var installed6: [IPv6RouteTarget] = []
+    private var owned = OrderedRouteSet<RouteTarget>()
+    private var owned6 = OrderedRouteSet<IPv6RouteTarget>()
+    var installed: [RouteTarget] { owned.elements }
+    var installed6: [IPv6RouteTarget] { owned6.elements }
+    private let encoder = JSONEncoder()
+    private let synchronize: (FileHandle) throws -> Void
+    private(set) var journalSynchronizations = 0
+    private static let batchSize = 64
+    private enum Change {
+        case ipv4(RouteMutation), ipv6(IPv6RouteMutation)
+    }
     private let journal: URL
     private var ambiguous = false
     private let shouldCancel: () -> Bool
@@ -21,8 +30,9 @@ final class RouteExecutor {
     private var compactAt: Int
 
     init(journal: URL, shouldCancel: @escaping () -> Bool = { false }, run: ((String, [String]) throws -> String)? = nil,
-         compactionInterval: Int = 4_000_000) {
+         compactionInterval: Int = 4_000_000, synchronize: @escaping (FileHandle) throws -> Void = { try $0.synchronize() }) {
         self.journal = journal
+        self.synchronize = synchronize
         self.shouldCancel = shouldCancel
         self.run = run ?? RouteExecutor.command
         usesKernelWriter = run == nil
@@ -31,19 +41,19 @@ final class RouteExecutor {
         guard let data = try? Data(contentsOf: journal) else { return }
         journalBytes = data.count
         let replay = RouteLedgerReplay(data: data)
-        installed = replay.installed
-        installed6 = replay.installed6
+        owned = .init(replay.installed)
+        owned6 = .init(replay.installed6)
         ambiguous = !replay.permitsAutomaticRecovery
         // Legacy JSON arrays and complete final records may have no newline.
         // Replace them before appending, rather than joining two JSON values
         // into a malformed first row during otherwise valid recovery.
         if !ambiguous, !data.isEmpty, data.last != 10 { compactAt = 0 }
         if !ambiguous {
-            if installed.isEmpty && installed6.isEmpty {
+            if owned.isEmpty && owned6.isEmpty {
                 try? FileManager.default.removeItem(at: journal)
                 if !FileManager.default.fileExists(atPath: journal.path) { journalBytes = 0 }
             } else {
-                rollback()
+                rollback(verifiedReplay: true)
             }
         }
     }
@@ -63,35 +73,26 @@ final class RouteExecutor {
         } else { _ = try run("/sbin/route", route.arguments(adding: adding)) }
     }
 
-    func apply(_ route: RouteTarget) throws {
-        guard !shouldCancel() else { throw CancellationError() }
-        guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
-        let output = try run("/usr/sbin/netstat", ["-rn", "-f", "inet"])
-        if Self.occupiedIPv4(output).contains(route.prefix) {
-            throw RouteExecutionError.existingRoute(route.prefix.description)
-        }
-        try install(route)
-    }
+    func apply(_ route: RouteTarget) throws { try apply([route]) }
 
     func apply(_ routes: [RouteTarget], inheriting: Set<RouteTarget> = []) throws {
         guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
-        let snapshot = try run("/usr/sbin/netstat", ["-rn", "-f", "inet"])
-        let occupied = Self.occupiedIPv4(snapshot)
-        do {
-            for route in routes {
-                if occupied.contains(route.prefix) {
-                    if inheriting.contains(route), route.prefix.prefix == 32,
-                       case .interface(let name) = route.destination, DNSRecoveryPolicy.validTunnel(name),
-                       try observe(route).isExactly(route) { continue }
-                    throw RouteExecutionError.existingRoute(route.prefix.description)
-                }
-                try install(route)
+        guard !shouldCancel() else { throw CancellationError() }
+        guard !routes.isEmpty else { return }
+        let occupied = Self.occupiedIPv4(try run("/usr/sbin/netstat", ["-rn", "-f", "inet"]))
+        var batch: [Change] = []
+        for route in routes {
+            if occupied.contains(route.prefix) {
+                try perform(batch); batch.removeAll(keepingCapacity: true)
+                if inheriting.contains(route), route.prefix.prefix == 32,
+                   case .interface(let name) = route.destination, DNSRecoveryPolicy.validTunnel(name),
+                   try observe(route).isExactly(route) { continue }
+                throw RouteExecutionError.existingRoute(route.prefix.description)
             }
-        } catch {
-            // The owning tunnel must exit before any route rollback. Preserve
-            // installed ownership and let ManagedTunnel.stop() do that ordering.
-            throw error
+            batch.append(.ipv4(.init(action: .add, route: route)))
+            if batch.count == Self.batchSize { try perform(batch); batch.removeAll(keepingCapacity: true) }
         }
+        try perform(batch)
     }
 
     // netstat omits /32 on host routes and abbreviates network addresses.
@@ -119,43 +120,20 @@ final class RouteExecutor {
         })
     }
 
-    private func install(_ route: RouteTarget) throws {
-        guard !shouldCancel() else { throw CancellationError() }
-        let mutation = RouteMutation(action: .add, route: route)
-        try append(RouteLedgerEvent(phase: .begun, mutation: mutation))
-        ambiguous = true
-        try mutate(route, adding: true)
-        try append(RouteLedgerEvent(phase: .committed, mutation: mutation))
-        installed.append(route)
-        ambiguous = false
-    }
-
-    /// Always verify route ownership before deleting. If a mutation was left
-    /// incomplete, leave the journal intact rather than guessing OS state.
-    func rollback() {
+    /// A new process validates/replays once; live rollback revalidates the
+    /// journal before cleanup. Never roll back an uncertain kernel mutation.
+    func rollback() { rollback(verifiedReplay: false) }
+    private func rollback(verifiedReplay: Bool) {
         guard !ambiguous else { return }
-        if let data = try? Data(contentsOf: journal),
+        if !verifiedReplay, let data = try? Data(contentsOf: journal),
            !RouteLedgerReplay(data: data).permitsAutomaticRecovery {
-            ambiguous = true
-            return
+            ambiguous = true; return
         }
-        for route in installed6.reversed() {
-            do {
-                let observation = try observe6(route)
-                try release6(route, deleteSystemRoute: observation.isExactly(route))
-            } catch { return }
-        }
-        for route in installed.reversed() {
-            do {
-                let observation = try observe(route)
-                try release(route, deleteSystemRoute: observation.isExactly(route))
-            } catch {
-                // No further cleanup is safe until the failing operation
-                // and its journal records can be inspected by an operator.
-                break
-            }
-        }
-        if !ambiguous && installed.isEmpty && installed6.isEmpty {
+        do {
+            try performChunks(owned6.elements.reversed().map { .ipv6(.init(action: .remove, route: $0)) }, rollback: true)
+            try performChunks(owned.elements.reversed().map { .ipv4(.init(action: .remove, route: $0)) }, rollback: true)
+        } catch { return }
+        if !ambiguous && owned.isEmpty && owned6.isEmpty {
             try? journalHandle?.close(); journalHandle = nil
             try? FileManager.default.removeItem(at: journal)
             if !FileManager.default.fileExists(atPath: journal.path) { journalBytes = 0; compactAt = compactionInterval }
@@ -164,28 +142,74 @@ final class RouteExecutor {
 
     func refreshDirectRoutes(added: [RouteTarget], removed: [RouteTarget]) throws {
         guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
-        // The owning tunnel is disconnected by the caller if any mutation fails.
         if !added.isEmpty { try apply(added) }
-        for route in removed {
-            guard !shouldCancel() else { throw CancellationError() }
-            guard installed.contains(route) else { continue }
-            let actual = try observe(route)
-            guard actual.isExactly(route) else {
-                throw RouteExecutionError.routeOwnershipLost(route.prefix.description)
-            }
-            try release(route, deleteSystemRoute: true)
-        }
+        try performChunks(removed.filter { owned.contains($0) }.map { .ipv4(.init(action: .remove, route: $0)) })
     }
 
-    private func release(_ route: RouteTarget, deleteSystemRoute: Bool) throws {
-        let mutation = RouteMutation(action: .remove, route: route)
-        try append(RouteLedgerEvent(phase: .begun, mutation: mutation))
-        ambiguous = true
-        if deleteSystemRoute {
-            try mutate(route, adding: false)
+    private func performChunks(_ changes: [Change], rollback: Bool = false) throws {
+        for start in stride(from: 0, to: changes.count, by: Self.batchSize) {
+            try perform(Array(changes[start..<min(changes.count, start + Self.batchSize)]), rollback: rollback)
         }
-        try append(RouteLedgerEvent(phase: .committed, mutation: mutation))
-        installed.removeAll { $0 == route }
+    }
+    private func encode(_ change: Change, phase: RouteLedgerEvent.Phase, into data: inout Data) throws {
+        switch change {
+        case .ipv4(let mutation): data.append(try encoder.encode(RouteLedgerEvent(phase: phase, mutation: mutation)))
+        case .ipv6(let mutation): data.append(try encoder.encode(IPv6RouteLedgerEvent(phase: phase, ipv6Mutation: mutation)))
+        }
+        data.append(10)
+    }
+    private func perform(_ changes: [Change], rollback: Bool = false) throws {
+        guard !changes.isEmpty else { return }
+        guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
+        if !rollback && shouldCancel() { throw CancellationError() }
+        var intents = Data()
+        for change in changes { try encode(change, phase: .begun, into: &intents) }
+        // Reserve both halves of the batch. A crash after receipts must never
+        // leave an otherwise valid journal beyond the recovery reader's cap.
+        if journalBytes + intents.count * 2 + 1024 >= compactAt { try compactJournal() }
+        // An entire bounded batch is durable BEFORE its first kernel write.
+        ambiguous = true
+        try writeJournal(intents)
+        var receipts = Data(), index = 0, issued = false
+        do {
+            for (offset, change) in changes.enumerated() {
+                index = offset; issued = false
+                if !rollback && shouldCancel() { throw CancellationError() }
+                switch change {
+                case .ipv4(let mutation):
+                    let adding = mutation.action == .add
+                    let matches = adding ? true : try observe(mutation.route).isExactly(mutation.route)
+                    if !adding && !matches && !rollback { throw RouteExecutionError.routeOwnershipLost(mutation.route.prefix.description) }
+                    issued = adding || matches
+                    if issued { try mutate(mutation.route, adding: adding) }
+                    try encode(change, phase: .committed, into: &receipts)
+                    if adding { owned.insert(mutation.route) } else { owned.remove(mutation.route) }
+                case .ipv6(let mutation):
+                    let adding = mutation.action == .add
+                    let matches = adding ? true : try observe6(mutation.route).isExactly(mutation.route)
+                    if !adding && !matches && !rollback { throw RouteExecutionError.routeOwnershipLost(mutation.route.prefix.description) }
+                    issued = adding || matches
+                    if issued { try mutate(mutation.route, adding: adding) }
+                    try encode(change, phase: .committed, into: &receipts)
+                    if adding { owned6.insert(mutation.route) } else { owned6.remove(mutation.route) }
+                }
+                index = offset + 1; issued = false
+            }
+        } catch {
+            let cause = error
+            // Cancel ONLY intents for operations this process never issued.
+            // The failing kernel write, if any, remains uncertain. Persist
+            // earlier receipts before exposing the error to session teardown.
+            do {
+                for offset in (index + (issued ? 1 : 0))..<changes.count {
+                    try encode(changes[offset], phase: .cancelled, into: &receipts)
+                }
+                try writeJournal(receipts)
+                ambiguous = issued
+            } catch { ambiguous = true }
+            throw cause
+        }
+        try writeJournal(receipts)
         ambiguous = false
     }
 
@@ -199,12 +223,8 @@ final class RouteExecutor {
         return ObservedIPv4Route(commandOutput: output)
     }
 
-    private func append<T: Encodable>(_ event: T) throws {
-        try autoreleasepool {
-        var data = try JSONEncoder().encode(event)
-        data.append(10)
-        // Never compact after a begun intent or a failed kernel mutation.
-        if !ambiguous, journalBytes + data.count + 1024 >= compactAt { try compactJournal() }
+    private func writeJournal(_ data: Data) throws {
+        guard !data.isEmpty else { return }
         if journalHandle == nil {
             let descriptor = open(journal.path, O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
             guard descriptor >= 0 else { throw RouteExecutionError.journalFailure }
@@ -217,16 +237,15 @@ final class RouteExecutor {
         }
         guard let handle = journalHandle else { throw RouteExecutionError.journalFailure }
         try handle.write(contentsOf: data)
-        try handle.synchronize()
+        try synchronize(handle); journalSynchronizations += 1
         journalBytes += data.count
-        }
     }
 
     private func compactJournal() throws {
         guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
         let checkpoint = RouteLedgerCheckpoint(installed: installed, installed6: installed6)
         guard checkpoint.isValid else { throw RouteExecutionError.journalFailure }
-        var bytes = try JSONEncoder().encode(checkpoint)
+        var bytes = try encoder.encode(checkpoint)
         bytes.append(10)
         // Leave at least four MB for later begin/commit records beneath the
         // recovery reader's 16 MB ceiling. Realistic maximum dual-stack plans
@@ -242,6 +261,8 @@ final class RouteExecutor {
 
     func applyIPv6(_ routes: [IPv6RouteTarget], inheriting: Set<IPv6RouteTarget> = []) throws {
         guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
+        guard !shouldCancel() else { throw CancellationError() }
+        guard !routes.isEmpty else { return }
         let snapshot = try run("/usr/sbin/netstat", ["-rn", "-f", "inet6"])
         let occupied = Set(snapshot.components(separatedBy: .newlines).compactMap { line -> String? in
             guard let first = line.split(whereSeparator: { $0.isWhitespace }).first else { return nil }
@@ -249,29 +270,24 @@ final class RouteExecutor {
             guard let prefix = try? IPv6CIDR(destination.contains("/") ? destination : destination + "/128") else { return nil }
             return prefix.description
         })
+        var batch: [Change] = []
         for route in routes {
-            guard !shouldCancel() else { throw CancellationError() }
             if occupied.contains(route.prefix.description) {
+                try perform(batch); batch.removeAll(keepingCapacity: true)
                 if inheriting.contains(route), route.prefix.prefix == 128,
                    case .interface(let name) = route.destination, DNSRecoveryPolicy.validTunnel(name),
                    try observe6(route).isExactly(route) { continue }
                 throw RouteExecutionError.existingRoute(route.prefix.description)
             }
-            let mutation = IPv6RouteMutation(action: .add, route: route)
-            try append(IPv6RouteLedgerEvent(phase: .begun, ipv6Mutation: mutation)); ambiguous = true
-            try mutate(route, adding: true)
-            try append(IPv6RouteLedgerEvent(phase: .committed, ipv6Mutation: mutation))
-            installed6.append(route); ambiguous = false
+            batch.append(.ipv6(.init(action: .add, route: route)))
+            if batch.count == Self.batchSize { try perform(batch); batch.removeAll(keepingCapacity: true) }
         }
+        try perform(batch)
     }
     func refreshIPv6(added: [IPv6RouteTarget], removed: [IPv6RouteTarget]) throws {
         guard !ambiguous else { throw RouteExecutionError.ambiguousJournal }
         if !added.isEmpty { try applyIPv6(added) }
-        for route in removed where installed6.contains(route) {
-            guard !shouldCancel() else { throw CancellationError() }
-            guard try observe6(route).isExactly(route) else { throw RouteExecutionError.routeOwnershipLost(route.prefix.description) }
-            try release6(route, deleteSystemRoute: true)
-        }
+        try performChunks(removed.filter { owned6.contains($0) }.map { .ipv6(.init(action: .remove, route: $0)) })
     }
     private func observe6(_ route: IPv6RouteTarget) throws -> ObservedIPv6Route {
         if usesKernelWriter {
@@ -280,14 +296,6 @@ final class RouteExecutor {
         }
         return ObservedIPv6Route(commandOutput: try run("/sbin/route", ["-n", "get", "-inet6", "-net", route.prefix.description]))
     }
-    private func release6(_ route: IPv6RouteTarget, deleteSystemRoute: Bool) throws {
-        let mutation = IPv6RouteMutation(action: .remove, route: route)
-        try append(IPv6RouteLedgerEvent(phase: .begun, ipv6Mutation: mutation)); ambiguous = true
-        if deleteSystemRoute { try mutate(route, adding: false) }
-        try append(IPv6RouteLedgerEvent(phase: .committed, ipv6Mutation: mutation))
-        installed6.removeAll { $0 == route }; ambiguous = false
-    }
-
     /// Bounded system-tool invocation: never run a shell or external profile
     /// commands, and never let a stuck route/netstat command hang the root queue.
     @discardableResult

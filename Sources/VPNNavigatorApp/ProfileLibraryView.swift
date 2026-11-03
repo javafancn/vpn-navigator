@@ -199,7 +199,8 @@ struct ProfileLibrary: View {
     }
 
     private var profileList: some View {
-        NativeProfileList(profiles: filtered, selection: $model.selectedID, keyboard: keyboard) { profile in
+        NativeProfileList(profiles: filtered, selection: $model.selectedID, keyboard: keyboard,
+                          connectedProfileID: model.connected ? model.activeProfileID : nil) { profile in
             AnyView(profileRow(profile))
         }
     }

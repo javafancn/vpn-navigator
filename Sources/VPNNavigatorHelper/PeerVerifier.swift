@@ -13,15 +13,7 @@ enum PeerVerifier {
             guard let approval = try? LocalInstallation.load(), uid == approval.ownerUID || uid == 0 else { return nil }
             return try? approval.requirement(for: uid == 0 ? [.setup] : [.app, .agent])
         }
-        var own: SecCode?
-        var staticCode: SecStaticCode?
-        guard SecCodeCopySelf([], &own) == errSecSuccess, let own,
-              SecCodeCopyStaticCode(own, [], &staticCode) == errSecSuccess,
-              let staticCode else { return nil }
-        var info: CFDictionary?
-        guard SecCodeCopySigningInformation(staticCode, [], &info) == errSecSuccess,
-              let values = info as? [String: Any],
-              let team = values[kSecCodeInfoTeamIdentifier as String] as? String,
+        guard let team = ProcessSigningIdentity.current?.team,
               !team.isEmpty else { return nil }
         let requirement =
           "anchor apple generic and certificate leaf[subject.OU] = \"\(team)\" and (identifier \"com.javafancn.vpn-navigator\" or identifier \"com.javafancn.vpn-navigator.rule-agent\")"

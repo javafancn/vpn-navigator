@@ -873,6 +873,7 @@ struct SystemSettingsPane: View {
                         Button(L10n.text("检查更新")) {
                             Task { await model.checkForUpdates() }
                         }
+                        .disabled(model.checkingForUpdates)
                         Button(L10n.text("下载已验证的更新包…")) {
                             Task { await model.downloadVerifiedUpdate() }
                         }
@@ -1085,7 +1086,10 @@ struct ProfileDetail: View {
             draftName = profile.name
             draftGroup = profile.group
             draftNotes = profile.notes
-            Task { history = await model.revisions(for: profile) }
+        }
+        .task(id: model.profileHistoryRevisions[profile.id]) {
+            let value = await model.revisions(for: profile)
+            if !Task.isCancelled { history = value }
         }
     }
 

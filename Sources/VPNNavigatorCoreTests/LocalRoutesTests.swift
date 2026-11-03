@@ -2,6 +2,11 @@ import XCTest
 @testable import VPNNavigatorCore
 
 final class LocalRoutesTests: XCTestCase {
+    func testImplicitDarwinMasksRemainOnLinkNetworks() {
+        let table = "Internet:\nDestination Gateway Flags Netif\n169.254 link#12 UCS en1\n192.168.110 link#12 UCS en1\n192.168.110.1/32 link#12 UCS en1\n192.168.110.10 aa:bb:cc UHLW en1\n224 link#12 UmCS en1\n"
+        XCTAssertEqual(LocalIPv4Networks.parse(netstat: table, physicalInterface: "en1").map(\.description),
+                       ["169.254.0.0/16", "192.168.110.0/24", "192.168.110.1/32"])
+    }
     func testDarwinMulticastAndBroadcastRoutesAreNotLANsOrPFExceptions() throws {
         let table = """
         Internet:

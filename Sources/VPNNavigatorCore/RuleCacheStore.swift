@@ -5,20 +5,30 @@ import Darwin
 /// read only until the first successful publication. The advisory lock also
 /// serializes the app and the user-scoped background agent.
 enum RuleCacheStore {
+    private static let validation = ValidatedFileCache<Snapshot>()
     struct Snapshot: Codable {
         var schemaVersion = 1
         var ipv4: String?
         var ipv6: String?
         var ipv4UpdatedAt: Date?
+        var parsed4: RuleSet?
+        var parsed6: IPv6RuleSet?
+        private enum CodingKeys: String, CodingKey { case schemaVersion, ipv4, ipv6, ipv4UpdatedAt }
         var bundle: String? { ipv4.map { RoutingRuleBundle(ipv4: $0, ipv6: ipv6).json } }
     }
     static func read(_ root: URL) throws -> Snapshot {
+        try validation.value(paths: [root] + ["routing-rules.json", "china-ipv4.txt", "china-ipv6-preview.txt"].map { root.appendingPathComponent($0) }) {
+            var value = try readUncached(root)
+            value.parsed4 = try value.ipv4.map { try RuleSet(text: $0) }
+            value.parsed6 = try value.ipv6.map { try IPv6RuleSet(text: $0) }
+            return value
+        }
+    }
+    private static func readUncached(_ root: URL) throws -> Snapshot {
         let file = root.appendingPathComponent("routing-rules.json")
         if FileManager.default.fileExists(atPath: file.path) {
             let value = try JSONDecoder().decode(Snapshot.self, from: ProfileFileIO.read(file, maximumBytes: 5_000_000))
             guard value.schemaVersion == 1 else { throw RuleError.suspiciousChange }
-            if let text = value.ipv4 { _ = try RuleSet(text: text) }
-            if let text = value.ipv6 { _ = try IPv6RuleSet(text: text) }
             return value
         }
         func legacy(_ name: String) throws -> String? {
@@ -37,7 +47,7 @@ enum RuleCacheStore {
         private let descriptor: Int32
         private let archived: URL?
         private var published = false
-        init(root: URL, ipv4: RuleSet?, ipv6: IPv6RuleSet?) throws {
+        init(root: URL, ipv4: RuleSet?, ipv6: IPv6RuleSet?, onlyMissing: Bool = false) throws {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
             let lock = open(root.appendingPathComponent("routing-rules.lock").path, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, mode_t(0o600))
@@ -53,17 +63,20 @@ enum RuleCacheStore {
                     }
                 }
                 let old = try RuleCacheStore.read(root)
-                if let ipv4, let text = old.ipv4 { try RuleUpdater.validateChange(previous: RuleSet(text: text), next: ipv4) }
+                let ipv4 = onlyMissing && old.parsed4 != nil ? nil : ipv4
+                let ipv6 = onlyMissing && old.parsed6 != nil ? nil : ipv6
+                if let ipv4, let previous = old.parsed4 { try RuleUpdater.validateChange(previous: previous, next: ipv4) }
                 if let ipv6 {
                     guard ipv6.routes.count >= 100 else { throw APNICIPv6Error.missingCountryData }
-                    if let text = old.ipv6 { try IPv6RuleSet.validateChange(previous: IPv6RuleSet(text: text), next: ipv6) }
+                    if let previous = old.parsed6 { try IPv6RuleSet.validateChange(previous: previous, next: ipv6) }
                 }
                 var value = old
                 if let ipv4 {
+                    value.parsed4 = ipv4
                     value.ipv4 = ipv4.routes.map(\.description).joined(separator: "\n") + "\n"
                     if value.ipv4 != old.ipv4 { value.ipv4UpdatedAt = Date() }
                 }
-                if let ipv6 { value.ipv6 = ipv6.routes.map(\.description).joined(separator: "\n") + "\n" }
+                if let ipv6 { value.ipv6 = ipv6.routes.map(\.description).joined(separator: "\n") + "\n"; value.parsed6 = ipv6 }
                 let stage = root.appendingPathComponent(".routing-rules-" + UUID().uuidString)
                 try ProfileFileIO.write(JSONEncoder().encode(value), to: stage)
                 var archived: URL?
@@ -121,8 +134,30 @@ public enum RoutingRuleUpdate {
     }
     public static func cached(root: URL) async throws -> Cached {
         let snapshot = try RuleCacheStore.read(root)
-        return try Cached(ipv4: snapshot.ipv4.map { try RuleSet(text: $0) },
-                          ipv6: snapshot.ipv6.map { try IPv6RuleSet(text: $0) }, ipv4UpdatedAt: snapshot.ipv4UpdatedAt)
+        return Cached(ipv4: snapshot.parsed4, ipv6: snapshot.parsed6, ipv4UpdatedAt: snapshot.ipv4UpdatedAt)
+    }
+    /// Seed missing families in one publication. The lock rechecks absence so
+    /// a concurrent background refresh can never be replaced by an older seed.
+    public static func bootstrap(root: URL, ipv4Seed: URL?, ipv6Seed: URL?) async throws {
+        let old = try RuleCacheStore.read(root)
+        let ipv4 = try old.parsed4 == nil ? ipv4Seed.map {
+            try RuleSet(text: String(decoding: ProfileFileIO.read($0), as: UTF8.self))
+        } : nil
+        let ipv6 = try old.parsed6 == nil ? ipv6Seed.map {
+            try IPv6RuleSet(text: String(decoding: ProfileFileIO.read($0), as: UTF8.self))
+        } : nil
+        if let ipv4, ipv4.routes.count < 100 { throw RuleError.empty }
+        if let ipv6, ipv6.routes.count < 100 { throw APNICIPv6Error.missingCountryData }
+        guard ipv4 != nil || ipv6 != nil else { return }
+        for attempt in 0..<4 {
+            do {
+                try RuleCacheStore.Prepared(root: root, ipv4: ipv4, ipv6: ipv6, onlyMissing: true).publish()
+                return
+            } catch RuleCacheFailure.busy {
+                if attempt == 3 { throw RuleCacheFailure.busy }
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+        }
     }
     /// The callback returns the helper's typed acknowledgement, or NO_ACTIVE_SPLIT
     /// when no live split session needs changing. It is also used for compensation.

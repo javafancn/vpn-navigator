@@ -13,6 +13,11 @@ int vpn_routes_gateway6(int fd, const uint8_t network[16], uint8_t prefix,
 int vpn_routes_reader_open(void);
 int vpn_routes_inspect(int fd, int family, const uint8_t *network, uint8_t prefix,
                       char *output, size_t capacity);
+int vpn_routes_lookup(int fd, int family, const uint8_t *address, char *output, size_t capacity);
+int vpn_routes_ipv6_defaults(char *output, size_t capacity);
+int vpn_routes_ipv6_defaults_decode(const void *data, size_t length, char *output, size_t capacity);
+int vpn_routes_local_networks(int family, char *output, size_t capacity);
+int vpn_routes_local_networks_decode(const void *data, size_t length, int family, char *output, size_t capacity);
 // Shared decoder exposed for captured-message regression tests.
 int vpn_routes_decode(const void *message, size_t length, int family,
                       char *output, size_t capacity);

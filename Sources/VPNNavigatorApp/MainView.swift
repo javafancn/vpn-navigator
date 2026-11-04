@@ -64,7 +64,6 @@ struct MainView: View {
             })
             HStack(spacing: 0) {
                 sidebar.frame(width: 228)
-                Rectangle().fill(Color.white.opacity(0.24)).frame(width: 1)
                 VStack(spacing: 0) {
                     if let issue = model.profileIndexIssue {
                         HStack(spacing: 12) {
@@ -140,7 +139,7 @@ struct MainView: View {
             if model.overviewIsFixture { model.showOverviewSnapshot() }
             if ProcessInfo.processInfo.arguments.contains("--vpnnav-status-bar-self-test"), StatusBarSelfTest.begin() {
                 Task {
-                    do { try await StatusBarSelfTest.run(model: model); Darwin.exit(0) }
+                    do { try await StatusBarSelfTest.run(model: model, openMainScene: { openWindow(id: "main") }); Darwin.exit(0) }
                     catch { print("Status bar and window lifecycle self-test failed: \(error)"); Darwin.exit(1) }
                 }
             }
@@ -341,7 +340,8 @@ struct MainView: View {
         }
         .animation(GlassMotion.selection(reduceMotion), value: tab)
         .overlay(alignment: .trailing) {
-            Rectangle().fill(Color.white.opacity(0.36)).frame(width: 1)
+            Rectangle().fill(GlassPalette.ink.opacity(0.08)).frame(width: 0.5)
+                .allowsHitTesting(false)
         }
     }
 
@@ -676,8 +676,9 @@ private struct RoutingWorkspace: View {
                                     Button(saved.savedAt.formatted(.dateTime.locale(L10n.locale).year().month().day().hour().minute())) { snapshotToRestore = saved }
                                 }
                             } label: { Text(L10n.text("历史与导入")).frame(maxWidth: .infinity) }
+                            .menuStyle(.borderlessButton)
                             .menuIndicator(.hidden)
-                            .buttonStyle(ReferenceSecondaryButton())
+                            .referenceInput(height: 36)
                             .disabled(model.busy)
                         }
                     }
@@ -708,7 +709,7 @@ private struct RoutingWorkspace: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .frame(height: 440)
+            .frame(minHeight: 440, alignment: .top)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, GlassLayout.pageInset)

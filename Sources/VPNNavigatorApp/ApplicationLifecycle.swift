@@ -16,8 +16,12 @@ final class ApplicationLifecycle: NSObject, NSApplicationDelegate {
     private var pendingProfiles = ProfileOpenQueue()
     private var quitting = false
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { model?.quickAccess.openMainWindow() }
-        return true
+        guard let model else { return true }
+        // A visible settings/utility window does not mean the workspace is
+        // open. Handle every Dock reopen ourselves and suppress AppKit's
+        // default creation path, which can race the SwiftUI open request.
+        model.quickAccess.openMainWindow()
+        return false
     }
     func application(_ application: NSApplication, open urls: [URL]) {
         var request = ProfileOpenQueue(); request.append(urls)

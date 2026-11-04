@@ -1681,16 +1681,15 @@ struct VPNNavigatorApp: App {
         }
     }
     var body: some Scene {
-        WindowGroup("VPN Navigator", id: "main") {
+        Window("VPN Navigator", id: "main") {
             MainView().environmentObject(model).environmentObject(workspaceCommands)
                 .frame(minWidth: 1100, minHeight: 700)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 700)
         .commands {
-            // The primary scene participates in launch/restoration, while
-            // every explicit open reuses its tracked window. No duplicate
-            // main workspace is created by File > New Window / Command-N.
+            // The workspace is a single-instance scene, including launch,
+            // restoration, Dock reopen and concurrent openWindow requests.
             CommandGroup(replacing: .newItem) { }
             CommandGroup(after: .newItem) {
                 Button(L10n.text("快速打开…")) { model.quickAccess.toggle() }

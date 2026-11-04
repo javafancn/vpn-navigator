@@ -10,7 +10,7 @@ enum StatusBarSelfTest {
         guard !started else { return false }
         started = true; return true
     }
-    static func run(model: AppModel) async throws {
+    static func run(model: AppModel, openMainScene: () -> Void) async throws {
         guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" else { throw Failure.check("CI only") }
         try await settle()
         let profile = VPNProfile(name: "Synthetic status fixture", sourceFilename: "fixture.ovpn", relativePath: "not-on-disk")
@@ -85,7 +85,58 @@ enum StatusBarSelfTest {
         mainWindow()?.performClose(nil); model.quickAccess.openMainWindow(); model.quickAccess.openMainWindow(); try await settle()
         guard NSApp.activationPolicy() == .regular, mainWindow()?.isVisible == true,
               NSApp.windows.filter({ $0.title == "VPN Navigator" && !($0 is NSPanel) && $0.isVisible }).count == 1 else { throw Failure.check("close/reopen race") }
-        print("PASS: template throughput label, bundled logo, actual SwiftUI close/reopen, Dock activation policy, unrelated-window ownership and synthetic session preservation; no VPN requests.")
+        // Exercise scene creation directly: the presentation coordinator alone
+        // cannot prevent SwiftUI/AppKit from creating a second WindowGroup instance.
+        let originalWindow = mainWindow()
+        openMainScene(); openMainScene(); openMainScene()
+        try await settle()
+        try requireSingleMainWindow("concurrent scene opens", expected: originalWindow)
+
+        let lifecycle = ApplicationLifecycle()
+        lifecycle.model = model
+        func dockReopen(hasVisibleWindows: Bool) throws {
+            guard !lifecycle.applicationShouldHandleReopen(NSApp, hasVisibleWindows: hasVisibleWindows) else {
+                throw Failure.check("Dock reopen must suppress default window creation")
+            }
+        }
+        try dockReopen(hasVisibleWindows: true)
+        try await settle()
+        try requireSingleMainWindow("Dock reopen with visible workspace", expected: originalWindow)
+        mainWindow()?.miniaturize(nil)
+        try await settle()
+        try dockReopen(hasVisibleWindows: false)
+        try await settle()
+        try requireSingleMainWindow("Dock restores minimized workspace", expected: originalWindow)
+        mainWindow()?.orderOut(nil)
+        try dockReopen(hasVisibleWindows: false)
+        try await settle()
+        try requireSingleMainWindow("Dock restores hidden workspace", expected: originalWindow)
+
+        let utility = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+            styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        utility.isReleasedWhenClosed = false
+        utility.orderFront(nil)
+        defer { utility.close() }
+        mainWindow()?.performClose(nil)
+        try await settle()
+        try dockReopen(hasVisibleWindows: true)
+        try dockReopen(hasVisibleWindows: true)
+        openMainScene()
+        try await settle()
+        try requireSingleMainWindow("Dock reopen while utility remains visible")
+        mainWindow()?.performClose(nil)
+        try dockReopen(hasVisibleWindows: false)
+        try dockReopen(hasVisibleWindows: false)
+        openMainScene()
+        try await settle()
+        try requireSingleMainWindow("Dock close/reopen race")
+        guard model.connected, model.activeProfileID == profile.id else { throw Failure.check("Dock reopen preserves session") }
+        print("PASS: template throughput label, bundled logo, single-instance SwiftUI scene, Dock reopen/minimize/hide/close races, unrelated-window ownership and synthetic session preservation; no VPN requests.")
+    }
+    private static func requireSingleMainWindow(_ check: String, expected: NSWindow? = nil) throws {
+        let windows = NSApp.windows.filter { $0.title == "VPN Navigator" && !($0 is NSPanel) && ($0.isVisible || $0.isMiniaturized) }
+        guard windows.count == 1, let window = windows.first, window.isVisible, !window.isMiniaturized,
+              expected == nil || window === expected, NSApp.activationPolicy() == .regular else { throw Failure.check(check) }
     }
     private static func mainWindow() -> NSWindow? {
         NSApp.windows.first { $0.title == "VPN Navigator" && !($0 is NSPanel) && $0.isVisible }

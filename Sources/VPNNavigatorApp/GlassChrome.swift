@@ -36,20 +36,30 @@ enum GlassSurface {
     static let mist = Color.white
     static let sidebar = Color.white
     static let panel = Color.white
-    static let windowOpacity = 0.025
-    static let cardOpacity = 0.12
+    static let windowOpacity = 0.012
+    static let cardOpacity = 0.095
+}
+
+enum GlassBackdrop {
+    case workspace, popover
+    var material: NSVisualEffectView.Material { self == .workspace ? .sidebar : .popover }
+    // Keep most of the native blur, with a small lift in desktop visibility.
+    var opacity: CGFloat { self == .workspace ? 0.90 : 0.96 }
 }
 
 struct GlassAtmosphere: View {
     var onWindow: ((NSWindow) -> Void)? = nil
+    var backdrop: GlassBackdrop = .workspace
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
+        let opaque = GlassAccessibility.increasedContrast(contrast) || (reduceTransparency &&
+            !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot"))
         ZStack {
-            DesktopVisualEffect(onWindow: onWindow)
-            if GlassAccessibility.increasedContrast(contrast) || (reduceTransparency &&
-                !ProcessInfo.processInfo.arguments.contains("--vpnnav-ui-glass-snapshot")) {
+            DesktopVisualEffect(onWindow: onWindow, backdrop: backdrop,
+                opaque: opaque)
+            if opaque {
                 Color(nsColor: .windowBackgroundColor)
             } else {
                 Color.white.opacity(GlassSurface.windowOpacity)
@@ -63,6 +73,7 @@ struct GlassAtmosphere: View {
 
 final class NativeWindowGlass: NSVisualEffectView {
     var onWindow: ((NSWindow) -> Void)?
+    var backdrop: GlassBackdrop = .workspace
     private weak var configuredWindow: NSWindow?
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -74,35 +85,44 @@ final class NativeWindowGlass: NSVisualEffectView {
         if configuredWindow !== window {
             window.isOpaque = false
             window.backgroundColor = .clear
-            window.titlebarAppearsTransparent = true
-            window.titleVisibility = .hidden
-            window.styleMask.insert(.fullSizeContentView)
-            window.isMovableByWindowBackground = true
+            if backdrop == .workspace {
+                window.titlebarAppearsTransparent = true
+                window.titleVisibility = .hidden
+                window.styleMask.insert(.fullSizeContentView)
+                window.isMovableByWindowBackground = true
+            }
             configuredWindow = window
         }
         // Do not reset window chrome/geometry on every model or typing update.
         let aspect = NSSize(width: 11, height: 7)
-        if window.title.contains("VPN Navigator"), !(window is NSPanel),
+        if backdrop == .workspace, window.title.contains("VPN Navigator"), !(window is NSPanel),
            window.contentAspectRatio != aspect {
             window.contentAspectRatio = aspect
         }
     }
 }
 
-/// One full-strength native blur. Lowering the effect view's alpha also
-/// reveals unblurred wallpaper; tune readability with the neutral veil above.
+/// One native blur per window. Only a small amount of desktop detail passes
+/// through; accessibility modes keep the full material and opaque fallback.
 struct DesktopVisualEffect: NSViewRepresentable {
     var onWindow: ((NSWindow) -> Void)? = nil
+    var backdrop: GlassBackdrop = .workspace
+    var opaque = false
     func makeNSView(context: Context) -> NativeWindowGlass {
         let view = NativeWindowGlass()
         view.onWindow = onWindow
-        view.material = .sidebar
+        view.backdrop = backdrop
+        view.material = backdrop.material
+        view.alphaValue = opaque ? 1 : backdrop.opacity
         view.blendingMode = .behindWindow
         view.state = .followsWindowActiveState
         return view
     }
     func updateNSView(_ view: NativeWindowGlass, context: Context) {
         view.onWindow = onWindow
+        view.backdrop = backdrop
+        view.material = backdrop.material
+        view.alphaValue = opaque ? 1 : backdrop.opacity
         view.configureWindow()
     }
 }
@@ -115,8 +135,8 @@ struct ReferenceWorkspaceSurface: ViewModifier {
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         content
-            .background(shape.fill(Color.white.opacity(0.02)))
-            .overlay(shape.strokeBorder(GlassAccessibility.increasedContrast(contrast) ? Color.primary.opacity(0.55) : Color.white.opacity(0.30), lineWidth: GlassAccessibility.increasedContrast(contrast) ? 1.5 : 0.75)
+            .background(shape.fill(Color.white.opacity(0.01)))
+            .overlay(shape.strokeBorder(GlassAccessibility.increasedContrast(contrast) ? Color.primary.opacity(0.55) : Color.white.opacity(0.14), lineWidth: GlassAccessibility.increasedContrast(contrast) ? 1.5 : 0.75)
                 .allowsHitTesting(false))
     }
 }
@@ -142,7 +162,7 @@ private struct GlassCardModifier: ViewModifier {
         content
             .background(shape.fill(opaqueFallback ? Color(nsColor: .windowBackgroundColor) :
                 Color.white.opacity(GlassSurface.cardOpacity)))
-            .overlay(shape.strokeBorder(GlassAccessibility.increasedContrast(contrast) ? Color.primary.opacity(0.55) : Color.white.opacity(active ? 0.65 : 0.50), lineWidth: GlassAccessibility.increasedContrast(contrast) ? 1.5 : 0.75)
+            .overlay(shape.strokeBorder(GlassAccessibility.increasedContrast(contrast) ? Color.primary.opacity(0.55) : Color.white.opacity(active ? 0.55 : 0.38), lineWidth: GlassAccessibility.increasedContrast(contrast) ? 1.5 : 0.75)
                 .allowsHitTesting(false))
             .shadow(color: Color.black.opacity(active ? 0.04 : 0.025), radius: 8, y: 3)
     }

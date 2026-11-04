@@ -15,6 +15,9 @@ import time
 assert sys.platform == 'darwin' and os.environ.get('GITHUB_ACTIONS') == 'true'
 counts = {'direct': [], 'direct-backup': [], 'vpn': [], 'vpn-backup': []}
 lock = threading.Lock()
+recovery_available = threading.Event()
+idle_seconds = float(os.environ.get('VPNNAV_DNS_IDLE_SECONDS', '2.2'))
+assert 0 <= idle_seconds <= 43200, 'Idle interval must be 0..43200 seconds'
 
 
 def answer(packet, path, tcp):
@@ -29,6 +32,8 @@ def answer(packet, path, tcp):
     backup = path.endswith('backup')
     if name.startswith('timeout.') or (name.startswith('blackhole.') and not backup):
         return None
+    if name.startswith('recovery.') and not recovery_available.is_set():
+        return None
     if name.startswith('domestic-down.') and direct:
         return None
     if name.startswith('slow.') and not backup:
@@ -41,7 +46,13 @@ def answer(packet, path, tcp):
         return packet[:2] + struct.pack('!HHHHH', 0x8380, 1, 0, 0, 0) + packet[12:end]
     if not direct and not name.startswith('healthy.'):
         time.sleep(.18)  # Deterministic distant VPN resolver latency.
-    if kind == 28:
+    if kind in [64, 65]:
+        # ServiceMode with ALPN=h2 and a mandatory ipv4hint identifying the
+        # policy group. Valid opaque wire data must survive cache hits intact.
+        ip = (struct.pack('!H', 1) + b'\0' + struct.pack('!HHH', 0, 2, 4)
+              + struct.pack('!HH', 1, 3) + b'\x02h2'
+              + struct.pack('!HH', 4, 4) + socket.inet_aton('192.0.2.' + ('1' if direct else '2')))
+    elif kind == 28:
         ip = socket.inet_pton(socket.AF_INET6, '2001:db8::' + ('1' if direct else '2'))
     else:
         ip = socket.inet_aton('192.0.2.' + ('1' if direct else '2'))
@@ -245,18 +256,38 @@ try:
 
     # TTL wire caching must restore each caller's ID, age TTLs, expire, and
     # keep UDP/TCP responses isolated. Other fixture answers retain TTL zero.
+    for kind in [1, 64, 65]:
+        for tcp in [False, True]:
+            name = f'cache.ttl{kind}.baidu.com'
+            before = sum(1 for n, t in counts['direct'] if n == name and t == tcp)
+            first = query(name, tcp=tcp, kind=kind)
+            cached = query(name, tcp=tcp, kind=kind, ident=b'\x98\x76')
+            assert cached[2:] == first[2:], 'Cached service parameters changed'
+            assert sum(1 for n, t in counts['direct'] if n == name and t == tcp) == before + 1
+            # Fixed uncompressed question length plus RR name/type/class.
+            ttl_offset = 12 + sum(len(s) + 1 for s in name.split('.')) + 5 + 6
+            time.sleep(1.05)
+            aged = query(name, tcp=tcp, kind=kind)
+            assert struct.unpack('!I', aged[ttl_offset:ttl_offset+4])[0] == 1, 'Cache did not age the RR TTL'
+            time.sleep(1.05)
+            assert query(name, tcp=tcp, kind=kind)[-1] == 1
+            assert sum(1 for n, t in counts['direct'] if n == name and t == tcp) == before + 2, 'Expired response was reused'
+
+    # Keep the exact same relay and UDP upstream sockets across inactivity and
+    # silent resolver failure. This is not a simulated OS sleep notification.
+    assert query('healthy.idle.foreign.test')[-1] == 2
+    time.sleep(idle_seconds)
+    start = time.monotonic()
+    assert query('healthy.idle.foreign.test')[-1] == 2
+    assert time.monotonic() - start < 1.5, 'Idle UDP transport failed to resume'
     for tcp in [False, True]:
-        name = 'cache.ttl.baidu.com'
-        before = sum(1 for n, t in counts['direct'] if n == name and t == tcp)
-        first = query(name, tcp=tcp)
-        assert query(name, tcp=tcp, ident=b'\x98\x76')[-1] == 1
-        assert sum(1 for n, t in counts['direct'] if n == name and t == tcp) == before + 1
-        time.sleep(1.05)
-        aged = query(name, tcp=tcp)
-        assert struct.unpack('!I', aged[-10:-6])[0] == 1, 'Cache did not age the RR TTL'
-        time.sleep(1.05)
-        assert query(name, tcp=tcp)[-1] == 1
-        assert sum(1 for n, t in counts['direct'] if n == name and t == tcp) == before + 2, 'Expired response was reused'
+        recovery_available.clear()
+        assert query('recovery.foreign.test', tcp=tcp)[3] & 15 == 2
+        recovery_available.set()
+        start = time.monotonic()
+        assert query('recovery.foreign.test', tcp=tcp)[-1] == 2
+        assert time.monotonic() - start < 1.5, 'Resolver recovery retained a stale failure'
+    print(f'PASS: same relay resumes after {idle_seconds}s idle and silent UDP/TCP upstream failure; no relay restart.')
     barrier = threading.Barrier(32)
     def shared_query(_):
         barrier.wait(timeout=5)
@@ -267,8 +298,9 @@ try:
     assert query('coalesce.foreign.test')[-1] == 2
     assert sum(1 for name, _ in counts['vpn'] if name == 'coalesce.foreign.test') == 2, 'TTL-zero answer was cached'
     print('PASS: positive wire cache restores IDs, ages/expires TTLs, separates UDP/TCP and coalesces concurrent queries without caching TTL-zero answers.')
-    for tcp in [False, True]:
-        assert query('cache.switch.baidu.com', tcp=tcp)[-1] == 1
+    for kind in [1, 64, 65]:
+        for tcp in [False, True]:
+            assert query(f'cache.switch{kind}.baidu.com', tcp=tcp, kind=kind)[-1] == 1
     crossing = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     crossing.settimeout(3)
     crossing_name = b'\x07timeout\x05baidu\x03com\0\0\1\0\1'
@@ -285,7 +317,8 @@ try:
     assert retired[:2] == b'\x55\x66' and retired[3] & 15 == 2, 'Old-policy request survived a mode switch'
     before_direct = sum(len(counts[path]) for path in ['direct', 'direct-backup'])
     for tcp in [False, True]:
-        assert query('cache.switch.baidu.com', tcp=tcp)[-1] == 2, 'Old domestic cache crossed the mode boundary'
+        for kind in [1, 64, 65]:
+            assert query(f'cache.switch{kind}.baidu.com', tcp=tcp, kind=kind)[-1] == 2, 'Old domestic cache crossed the mode boundary'
         for name in ['www.baidu.com', 'www.bilibili.com', 'www.google.com']:
             assert query(name, tcp=tcp)[-1] == 2
         start = time.monotonic()

@@ -64,6 +64,8 @@ Installed DNS hooks use a trusted working directory and a whitespace-free comman
 
 OpenVPN startup uses the configured connection deadline, including cold launches. Early engine exits report a bounded, redacted failure category and exit status instead of a generic management-socket timeout. See [Startup diagnostics](docs/OPENVPN_STARTUP.md).
 
+For slow first visits or changes after overnight use, the [web latency sampler](docs/WEB_LATENCY_AND_OVERNIGHT.md) separates DNS, TCP, TLS and time to first byte without changing the current VPN or system network settings.
+
 ## Smart connection and live traffic
 
 Opt-in automatic connection can run at application launch, wake, or network recovery. Choose the last successful or a fixed profile, restrict eligible networks, and pause at any time. Manual disconnects and connection failures pause automatic connection. Local status notifications can report failures only or all changes. Both features are off by default. See [Smart connection and status notifications](docs/SMART_CONNECTION.md).

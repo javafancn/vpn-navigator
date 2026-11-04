@@ -2,7 +2,7 @@ import Foundation
 
 /// A small session-local wire cache. Exact request bytes (except ID) and
 /// transport isolate EDNS/CD/DO, question case and UDP truncation semantics.
-/// Only positive A/AAAA replies are cached. Errors, zero TTL, DNSSEC signatures
+/// Only positive A/AAAA/SVCB/HTTPS replies are cached. Errors, zero TTL, DNSSEC signatures
 /// and authenticated DNS messages retain their upstream behavior.
 public struct DNSAnswerCache {
     public struct Key: Hashable {
@@ -53,7 +53,7 @@ public struct DNSAnswerCache {
     }
     public mutating func insert(_ packet: Data, for key: Key, request: Data, now: TimeInterval) {
         guard capacity > 0, now.isFinite, packet.count <= 16_384,
-              let q = DNSQuestion(request), [1, 28].contains(q.type),
+              let q = DNSQuestion(request), [1, 28, 64, 65].contains(q.type),
               q.accepts(packet, request: request), packet[2] & 2 == 0, packet[3] & 15 == 0,
               Int(packet[6]) * 256 + Int(packet[7]) > 0,
               let ttls = Self.ttls(packet), let minimum = ttls.map(\.value).min(), minimum > 0 else { return }

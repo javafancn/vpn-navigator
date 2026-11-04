@@ -65,6 +65,8 @@ jobs:
           PYTEST
       - name: Verify real split DNS relay and domestic/remote latency separation
         run: 'python3 scripts/test-split-dns.py "$(swift build --show-bin-path)/VPNNavigatorHelper"'
+      - name: Verify web latency intervals, failure statistics and session comparison
+        run: python3 -m unittest discover -s scripts/tests -p test_web_latency_sampler.py -v
       - name: Verify DNS TTL cache, address-family policy and guarded endpoint candidates
         run: '"$(swift build --show-bin-path)/VPNNavigatorHelper" --self-test-network-latency'
       - name: Verify reviewed DNS scope, first-install dual-stack seeds and strict profile options

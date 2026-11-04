@@ -56,6 +56,35 @@ enum NetworkLatencySelfTest {
         tiny.insert(a, for: key, request: q, now: 0)
         try check(tiny.answer(for: key, request: q, now: 0) == nil, "byte limit")
 
+        // ServiceMode priority 1, root TargetName, ALPN=h2. Preserve RDATA
+        // exactly: hints, ECH and unknown SvcParams belong to the client.
+        for type: UInt8 in [64, 65] {
+            let serviceQuery = query(type: type)
+            var serviceAnswer = serviceQuery
+            serviceAnswer[2] = 0x81; serviceAnswer[3] = 0x80; serviceAnswer[7] = 1
+            serviceAnswer.append(contentsOf: [0xc0, 12, 0, type, 0, 1, 0, 0, 0, 60,
+                                             0, 10, 0, 1, 0, 0, 1, 0, 3, 2, 104, 50])
+            for tcp in [false, true] {
+                var serviceCache = DNSAnswerCache()
+                let serviceKey = DNSAnswerCache.key(for: serviceQuery, tcp: tcp)!
+                serviceCache.insert(serviceAnswer, for: serviceKey, request: serviceQuery, now: 100)
+                var caller = serviceQuery; caller[0] = 0xfe; caller[1] = 0xdc
+                let cached = serviceCache.answer(for: serviceKey, request: caller, now: 102)
+                var expected = serviceAnswer; expected[0] = 0xfe; expected[1] = 0xdc
+                expected[serviceQuery.count + 9] = 58
+                try check(cached == expected, "SVCB/HTTPS wire, ID and TTL preservation")
+                try check(serviceCache.answer(for: DNSAnswerCache.key(for: serviceQuery, tcp: !tcp)!,
+                    request: caller, now: 102) == nil, "SVCB/HTTPS transport isolation")
+                try check(serviceCache.answer(for: serviceKey, request: caller, now: 160) == nil, "SVCB/HTTPS expiry")
+                for offset in [2, 3] {
+                    var excluded = serviceAnswer
+                    if offset == 2 { excluded[2] |= 2 } else { excluded[3] = 0x82 }
+                    serviceCache.insert(excluded, for: serviceKey, request: serviceQuery, now: 200)
+                    try check(serviceCache.answer(for: serviceKey, request: caller, now: 200) == nil, "service errors/truncation excluded")
+                }
+            }
+        }
+
         let aaaa = query(type: 28), nodata = DNSQuestion(aaaa)!.noData(for: aaaa)
         try check(nodata[3] & 15 == 0 && nodata[6...11].allSatisfy { $0 == 0 }
             && DNSQuestion(aaaa)!.accepts(nodata, request: aaaa), "unavailable family NODATA")
@@ -86,7 +115,7 @@ enum NetworkLatencySelfTest {
         try check(OpenVPNCommand.candidateTimeoutArguments(for: profile, remainingSeconds: 20, candidateCount: 3) == ["--server-poll-timeout", "6"]
             && OpenVPNCommand.candidateTimeoutArguments(for: profile + "\nconnect-timeout 25", remainingSeconds: 20, candidateCount: 3).isEmpty,
             "bounded alternate endpoint wait / explicit timeout preservation")
-        print("PASS: DNS TTL aging/expiry/LRU/byte limits, ID/transport/flags isolation, errors/truncation/signatures excluded, IPv6 NODATA/reject, physical/LAN DNS policy, multi-remote numeric candidates and TCP latency tuning.")
+        print("PASS: A/AAAA/SVCB/HTTPS TTL aging/expiry/LRU/byte limits, ID/transport/flags isolation, errors/truncation/signatures excluded, IPv6 NODATA/reject, physical/LAN DNS policy, multi-remote numeric candidates and TCP latency tuning.")
     }
     enum Failure: Error { case check(String) }
 }

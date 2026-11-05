@@ -46,6 +46,11 @@ def answer(packet, path, tcp):
         return packet[:2] + struct.pack('!HHHHH', 0x8380, 1, 0, 0, 0) + packet[12:end]
     if not direct and not name.startswith('healthy.'):
         time.sleep(.18)  # Deterministic distant VPN resolver latency.
+    if name.startswith('nodata.'):
+        ttl = 120 if name.startswith('nodata.cache.') else 0
+        soa = b'\x02ns\xc0\x0c\x02hm\xc0\x0c' + struct.pack('!IIIII', 1, 3600, 600, 86400, 2)
+        record = b'\xc0\x0c' + struct.pack('!HHIH', 6, 1, ttl, len(soa)) + soa
+        return packet[:2] + struct.pack('!HHHHH', 0x8180, 1, 0, 1, 0) + packet[12:end] + record
     if kind in [64, 65]:
         # ServiceMode with ALPN=h2 and a mandatory ipv4hint identifying the
         # policy group. Valid opaque wire data must survive cache hits intact.
@@ -272,6 +277,23 @@ try:
             time.sleep(1.05)
             assert query(name, tcp=tcp, kind=kind)[-1] == 1
             assert sum(1 for n, t in counts['direct'] if n == name and t == tcp) == before + 2, 'Expired response was reused'
+    for kind in [28, 65]:
+        for tcp in [False, True]:
+            name = f'nodata.cache.ttl{kind}.baidu.com'
+            before = sum(1 for n, t in counts['direct'] if n == name and t == tcp)
+            first = query(name, tcp=tcp, kind=kind)
+            cached = query(name, tcp=tcp, kind=kind, ident=b'\x98\x76')
+            ttl_offset = 12 + sum(len(s) + 1 for s in name.split('.')) + 5 + 6
+            expected = bytearray(first)
+            expected[ttl_offset:ttl_offset+4] = struct.pack('!I', 2)
+            assert cached[2:] == expected[2:] and cached[6:10] == b'\0\0\0\1', 'Cached SOA TTL exceeds MINIMUM or NODATA changed'
+            assert sum(1 for n, t in counts['direct'] if n == name and t == tcp) == before + 1, 'SOA NODATA was not cached'
+            time.sleep(1.05)
+            aged = query(name, tcp=tcp, kind=kind)
+            assert struct.unpack('!I', aged[ttl_offset:ttl_offset+4])[0] == 1, 'Negative TTL did not age from MINIMUM'
+            time.sleep(1.05)
+            query(name, tcp=tcp, kind=kind)
+            assert sum(1 for n, t in counts['direct'] if n == name and t == tcp) == before + 2, 'Expired SOA NODATA was reused'
 
     # Keep the exact same relay and UDP upstream sockets across inactivity and
     # silent resolver failure. This is not a simulated OS sleep notification.

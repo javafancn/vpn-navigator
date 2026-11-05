@@ -7,11 +7,12 @@ final class ProfileCompatibilityTests: XCTestCase {
     private let hints = "ignore-unknown-option block-outside-dns\nsetenv opt block-outside-dns # Windows-only DNS hint\n"
 
     func testExplicitServerTimeoutAndTCPNoDelayHaveStrictParameters() throws {
-        for option in ["server-poll-timeout 10", "socket-flags TCP_NODELAY"] {
+        for option in ["server-poll-timeout 10", "socket-flags TCP_NODELAY", "sndbuf 524288", "rcvbuf 524288"] {
             XCTAssertEqual(try ProfileSafety.validate(base + option).text, base + option)
         }
         for option in ["server-poll-timeout 0", "server-poll-timeout -1", "server-poll-timeout 3601",
-                       "server-poll-timeout 10 extra", "socket-flags TCP_NODELAY extra", "socket-flags SO_MARK"] {
+                       "server-poll-timeout 10 extra", "socket-flags TCP_NODELAY extra", "socket-flags SO_MARK",
+                       "sndbuf -1", "sndbuf 4194305", "rcvbuf 524288 extra"] {
             XCTAssertThrowsError(try ProfileSafety.validate(base + option), option)
         }
     }

@@ -13,6 +13,8 @@ enum SplitDNSSelfTest {
               let vpn = UInt16(CommandLine.arguments[4]), let vpnBackup = UInt16(CommandLine.arguments[5]) else { throw DNSJournalError.unavailable }
         let domains = try ChinaDNSRules.read(URL(fileURLWithPath: CommandLine.arguments[6]))
         guard domains.contains("www.baidu.com"), domains.contains("www.bilibili.com"),
+              domains.contains("www.apple.com"), domains.contains("is1-ssl.mzstatic.com"),
+              domains.contains("updates.cdn-apple.com"), !domains.contains("tv.apple.com"),
               !domains.contains("www.google.com"), !domains.contains("baidu.com.evil.test") else { throw DNSJournalError.unavailable }
         let proxy = SplitDNSProxy(domains: domains,
             domestic: [domestic, domesticBackup].map { .init(address: "127.0.0.1", port: $0) },

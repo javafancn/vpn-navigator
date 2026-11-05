@@ -15,6 +15,10 @@ final class ApplicationLifecycle: NSObject, NSApplicationDelegate {
     }
     private var pendingProfiles = ProfileOpenQueue()
     private var quitting = false
+    private var statusMenu: StatusBarMenuController?
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        if let model { statusMenu = StatusBarMenuController(model: model) }
+    }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         guard let model else { return true }
         // A visible settings/utility window does not mean the workspace is
@@ -29,7 +33,10 @@ final class ApplicationLifecycle: NSObject, NSApplicationDelegate {
         else { pendingProfiles.merge(request) }
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
-    func applicationWillTerminate(_ notification: Notification) { model?.profileHealth.stop(); model?.smartConnection.stop(); model?.quickAccess.shutdown() }
+    func applicationWillTerminate(_ notification: Notification) {
+        statusMenu?.shutdown()
+        model?.profileHealth.stop(); model?.smartConnection.stop(); model?.quickAccess.shutdown()
+    }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         QuitProcessSelfTest.trace("termination delegate reached")
         guard let model else { return .terminateNow }

@@ -78,6 +78,10 @@ public enum ProfileSafety {
                 }
             case "socket-flags":
                 guard tokens == ["socket-flags", "TCP_NODELAY"] else { throw ProfileValidationError.unsupported(offset + 1, line) }
+            case "sndbuf", "rcvbuf":
+                guard tokens.count == 2, let bytes = UInt32(tokens[1]), bytes <= 4_194_304 else {
+                    throw ProfileValidationError.invalidLine(offset + 1)
+                }
             case "remote":
                 guard (2...4).contains(tokens.count),
                       let host = tokens.dropFirst().first, isSafeHost(host) else {

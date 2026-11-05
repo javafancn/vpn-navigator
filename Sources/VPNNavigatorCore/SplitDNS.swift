@@ -6,11 +6,12 @@ public struct ChinaDNSDomains: Sendable {
     private let names: Set<String>
     public static let empty = ChinaDNSDomains(names: [])
     private init(names: Set<String>) { self.names = names }
-    public init(text: String) throws {
+    public init(text: String, supplemental: [String] = []) throws {
         guard text.utf8.count <= 4_000_000 else { throw RuleError.tooLarge }
         let rows = text.split(separator: "\n").map(String.init)
-        guard !rows.isEmpty, rows.count <= 150_000, rows.allSatisfy(Self.valid) else { throw RuleError.tooLarge }
-        names = Set(rows)
+        guard !rows.isEmpty, rows.count + supplemental.count <= 150_000,
+              rows.allSatisfy(Self.valid), supplemental.allSatisfy(Self.valid) else { throw RuleError.tooLarge }
+        names = Set(rows).union(supplemental)
     }
     private static func valid(_ name: String) -> Bool {
         !name.isEmpty && name.utf8.count <= 253 && name == name.lowercased() &&

@@ -88,6 +88,44 @@ enum NetworkLatencySelfTest {
         let aaaa = query(type: 28), nodata = DNSQuestion(aaaa)!.noData(for: aaaa)
         try check(nodata[3] & 15 == 0 && nodata[6...11].allSatisfy { $0 == 0 }
             && DNSQuestion(aaaa)!.accepts(nodata, request: aaaa), "unavailable family NODATA")
+        for type: UInt8 in [28, 65] {
+            let negQuery = query("nodata.example", type: type)
+            let negKey = DNSAnswerCache.key(for: negQuery, tcp: false)!
+            var soaNoData = negQuery
+            soaNoData[2] = 0x81; soaNoData[3] = 0x80; soaNoData[9] = 1
+            // Authority SOA RR: name pointer 0xc00c, type 6, class 1, TTL 120,
+            // RDATA: MNAME=ns.nodata.example (5), RNAME=hm.nodata.example (5),
+            // SERIAL=1, REFRESH=3600, RETRY=600, EXPIRE=86400, MINIMUM=45.
+            soaNoData.append(contentsOf: [
+                0xc0, 12, 0, 6, 0, 1, 0, 0, 0, 120, 0, 30,
+                2, 110, 115, 0xc0, 12, 2, 104, 109, 0xc0, 12,
+                0, 0, 0, 1, 0, 0, 14, 16, 0, 0, 2, 88, 0, 1, 81, 128, 0, 0, 0, 45
+            ])
+            var negCache = DNSAnswerCache()
+            negCache.insert(soaNoData, for: negKey, request: negQuery, now: 500)
+            var negCaller = negQuery; negCaller[0] = 0x77; negCaller[1] = 0x88
+            let negHit = negCache.answer(for: negKey, request: negCaller, now: 502)
+            var expectedNeg = soaNoData; expectedNeg[0] = 0x77; expectedNeg[1] = 0x88
+            expectedNeg[negQuery.count + 9] = 43
+            try check(negHit == expectedNeg, "SOA NODATA cache hit / TTL aging")
+            expectedNeg[negQuery.count + 9] = 1
+            try check(negCache.answer(for: negKey, request: negCaller, now: 544) == expectedNeg,
+                "SOA NODATA advertises only remaining negative TTL")
+            try check(negCache.answer(for: negKey, request: negCaller, now: 545) == nil, "SOA.MINIMUM bounds NODATA expiry")
+            var shorterSOA = soaNoData; shorterSOA[negQuery.count + 9] = 20
+            negCache.insert(shorterSOA, for: negKey, request: negQuery, now: 550)
+            expectedNeg[negQuery.count + 9] = 18
+            try check(negCache.answer(for: negKey, request: negCaller, now: 552) == expectedNeg,
+                "SOA TTL below MINIMUM is never extended")
+            try check(negCache.answer(for: negKey, request: negCaller, now: 570) == nil, "shorter SOA TTL bounds expiry")
+            var zeroMinimum = soaNoData; zeroMinimum[zeroMinimum.count - 1] = 0
+            var nsReferral = negQuery; nsReferral[2] = 0x81; nsReferral[3] = 0x80; nsReferral[9] = 1
+            nsReferral.append(contentsOf: [0xc0, 12, 0, 2, 0, 1, 0, 0, 0, 60, 0, 4, 2, 110, 115, 0])
+            for uncacheable in [DNSQuestion(negQuery)!.noData(for: negQuery), zeroMinimum, nsReferral] {
+                negCache.insert(uncacheable, for: negKey, request: negQuery, now: 600)
+                try check(negCache.answer(for: negKey, request: negCaller, now: 600) == nil, "empty NODATA / referral / zero SOA.MINIMUM excluded")
+            }
+        }
         try check(SplitDNSPolicy.domesticServers(path4: true, path6: false, protectedVPN: ["10.8.0.53"],
             preferred: ["127.0.0.1", "::1", "10.8.0.53", "192.168.1.1"]) == ["192.168.1.1", "223.5.5.5"], "physical resolver priority / exclusions")
         let plan = try DualStackRoutePlan.build(endpoint: "8.8.4.4", tunnel: "utun4", has4: true, has6: false,
@@ -108,10 +146,15 @@ enum NetworkLatencySelfTest {
         }
         try check(lookups == 2 && candidates.map(\.address) == ["8.8.8.8", "2606:4700::1111", "8.8.4.4"], "multiple remote / address failover / lookup deduplication")
         let pinned = try candidates[1].endpoint.pinnedProfile(profile, address: candidates[1].address)
+        let pinnedUDP = try candidates[0].endpoint.pinnedProfile(profile, address: candidates[0].address)
         try check(pinned.contains("remote 2606:4700::1111 443") && pinned.contains("proto tcp6-client")
             && pinned.contains("remote ignored.example 443"), "per-retry pin / inline preservation")
         try check(OpenVPNCommand.latencyArguments(for: pinned) == ["--socket-flags", "TCP_NODELAY"]
-            && OpenVPNCommand.latencyArguments(for: profile).isEmpty, "TCP-only latency tuning")
+            && OpenVPNCommand.latencyArguments(for: pinned + "\nsocket-flags TCP_NODELAY").isEmpty
+            && OpenVPNCommand.latencyArguments(for: pinnedUDP) == ["--sndbuf", "524288", "--rcvbuf", "524288"]
+            && OpenVPNCommand.latencyArguments(for: pinnedUDP + "\nsndbuf 262144") == ["--rcvbuf", "524288"]
+            && OpenVPNCommand.latencyArguments(for: pinnedUDP + "\nsndbuf 262144\nrcvbuf 262144").isEmpty
+            && OpenVPNCommand.latencyArguments(for: profile).isEmpty, "TCP/UDP transport latency tuning")
         try check(OpenVPNCommand.candidateTimeoutArguments(for: profile, remainingSeconds: 20, candidateCount: 3) == ["--server-poll-timeout", "6"]
             && OpenVPNCommand.candidateTimeoutArguments(for: profile + "\nconnect-timeout 25", remainingSeconds: 20, candidateCount: 3).isEmpty,
             "bounded alternate endpoint wait / explicit timeout preservation")

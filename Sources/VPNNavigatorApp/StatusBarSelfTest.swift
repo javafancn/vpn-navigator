@@ -39,6 +39,7 @@ enum StatusBarSelfTest {
         }
         let idleLabel = AppBranding.statusLabel(download: "—", upload: "—", showsTraffic: false)
         guard idleLabel.size == NSSize(width: 22, height: 22), idleLabel.isTemplate else { throw Failure.check("idle status item keeps a standard icon width") }
+        try await verifyMenuTracking(model: model, profile: profile, attempt: attempt)
         if Bundle.main.bundleURL.pathExtension == "app" {
             guard Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String == "AppIcon",
                   let icon = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"), NSImage(contentsOf: icon) != nil,
@@ -131,7 +132,99 @@ enum StatusBarSelfTest {
         try await settle()
         try requireSingleMainWindow("Dock close/reopen race")
         guard model.connected, model.activeProfileID == profile.id else { throw Failure.check("Dock reopen preserves session") }
-        print("PASS: template throughput label, bundled logo, single-instance SwiftUI scene, Dock reopen/minimize/hide/close races, unrelated-window ownership and synthetic session preservation; no VPN requests.")
+        print("PASS: stable native menu items/actions during polling, refreshed next-open state, template throughput label, bundled logo, single-instance SwiftUI scene, Dock reopen/minimize/hide/close races, unrelated-window ownership and synthetic session preservation; no VPN requests.")
+    }
+    private static func verifyMenuTracking(model: AppModel, profile: VPNProfile, attempt: UUID) async throws {
+        let controller = StatusBarMenuController(model: model, installsStatusItem: false)
+        defer { controller.shutdown() }
+        let menu = controller.menu
+        controller.menuNeedsUpdate(menu)
+        let originalItems = menu.items
+        let originalTitles = originalItems.map(\.title)
+        guard let routing = menu.item(withTitle: L10n.text("路由模式"))?.submenu,
+              let smart = menu.item(withTitle: L10n.text("智能连接"))?.submenu else { throw Failure.check("native submenus") }
+        let routingItems = routing.items, smartItems = smart.items
+        let openMain = model.quickAccess.openMainWindow
+        var opens = 0
+        model.quickAccess.openMainWindow = { opens += 1 }
+        defer {
+            model.quickAccess.openMainWindow = openMain
+            model.applyVerifiedSessionReport(.init(state: .connected, message: "synthetic, no VPN", activeProfileID: profile.id,
+                receivedBytes: 1_000, sentBytes: 100, attemptID: attempt, networkRecoveryRequired: false, routingMode: .original))
+        }
+        controller.menuWillOpen(menu)
+        for sample in 1...3 {
+            model.applyVerifiedSessionReport(.init(state: .connected, message: "synthetic polling", activeProfileID: profile.id,
+                receivedBytes: UInt64(sample + 1) * 1_000, sentBytes: UInt64(sample + 1) * 100,
+                attemptID: attempt, networkRecoveryRequired: false, routingMode: .original))
+            try await Task.sleep(nanoseconds: 1_050_000_000)
+            controller.menuNeedsUpdate(menu)
+            guard menu.items.count == originalItems.count, menu.items.map(\.title) == originalTitles,
+                  zip(menu.items, originalItems).allSatisfy({ $0 === $1 }),
+                  routing.items.count == routingItems.count, smart.items.count == smartItems.count,
+                  zip(routing.items, routingItems).allSatisfy({ $0 === $1 }),
+                  zip(smart.items, smartItems).allSatisfy({ $0 === $1 }),
+                  menu.item(withTitle: L10n.text("路由模式"))?.submenu === routing else {
+                throw Failure.check("polling replaced an open native menu or submenu")
+            }
+        }
+        guard let openItem = menu.item(withTitle: L10n.text("打开主窗口")) else { throw Failure.check("native window command") }
+        menu.performActionForItem(at: menu.index(of: openItem))
+        guard opens == 1 else { throw Failure.check("menu command survived polling") }
+        // A disconnect while the menu is open must not turn its stale
+        // disconnect command into a new connection attempt.
+        model.applyVerifiedSessionReport(.init(state: .disconnected, message: "synthetic disconnect", activeProfileID: nil,
+            receivedBytes: nil, sentBytes: nil, networkRecoveryRequired: false))
+        guard let connection = menu.item(withTitle: L10n.text("VPN 连接")), connection.state == .on else {
+            throw Failure.check("tracking snapshot remains stable")
+        }
+        menu.performActionForItem(at: menu.index(of: connection))
+        try await settle()
+        guard !model.connected, !model.connecting, !model.busy else { throw Failure.check("stale toggle started a connection") }
+        controller.menuDidClose(menu)
+        controller.menuNeedsUpdate(menu)
+        guard menu.item(withTitle: L10n.text("VPN 连接"))?.state == .off,
+              menu.item(withTitle: L10n.text("路由模式"))?.submenu !== routing else {
+            throw Failure.check("next menu opening refreshes the session snapshot")
+        }
+        // Enter AppKit's actual event-tracking loop. Polling and native menu
+        // validation during that loop must preserve the same submenu objects.
+        guard let view = mainWindow()?.contentView else { throw Failure.check("menu tracking host") }
+        let probe = MenuTrackingProbe(menu: menu, model: model, profile: profile, attempt: attempt)
+        let timer = Timer(timeInterval: 0.3, repeats: true) { _ in
+            MainActor.assumeIsolated { probe.poll() }
+        }
+        RunLoop.main.add(timer, forMode: .eventTracking)
+        defer { timer.invalidate() }
+        menu.popUp(positioning: nil, at: NSPoint(x: 24, y: 100), in: view)
+        guard probe.ticks >= 4, probe.stable, probe.submenu != nil else { throw Failure.check("actual AppKit menu tracking survived polling") }
+    }
+    @MainActor
+    private final class MenuTrackingProbe {
+        let menu: NSMenu
+        let model: AppModel
+        let profile: VPNProfile
+        let attempt: UUID
+        var ticks = 0, stable = true
+        var items: [NSMenuItem] = []
+        var submenu: NSMenu?
+        init(menu: NSMenu, model: AppModel, profile: VPNProfile, attempt: UUID) {
+            self.menu = menu; self.model = model; self.profile = profile; self.attempt = attempt
+        }
+        func poll() {
+            if ticks == 0 {
+                items = menu.items
+                submenu = menu.item(withTitle: L10n.text("路由模式"))?.submenu
+            }
+            ticks += 1
+            model.applyVerifiedSessionReport(.init(state: .connected, message: "tracking loop fixture", activeProfileID: profile.id,
+                receivedBytes: UInt64(ticks) * 1_000, sentBytes: UInt64(ticks) * 100,
+                attemptID: attempt, networkRecoveryRequired: false, routingMode: .original))
+            menu.update()
+            stable = stable && menu.items.count == items.count && zip(menu.items, items).allSatisfy({ $0 === $1 }) &&
+                menu.item(withTitle: L10n.text("路由模式"))?.submenu === submenu
+            if ticks >= 4 { menu.cancelTracking() }
+        }
     }
     private static func requireSingleMainWindow(_ check: String, expected: NSWindow? = nil) throws {
         let windows = NSApp.windows.filter { $0.title == "VPN Navigator" && !($0 is NSPanel) && ($0.isVisible || $0.isMiniaturized) }

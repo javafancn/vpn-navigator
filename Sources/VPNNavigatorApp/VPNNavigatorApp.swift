@@ -1696,12 +1696,6 @@ struct VPNNavigatorApp: App {
                     .keyboardShortcut("p", modifiers: [.command, .shift])
             }
         }
-        MenuBarExtra {
-            GlassMenuBarView().environmentObject(model)
-        } label: {
-            StatusBarLabel().environmentObject(model)
-        }
-        .menuBarExtraStyle(.menu)
         Settings {
             SystemSettingsPane().environmentObject(model)
                 .frame(minWidth: 650, minHeight: 620)

@@ -1,7 +1,4 @@
 import AppKit
-import Combine
-import SwiftUI
-import VPNNavigatorCore
 
 @MainActor
 enum AppBranding {
@@ -12,8 +9,8 @@ enum AppBranding {
         guard let url = Bundle.main.url(forResource: name, withExtension: ext, subdirectory: "Branding") else { return nil }
         return NSImage(contentsOf: url)
     }
-    /// A single template image avoids MenuBarExtra dropping custom text or
-    /// stack layouts on older macOS. Fixed bounds prevent the item from jumping.
+    /// A single template image keeps the icon and rates aligned on all supported
+    /// macOS versions. Fixed bounds prevent the item from jumping.
     static func statusLabel(download: String, upload: String, showsTraffic: Bool = true) -> NSImage {
         if let cachedStatus, cachedStatus.download == download, cachedStatus.upload == upload,
            cachedStatus.showsTraffic == showsTraffic { return cachedStatus.image }
@@ -37,32 +34,5 @@ enum AppBranding {
         image.isTemplate = true
         cachedStatus = (download, upload, showsTraffic, image)
         return image
-    }
-}
-
-struct StatusBarLabel: View {
-    @EnvironmentObject private var model: AppModel
-    @State private var tick = Date()
-    var body: some View {
-        // TimelineView's dynamic schedule in a MenuBarExtra label can keep
-        // SwiftUI's native status-item image extraction from settling at launch.
-        // A stable image identity and an ordinary timer avoid that update loop.
-        let _ = tick
-            let speed = model.connected ? model.menuTraffic.current() : nil
-            let download = TunnelSpeedFormat.string(speed?.receivedPerSecond)
-            let upload = TunnelSpeedFormat.string(speed?.sentPerSecond)
-            let description = L10n.format("VPN Navigator，{0}。隧道下载 {1}，上传 {2}。", [model.menuStatusTitle, download, upload])
-            Image(nsImage: AppBranding.statusLabel(download: download, upload: upload, showsTraffic: model.connected))
-                .renderingMode(.template)
-                .frame(width: model.connected ? 84 : 22, height: 22)
-                .accessibilityLabel(description)
-                .help(description)
-                .task(id: model.connected) {
-                    guard model.connected else { return }
-                    while !Task.isCancelled {
-                        do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
-                        tick = Date()
-                    }
-                }
     }
 }

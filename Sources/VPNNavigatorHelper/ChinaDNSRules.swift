@@ -4,6 +4,20 @@ import VPNNavigatorCore
 
 enum ChinaDNSRules {
     static let sha256 = "054412fa9661dd7db76a24f55364bf86603e2b337b55534694784849c0146999"
+    static let supplementalDomesticDomains: [String] = [
+        "aaplimg.com",
+        "aod.itunes.apple.com",
+        "cdn-apple.com",
+        "devimages-cdn.apple.com",
+        "download.developer.apple.com",
+        "mzstatic.com",
+        "osxapps.itunes.apple.com",
+        "store.apple.com",
+        "swcdn.apple.com",
+        "swdist.apple.com",
+        "swscan.apple.com",
+        "www.apple.com"
+    ]
     static func load() throws -> ChinaDNSDomains {
         let engine = try ExecutableTrust.trustedOpenVPN()
         let file = engine.deletingLastPathComponent().appendingPathComponent("china-dns-domains.txt")
@@ -22,6 +36,6 @@ enum ChinaDNSRules {
         let data = try Data(contentsOf: path)
         guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == sha256,
               let text = String(data: data, encoding: .utf8) else { throw DNSJournalError.unavailable }
-        return try ChinaDNSDomains(text: text)
+        return try ChinaDNSDomains(text: text, supplemental: supplementalDomesticDomains)
     }
 }

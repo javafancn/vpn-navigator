@@ -1701,7 +1701,7 @@ struct VPNNavigatorApp: App {
         } label: {
             StatusBarLabel().environmentObject(model)
         }
-        .menuBarExtraStyle(.window)
+        .menuBarExtraStyle(.menu)
         Settings {
             SystemSettingsPane().environmentObject(model)
                 .frame(minWidth: 650, minHeight: 620)

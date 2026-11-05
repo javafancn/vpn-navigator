@@ -36,15 +36,18 @@ enum GlassSurface {
     static let mist = Color.white
     static let sidebar = Color.white
     static let panel = Color.white
-    static let windowOpacity = 0.012
-    static let cardOpacity = 0.095
+    static let windowOpacity = 0.22
+    static let popoverOpacity = 0.32
+    static let cardOpacity = 0.16
 }
 
 enum GlassBackdrop {
     case workspace, popover
     var material: NSVisualEffectView.Material { self == .workspace ? .sidebar : .popover }
-    // Keep most of the native blur, with a small lift in desktop visibility.
-    var opacity: CGFloat { self == .workspace ? 0.90 : 0.96 }
+    // Compact popovers need a denser tint for small labels and controls.
+    var tintOpacity: Double {
+        self == .workspace ? GlassSurface.windowOpacity : GlassSurface.popoverOpacity
+    }
 }
 
 struct GlassAtmosphere: View {
@@ -62,7 +65,7 @@ struct GlassAtmosphere: View {
             if opaque {
                 Color(nsColor: .windowBackgroundColor)
             } else {
-                Color.white.opacity(GlassSurface.windowOpacity)
+                Color.white.opacity(backdrop.tintOpacity)
             }
         }
         .ignoresSafeArea()
@@ -113,7 +116,7 @@ struct DesktopVisualEffect: NSViewRepresentable {
         view.onWindow = onWindow
         view.backdrop = backdrop
         view.material = backdrop.material
-        view.alphaValue = opaque ? 1 : backdrop.opacity
+        view.alphaValue = 1
         view.blendingMode = .behindWindow
         view.state = .followsWindowActiveState
         return view
@@ -122,7 +125,7 @@ struct DesktopVisualEffect: NSViewRepresentable {
         view.onWindow = onWindow
         view.backdrop = backdrop
         view.material = backdrop.material
-        view.alphaValue = opaque ? 1 : backdrop.opacity
+        view.alphaValue = 1
         view.configureWindow()
     }
 }

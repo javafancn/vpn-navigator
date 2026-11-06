@@ -1,0 +1,94 @@
+name: Publish local-test release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing draft release tag (vX.Y.Z)
+        required: true
+      build_run:
+        description: Successful installer workflow run ID
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-local-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      BUILD_RUN: ${{ inputs.build_run }}
+    steps:
+      - name: Verify draft and installer provenance
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          from pathlib import Path
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', path]))
+          repo, tag, run_id = os.environ['GH_REPO'], os.environ['RELEASE_TAG'], os.environ['BUILD_RUN']
+          assert re.fullmatch(r'v\d+\.\d+\.\d+', tag), 'Invalid tag'
+          assert run_id.isdecimal(), 'Invalid run ID'
+          run = api(f'repos/{repo}/actions/runs/{run_id}')
+          assert run['path'] == '.github/workflows/package-installers.yml', 'Wrong workflow'
+          assert run['status'] == 'completed' and run['conclusion'] == 'success', 'Build has not passed'
+          assert run['head_repository']['full_name'] == repo and run['head_branch'] == 'main', 'Wrong build source'
+          release = api(f'repos/{repo}/releases/tags/{tag}')
+          assert release['draft'] and not release['prerelease'], 'Expected unpublished draft'
+          assert release['target_commitish'] == run['head_sha'], 'Release and build commits differ'
+          assert 'not Apple notarized' in release['body'] and 'local-test' in release['body'], 'Missing channel disclosure'
+          Path('provenance.json').write_text(json.dumps({'sha': run['head_sha'], 'version': tag[1:]}))
+          PY
+      - name: Download both installer artifacts
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          gh run download "$BUILD_RUN" -n "VPN-Navigator-$VERSION-Apple-Silicon-arm64-Local-Test" -D payload/arm64
+          gh run download "$BUILD_RUN" -n "VPN-Navigator-$VERSION-Intel-x86_64-Local-Test" -D payload/x86_64
+      - name: Verify packages and create release archives
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, re, zipfile
+          from pathlib import Path
+          expected = json.loads(Path('provenance.json').read_text())
+          output = Path('release-assets')
+          output.mkdir()
+          for arch, label in [('arm64', 'Apple-Silicon'), ('x86_64', 'Intel')]:
+              folder = Path('payload') / arch
+              info = json.loads((folder / 'BUILD-INFO.json').read_text())
+              assert info['source_commit'] == expected['sha'] and info['version'] == expected['version']
+              assert info['architecture'] == arch and info['channel'] == 'local-test' and str(info['build']).isdecimal()
+              checksums = list(folder.glob('*-SHA256.txt'))
+              assert len(checksums) == 1
+              checked = set()
+              for line in checksums[0].read_text().splitlines():
+                  match = re.fullmatch(r'([0-9a-f]{64})\s+\*?([^/\\]+)', line)
+                  assert match, 'Invalid checksum entry'
+                  file = folder / match[2]
+                  assert file.is_file() and not file.is_symlink()
+                  assert hashlib.sha256(file.read_bytes()).hexdigest() == match[1]
+                  checked.add(file.name)
+              assert checked == {p.name for p in folder.glob('*.pkg')} and len(checked) == 2
+              archive = output / f"VPN-Navigator-{expected['version']}-{label}-{arch}-Local-Test.zip"
+              with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as zip:
+                  for file in sorted(folder.iterdir()):
+                      assert file.is_file() and not file.is_symlink()
+                      zip.write(file, file.name)
+              with zipfile.ZipFile(archive) as zip:
+                  assert zip.testzip() is None
+          (output / 'SHA256SUMS.txt').write_text(''.join(
+              f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n' for p in sorted(output.glob('*.zip'))))
+          PY
+      - name: Attach verified downloads and publish
+        run: |
+          gh release upload "$RELEASE_TAG" release-assets/*
+          gh release edit "$RELEASE_TAG" --draft=false --latest

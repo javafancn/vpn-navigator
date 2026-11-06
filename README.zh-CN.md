@@ -1,127 +1,99 @@
-# VPN Navigator
+<p align="center">
+  <img src="Resources/Branding/AppIcon.png" width="128" height="128" alt="VPN Navigator logo">
+</p>
+<h1 align="center">VPN Navigator</h1>
 
-[English](README.md) | **简体中文**
+<p align="center">原生 macOS OpenVPN 客户端，让连接、分流与排障更直观。</p>
+<p align="center">
+  <a href="https://github.com/javafancn/vpn-navigator/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/version-1.0.0-2563eb" alt="版本 1.0.0"></a>
+  <img src="https://img.shields.io/badge/macOS-13%2B-111827" alt="macOS 13 及以上">
+  <img src="https://img.shields.io/badge/Apple_Silicon_%26_Intel-supported-16a34a" alt="支持 Apple Silicon 与 Intel">
+  <a href="https://github.com/javafancn/vpn-navigator/actions/workflows/swift.yml"><img src="https://github.com/javafancn/vpn-navigator/actions/workflows/swift.yml/badge.svg" alt="Swift 核心测试"></a>
+</p>
+<p align="center">
+  <a href="README.md">English</a> · <strong>简体中文</strong><br>
+  <a href="https://github.com/javafancn/vpn-navigator/releases/latest">下载安装</a> ·
+  <a href="docs/README.md">文档中心</a> ·
+  <a href="docs/RELEASE_NOTES_1_0_0.md">版本说明</a> ·
+  <a href="https://github.com/javafancn/vpn-navigator/issues">反馈问题</a>
+</p>
 
-> 本页为中文版；仓库默认展示 [English README](README.md)。下方链接的详细开发与验收文档目前主要为中文。
+在原生 macOS 界面中管理 OpenVPN 配置、切换分流策略并检查连接状态。关闭主窗口后，可继续通过状态栏查看隧道速度和快速切换配置。界面支持简体中文和 English。
 
-原生 macOS OpenVPN 客户端，提供配置管理、Original / 全局 VPN / 中国大陆直连策略、菜单栏控制与网络诊断。
+## 下载与连接
 
-支持受管 IPv4／IPv6 双栈路由、IPv6 服务器端点、双栈中国规则与自定义 IPv6 分流。详见 [双栈支持](docs/DUAL_STACK.md)。
+从 [GitHub Releases](https://github.com/javafancn/vpn-navigator/releases/latest) 下载 **1.0.0**，按 Mac 芯片选择文件：
 
-主窗口关闭后应用继续保持 VPN 与后台服务，Dock 图标隐藏；点击状态栏“打开主窗口”恢复窗口与 Dock，完全退出请使用状态栏“退出”。状态栏采用导航 Logo，并显示 VPN 隧道下载／上传速率（连接时约每秒采样，B/s、KB/s、MB/s 自动切换；未采样或数据过期显示 —）。它不代表整台 Mac 的总网速。
+| Mac 芯片 | 下载文件 |
+| --- | --- |
+| Apple Silicon（M 系列） | `VPN-Navigator-1.0.0-Apple-Silicon-arm64-Local-Test.zip` |
+| Intel | `VPN-Navigator-1.0.0-Intel-x86_64-Local-Test.zip` |
 
-当前开发版本：**0.8.18**。提供开发预览、本地测试及 Developer ID 发布构建三种通道。本地测试通道无需付费开发者证书，包含引擎并经管理员批准固定程序身份；尚待真实网络及用户 Mac 安装验收。正式分发仍须签名、公证及发布验收。
+每份压缩包包含 OpenVPN 引擎、安装包、卸载包、SHA-256 校验值、构建来源及安装说明。当前提供**本地测试通道：ad-hoc 签名，未经 Apple 公证**，通过管理员批准固定安装代码身份。用户无需安装 Homebrew。完整步骤见[本地安装、更新与卸载](docs/LOCAL_TEST_INSTALLATION.md)。
 
-0.8.18 修复状态与流量刷新打断状态栏菜单操作的问题，加入 SOA NODATA 负缓存并正确递减负缓存 TTL，在保留显式缓冲区设置的前提下补充 UDP 默认值，并为中国直连 DNS 增加部分 Apple 内容分发域名。改动和验证边界见 [版本说明](docs/RELEASE_NOTES_0_8_18.md)。
+1. 更新已安装的可连接版本前，先在旧版「设置与维护 → 升级与卸载准备」完成准备，再退出旧应用。
+2. 解压并核对随包提供的 SHA-256 校验值，运行对应芯片的安装包。
+3. 从「应用程序」打开 VPN Navigator，完成内置安装检查。
+4. 导入自己的 `.ovpn`，选择路由模式并连接，按提示输入凭据。
 
-0.8.17 减少本地版状态轮询的重复整包校验，并在完整路由事务之间原子压缩所有权日志，避免反复模式切换后日志超过恢复读取上限。文件变化即重新验证，启动引擎及安装维护仍执行完整校验。测量和验收边界见 [功能与性能检查](docs/FUNCTION_AND_PERFORMANCE_0_8_17.md)。
+关闭窗口会继续在状态栏运行；选择「打开主窗口」恢复界面。「退出应用 / ⌘Q」会先断开并核验网络恢复，再停止后台工作。
 
-0.8.16 补齐 OpenVPN DNS 脚本侧的缓存错误处理：DNS 配置成功后，缓存刷新失败不再导致脚本或引擎失败；DNS 配置本身失败仍拒绝连接。此脚本也用于 Original 模式。详见 [补充检查记录](docs/FOLLOWUP_REVIEW_0_8_16.md)。
+## 功能概览
 
-0.8.15 修复 0.8.14 的 DNS 缓存刷新失败导致连接失败、恢复与退出受阻的问题，移除 `launchctl` 缓存信号调用。缓存刷新是尽力执行的附加操作，不再阻断已核验的 DNS 配置或恢复。详见 [DNS 缓存失败修复](docs/DNS_CACHE_FAILURE_0_8_15.md)。
+| 工作区 | 主要能力 |
+| --- | --- |
+| 连接概览 | 隧道实时速度、60 秒流量曲线、累计流量、已核验路由状态与恢复入口。 |
+| 配置库 | Finder 打开与拖放导入、搜索、分组、收藏、备注、安全更新、版本历史和加密备份。 |
+| 路由分流 | 原始配置、全局 VPN、中国直连三种模式；IPv4/IPv6 自定义规则和路由解释。 |
+| 网络诊断 | DNS、TCP、有限跳数 traceroute、ping、公网 IPv4/IPv6 出口检查和脱敏诊断导出。 |
+| 设置与维护 | 可选智能连接、状态通知、登录启动、界面语言及升级/卸载准备。 |
 
-0.8.14 改进断开及模式切换时的原生路由核验、全局模式 VPN DNS 故障切换与系统 DNS 缓存刷新，并允许安装器停止空闲的旧版开机助手。源码改动和验证边界见 [本机实测问题修复](docs/LOCAL_FEEDBACK_0_8_14.md)。
+- **认证支持：**账号凭据可选保存在 Keychain；支持私钥口令、静态 OTP 和初次认证的 CRV1 动态挑战。
+- **快捷操作：**⇧⌘P 快速搜索配置，⌘1–5 切换工作区；支持键盘导航、VoiceOver 标签和系统「增强对比度」。
+- **DNS 与恢复：**中国直连使用分流 DNS，全局模式使用 VPN DNS；通过所有权记录核验 DNS 和路由恢复。
+- **连接历史：**本机保存会话时间线与已观察的连接质量，可配置保留时间并清空。
 
-## 已实现
+## 三种路由模式
 
-- 五个原生工作区、随桌面透色的毛玻璃、菜单栏、单窗口和退出前停止会话。
-- 主窗口 ⌘1–5 工作区切换、⌘F 配置搜索、Return 进入列表与 ↑↓ 选择；支持 VoiceOver 状态标签、键盘焦点和系统增强对比度，提供「帮助 → 键盘与辅助功能」。详见 [键盘与辅助功能](docs/KEYBOARD_AND_ACCESSIBILITY.md)。
-- 毛玻璃快速打开面板、元数据搜索、键盘导航；⇧⌘P、菜单栏入口及可选全局快捷键，冲突可见并可重试；切换活动 VPN 需再次确认，凭据继续在主窗口输入。
-- `.ovpn` 导入、多词搜索、全部/收藏/分组筛选、名称/导入时间排序、分组复用、备注、安全编辑、版本恢复；原始配置保留，邻接证书材料内联至运行副本。
-- Finder“打开方式”、Dock 文件打开与窗口拖拽导入；先确认文件名，忙碌时暂存，重复去重；复用批量结果与取消。
-- 配置库加密备份与预览恢复，包含原始文件、自包含材料、元数据和历史；新 ID 新增恢复，保留现有配置。详见 [加密备份与迁移](docs/ENCRYPTED_BACKUP.md)。
-- 本机配置健康与内联 X.509 有效期检查、单独选择开启的到期提醒；配置更新向导预览确认、保留设置与历史、拒绝过期确认并支持中断恢复，身份变化隔离旧凭据。详见 [配置健康与更新](docs/PROFILE_HEALTH_AND_UPDATES.md)。
-- 可迁移的自包含配置导出与独立路由预览；私有原子保存；批量导入逐文件结果、进度与取消，单个失败继续处理，保留成功项。
-- 用户名密码与可选 Keychain 保存；连接时自动询问缺少的凭据；加密私钥密码、SCRV1/密码拼接静态 OTP，以及首次认证的 CRV1 动态挑战；输入仅用于本次验证。
-- 已认证 XPC、签名/权限校验、受管 OpenVPN 子进程、Unix 管理套接字、可取消连接和 20–180 秒连接/认证期限。
-- 每配置 IPv4／IPv6 自定义直连/VPN 规则、启停和冲突检查；地区规则、模式切换及安全重连保持本次策略，VPN 例外同时从物理路由与 PF 直连表扣除。
-- 路由解释区分离线预览与本次会话实际接口/网关核验；一键排障汇总助手、配置、规则、IPv6、DNS、TCP 和路由，并给出建议；用户触发、可取消、30 秒整体期限。
-- 三种路由策略；规则 / 全局在同一隧道内切换，主窗口及菜单栏显示助手核验的实际模式；按实际隧道地址族应用中国 IPv4／IPv6 直连，其他默认流量经 VPN。端点固定、局域网保护、路由事务日志、校验、热更新及确认进程退出后的回滚。
-- DNS 写前记录、固定原物理网络服务、可信 DNS hook 检查点；仅在当前值仍属于本应用时恢复，冲突时保留证据。
-- **默认关闭的实验性 PF 断线保护**：独立 anchor、引用 token、接口绑定状态、IPv4／IPv6 物理出口策略与异常后保留保护。严格拒绝不兼容宿主 PF 配置，不替换主规则集。
-- 可选受管模式安全重连：仅在 PF 核验成功后，确认旧子进程、DNS 和路由已清理，再在保护持续存在的条件下启动新会话；10 分钟最多 3 次。
-- 随包提供可校验的离线初始 IPv4 地区规则、官方源回退下载、流式大小限制、本地导入、每日更新及快照恢复。
-- 实际 TCP 端口探测、系统 DNS 查询、最多 8 跳 traceroute、3 次 ICMP 延迟/丢包；支持取消和期限。
-- 手动公网 IPv4／IPv6 出口查询，固定 HTTPS 服务、独立临时请求及有界响应；结合实际连接远端和只读会话路由区分匹配、直连及无法核验。结果仅在当前窗口保留，不等同于 DNS／全部流量防泄漏检查。详见 [公网出口检测](docs/PUBLIC_EGRESS.md)。
-- 私有、有界的故障类别日志与脱敏报告导出；报告不包含原始引擎输出、地址、域名、配置或凭据。
-- 会话质量与连接历史：按真实间隔采样速率、连接／重连／路由切换时间线；默认本机保留 7 天，可选 30／90 天、暂停和确认清空。休眠或失联间断不补算在线时长，不保存原始报告及凭据。详见 [连接历史](docs/CONNECTION_HISTORY.md)。
-- 首次使用检查、连接偏好、登录启动、升级/卸载准备；同时停用登录启动，默认保留配置，明确删除时核验 Keychain 清理结果。
-- 从校验后的 OpenVPN/OpenSSL 源码构建 macOS 13 目标引擎；双架构安装器、版本自动读取、更新包架构筛选、最低系统版本审计、签名/公证与可选 Draft Release 流程。
+| 模式 | 行为 |
+| --- | --- |
+| 原始配置 | 遵循经过校验的 OpenVPN 配置。 |
+| 全局 VPN | 受管默认流量通过 VPN。 |
+| 中国直连 | 按隧道实际承载的地址族，将地区 IPv4/IPv6 目的地直连，其余默认流量通过 VPN；名单内国内域名使用直连 DNS。 |
 
-界面支持简体中文／English，默认跟随系统。在「设置与维护 → 界面语言」保存后，下次启动生效，不中断当前 VPN。详见 [语言与本地化](docs/LOCALIZATION.md)。README 默认英文不改变应用的语言行为。
+自定义直连/VPN 规则支持两种地址族。约束及恢复行为见[双栈支持](docs/DUAL_STACK.md)、[路由工具](docs/ROUTING_TOOLS.md)和 [DNS 分流](docs/SPLIT_DNS_AND_DISCONNECT.md)。
 
-支持常见跨平台配置中的两种 Windows DNS 可选提示：`ignore-unknown-option block-outside-dns` 与 `setenv opt block-outside-dns`。仅接受这两种精确目标，不开放通用环境变量或忽略列表；在 macOS 上由 OpenVPN 按可选指令语义处理，不能据此宣称已启用 DNS 防泄漏。参见 [OpenVPN 2.7 手册的 Windows 专用选项](https://openvpn.net/community-docs/community-articles/openvpn-2-7-manual/)。
+## 从源码构建
 
-配置库支持分组/收藏筛选、排序及分组复用，见 [配置库管理](docs/PROFILE_LIBRARY.md)。
-
-配置列表支持本机私有备份和损坏后的确认恢复，见 [配置列表恢复](docs/PROFILE_INDEX_RECOVERY.md)。
-
-自定义规则、路由解释和一键排障的范围见 [路由工具](docs/ROUTING_TOOLS.md)。
-
-规则模式已增加 DNS 分流：名单内国内域名通过直连 AliDNS 解析，其它域名使用 VPN DNS，避免国内解析绕行 VPN；保留企业补充 DNS，全局模式仍使用 VPN DNS。域名快照随应用内置，连接时无需下载。参见 [DNS 分流与断开恢复](docs/SPLIT_DNS_AND_DISCONNECT.md)。
-
-手动断开时，界面保持“正在断开与恢复”，收到后台清理结果后再核验；短超时状态轮询不会再把较长的路由恢复误报为连接异常。
-
-内置 DNS 脚本采用受保护的工作目录及无空格命令，修复应用安装路径含空格时引擎启动即退出的问题。
-
-OpenVPN 冷启动沿用设置中的连接超时；引擎提前退出时，显示脱敏故障类别及退出码，避免被笼统的管理通道超时覆盖。参见[启动诊断](docs/OPENVPN_STARTUP.md)。
-
-网页首次打开慢或跨夜体验变化，可使用[网页延迟与跨夜对照工具](docs/WEB_LATENCY_AND_OVERNIGHT.md)分开测量 DNS、TCP、TLS 和首字节耗时；工具不改当前 VPN 或系统网络设置。
-
-## 智能连接与实时流量
-
-支持按应用启动、唤醒或网络恢复触发连接，可选择最近成功或固定配置、限定网络并随时暂停。手动断开及连接失败暂停自动连接；本地状态通知可选择异常或全部变化。默认关闭，详见 [智能连接与状态通知](docs/SMART_CONNECTION.md)。
-
-主页提供最近 60 秒的真实隧道下载／上传曲线、即时速度及累计流量；连接状态卡展示已观察连接时间、已核验的实际路由、IPv4／双栈和 PF 保护状态。保护开关仅在空闲且无恢复任务时可编辑，作用于下次受管连接；异常可从主页恢复网络或打开一键排障。曲线不连接中断前后的数据，不填充虚构样本，过期采样不显示为实时速度；PF 状态不代表已通过 DNS 防泄漏验收。
-
-明确选择“退出应用”／Cmd-Q 时，应用会先断开 VPN 并核验网络恢复，再停止助手进程及当前规则更新任务，保留安装批准与偏好供下次启动恢复。关闭窗口继续在状态栏运行。完整卸载仍使用“升级与卸载准备”中的卸载入口。
-
-## 构建与安装
-
-需要 macOS 13+ 和 Swift 5.9+：
+需要 **macOS 13+**、**Swift 5.9+**，以及兼容的 macOS SDK 和 XCTest 工具链。
 
 ```sh
 swift test
 zsh scripts/build-app.sh
 ```
 
-未提供 `OPENVPN_BIN` 的构建是 UI-only。本地连接请使用[本地测试安装包](docs/LOCAL_TEST_INSTALLATION.md)，由管理员批准并核验固定代码身份；正式分发使用 Developer ID 签名安装包。两种通道均需受保护程序及后台助手。应用不会要求最终用户安装 Homebrew。
+未设置 `OPENVPN_BIN` 时生成 UI 预览版。需要实际连接时，参照[本地测试安装](docs/LOCAL_TEST_INSTALLATION.md)或[源码引擎及签名构建](docs/INSTALL_AND_RELEASE.md)。[安装包工作流](https://github.com/javafancn/vpn-navigator/actions/workflows/package-installers.yml)构建双架构产物；Developer ID 签名与公证使用[独立流程](docs/SIGNED_RELEASE_WORKFLOW.md)。
 
-### 下载 Intel 或 Apple Silicon 安装包
+## 文档导航
 
-1. 打开 [Build macOS installers (Intel + Apple Silicon)](https://github.com/javafancn/vpn-navigator/actions/workflows/package-installers.yml)。
-2. 选择 **Run workflow → main**，等待两个架构的任务成功。
-3. 从运行摘要或 **Artifacts** 区下载对应芯片的文件：
-
-| Mac 芯片 | 产物名称 |
+| 使用场景 | 文档 |
 | --- | --- |
-| Apple Silicon（M 系列） | `VPN-Navigator-<version>-Apple-Silicon-arm64-Local-Test` |
-| Intel | `VPN-Navigator-<version>-Intel-x86_64-Local-Test` |
+| 安装、升级与卸载 | [本地安装指南](docs/LOCAL_TEST_INSTALLATION.md) |
+| 整理与迁移配置 | [配置库](docs/PROFILE_LIBRARY.md) · [加密备份](docs/ENCRYPTED_BACKUP.md) · [健康与更新](docs/PROFILE_HEALTH_AND_UPDATES.md) |
+| 分流与自动连接 | [路由工具](docs/ROUTING_TOOLS.md) · [智能连接](docs/SMART_CONNECTION.md) |
+| 排查连接问题 | [启动诊断](docs/OPENVPN_STARTUP.md) · [网页延迟](docs/WEB_LATENCY_AND_OVERNIGHT.md) · [公网出口](docs/PUBLIC_EGRESS.md) |
+| 开发与发布验收 | [架构](docs/ARCHITECTURE.md) · [验收清单](docs/QA.md) · [1.0.0 说明](docs/RELEASE_NOTES_1_0_0.md) |
 
-每份产物包含完整引擎与应用安装包、卸载包、SHA-256 和安装说明。main 的程序或构建文件变化会自动触发，产物保留 30 天；过期后可重新运行。该流程使用本地测试通道，无需付费签名证书；构建采用 ad-hoc 签名、未公证，正式公证流程仍独立运行。
+实现细节、历史修复与验证记录收录在[完整文档索引](docs/README.md)。
 
-更新已安装的可连接版本前，先在旧版完成“升级与卸载准备”。从 0.8.3 及更早版本升级时，准备成功后关闭维护弹窗，明确退出旧应用，再打开新安装包。正常退出保留安装批准，不能替代完整卸载准备。完整步骤见 [本地安装、更新与卸载](docs/LOCAL_TEST_INSTALLATION.md)。
+## 安全与兼容范围
 
-源码引擎与签名分发步骤见 [安装与发布](docs/INSTALL_AND_RELEASE.md) 和 [手动签名工作流](docs/SIGNED_RELEASE_WORKFLOW.md)。
+连接前必须具备 `remote-cert-tls server` 或精确的 `verify-x509-name` 服务端身份约束；旧配置仍可导入和编辑。任意脚本/插件、TAP、硬件 PKCS11、SAML/浏览器认证及会话内 CRV1 重认证不在当前支持范围。
 
-## 安全范围
+**PF 断线保护为实验性功能，默认关闭。**它要求兼容的系统 PF 布局，保护变更会重置现有网络连接。完整物理网络防泄漏验收尚未完成；1.0.0 版本号不代表已通过 Apple 公证或全部真实网络验收。当前限制及待验收项目见[版本说明](docs/RELEASE_NOTES_1_0_0.md)与[验收清单](docs/QA.md)。
 
-连接前要求 `remote-cert-tls server` 或精确的 `verify-x509-name` 服务端身份约束，应用与特权助手分别检查。缺少约束的旧配置可以导入、编辑和备份，健康检查会报错，并在连接前拒绝使用；请向管理员获取正确配置。配置库使用跨实例、跨进程事务锁保护索引与恢复记录，详见[高优先级修复与验证](docs/HIGH_PRIORITY_FIXES.md)。
+恢复仅处理能确认属于本应用的 DNS、路由和 PF 资源。配置可能含私钥，请勿将真实配置、密码或签名证书提交到 Git 或问题反馈中。
 
-断线保护为显式启用的实验性能力，支持 IPv4／IPv6 端点及全局/中国直连模式。在兼容的系统 PF 布局中接入独立 anchor；启用、重建、收紧规则或解除时会重置现有网络连接，包括其他 VPN。它不与未知 PF 布局强行共存。完整物理网络防泄漏验收尚未完成，不能依据静态规则或回环测试宣称零泄漏。
+## 致谢与许可证
 
-受管单栈会话还须满足未承载地址族的保护条件，具体见双栈说明。已连接会话内的 CRV1 重认证、SAML/浏览器认证、TAP、任意脚本/插件和硬件 PKCS11 不在当前支持范围；不支持的配置或认证应明确失败。
-
-异常恢复只处理可确认的本应用 DNS、路由与 PF 所有权。活着或复用的孤儿 PID 不会被盲目终止，模糊事务不会被猜测删除。
-
-## 验证与发布门槛
-
-自动化包括核心测试、macOS 15/26 的 Apple Silicon 与 Intel 构建、双架构 UI 包、回环网络探测、合成服务 DNS 恢复、PF 规则语法、实际单回环端口的 PF 阻断/解除，以及源码引擎与最低系统版本检查。安装集成检查还覆盖真实应用退出、助手停止、批准与注册保留以及下次按需启动。各项是否通过以当前提交的 Actions 结果为准。
-
-以下仍需在签名安装包与实际服务器上记录结果：特权助手授权、真实 TLS/MFA、国内外出口与 DNS 抓包、IPv6/网络切换/睡眠唤醒、守护进程崩溃、长时运行及安装升级卸载。[完整验收清单](docs/QA.md) 与 [功能完成记录](docs/PRODUCT_READINESS_2026_10_17.md) 与 [认证及维护补完](docs/AUTH_AND_MAINTENANCE_2026_10_18.md)。
-
-## 数据与许可证
-
-配置可能包含私钥，默认只保存在本机私有目录；请勿提交真实 `.ovpn`、密码、私钥或签名证书。
-
-初始地区规则来自 [misakaio/chnroutes2](https://github.com/misakaio/chnroutes2)，保留 CC BY-SA 2.0 标识、来源和快照 blob SHA，见 [地区规则来源](Resources/Rules/README.md)。OpenVPN/OpenSSL 的原始许可证与对应源码归档由源码构建/签名流程收集并随正式应用提供；分发前仍须审阅实际依赖与通知。
+地区规则来自 [misakaio/chnroutes2](https://github.com/misakaio/chnroutes2)，保留 CC BY-SA 2.0 标识及快照来源，见[规则说明](Resources/Rules/README.md)。引擎构建随包收集 OpenVPN/OpenSSL 原始许可证及对应源码归档。参见 [LICENSES](LICENSES) 和各构建内的依赖声明。

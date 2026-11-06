@@ -1,4 +1,4 @@
-# Build, install and update VPN Navigator 0.2
+# Build, install and update VPN Navigator
 
 ## UI development
 
@@ -37,7 +37,7 @@ NOTARY_KEYCHAIN_PROFILE=your-profile zsh scripts/notarize.sh pkg
 zsh scripts/release-audit.sh
 ```
 
-Both source archives and notices are embedded before signing. The installer name derives from Info.plist and the actual build architecture, e.g. `VPN-Navigator-0.2.0-arm64.pkg`. Produce separate arm64 and x86_64 installers. The release manifest rejects missing slices or a bundled binary whose minimum macOS exceeds the application's declared minimum; a green UI-only build is insufficient.
+Both source archives and notices are embedded before signing. The installer name derives from Info.plist and the actual build architecture, e.g. `VPN-Navigator-1.0.0-arm64.pkg`. Produce separate arm64 and x86_64 installers. The release manifest rejects missing slices or a bundled binary whose minimum macOS exceeds the application's declared minimum; a green UI-only build is insufficient.
 
 See SIGNED_RELEASE_WORKFLOW.md for the manual two-architecture workflow. It can attach signed/notarized packages, hashes and manifests to a draft, and never automatically publishes a production release.
 
@@ -51,7 +51,7 @@ See SIGNED_RELEASE_WORKFLOW.md for the manual two-architecture workflow. It can 
 
 ## Protection and maintenance
 
-Experimental PF protection is an explicit opt-in for managed IPv4 modes. It rejects incompatible host layouts and resets existing connections during protection changes. Original mode follows the validated original profile. Complete the real-server tests before claiming protection guarantees.
+Experimental PF protection is an explicit opt-in for managed IPv4/IPv6 modes. It rejects incompatible host layouts and resets existing connections during protection changes. Original mode follows the validated original profile. Complete the real-server tests before claiming protection guarantees.
 
 Use Settings → Upgrade and Uninstall Preparation to disconnect, recover network ownership and unregister the application's helper, rule updater and login startup. Maintenance blocks new sessions and profile mutations while cleanup is in progress. Keep profiles by default; deleting them is an explicit irreversible checkbox. Upgrade opens a verified same-team PKG in macOS Installer. Removal is completed in Finder; the application does not run an arbitrary root deletion command.
 

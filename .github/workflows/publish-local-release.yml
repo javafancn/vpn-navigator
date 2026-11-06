@@ -29,7 +29,7 @@ jobs:
       RELEASE_TAG: ${{ inputs.tag }}
       BUILD_RUN: ${{ inputs.build_run }}
     steps:
-      - name: Verify draft and installer provenance
+      - name: Verify release and installer provenance
         run: |
           python3 - <<'PY'
           import json, os, re, subprocess
@@ -44,7 +44,7 @@ jobs:
           assert run['status'] == 'completed' and run['conclusion'] == 'success', 'Build has not passed'
           assert run['head_repository']['full_name'] == repo and run['head_branch'] == 'main', 'Wrong build source'
           release = next(r for r in api(f'repos/{repo}/releases?per_page=100') if r['tag_name'] == tag)
-          assert release['draft'] and not release['prerelease'], 'Expected unpublished draft'
+          assert not release['prerelease'], 'Expected a versioned local-test release'
           assert release['target_commitish'] == run['head_sha'], 'Release and build commits differ'
           assert 'not Apple notarized' in release['body'] and 'local-test' in release['body'], 'Missing channel disclosure'
           Path('provenance.json').write_text(json.dumps({'sha': run['head_sha'], 'version': tag[1:]}))

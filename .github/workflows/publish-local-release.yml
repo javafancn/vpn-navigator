@@ -1,10 +1,10 @@
-name: Publish local-test release
+name: Publish release
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing draft release tag (vX.Y.Z)
+        description: Release tag (vX.Y.Z)
         required: true
       build_run:
         description: Successful installer workflow run ID
@@ -44,7 +44,7 @@ jobs:
           assert run['status'] == 'completed' and run['conclusion'] == 'success', 'Build has not passed'
           assert run['head_repository']['full_name'] == repo and run['head_branch'] == 'main', 'Wrong build source'
           release = next(r for r in api(f'repos/{repo}/releases?per_page=100') if r['tag_name'] == tag)
-          assert not release['prerelease'], 'Expected a versioned local-test release'
+          assert not release['prerelease'], 'Expected a versioned release'
           assert release['target_commitish'] == run['head_sha'], 'Release and build commits differ'
           assert 'not Apple notarized' in release['body'] and 'local-test' in release['body'], 'Missing channel disclosure'
           Path('provenance.json').write_text(json.dumps({'sha': run['head_sha'], 'version': tag[1:]}))
@@ -78,7 +78,7 @@ jobs:
                   assert hashlib.sha256(file.read_bytes()).hexdigest() == match[1]
                   checked.add(file.name)
               assert checked == {p.name for p in folder.glob('*.pkg')} and len(checked) == 2
-              archive = output / f"VPN-Navigator-{expected['version']}-{label}-{arch}-Local-Test.zip"
+              archive = output / f"VPN-Navigator-{expected['version']}-{label}-{arch}.zip"
               with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as zip:
                   for file in sorted(folder.iterdir()):
                       assert file.is_file() and not file.is_symlink()
@@ -90,5 +90,5 @@ jobs:
           PY
       - name: Attach verified downloads and publish
         run: |
-          gh release upload "$RELEASE_TAG" release-assets/*
-          gh release edit "$RELEASE_TAG" --draft=false --latest
+          gh release upload "$RELEASE_TAG" release-assets/* --clobber
+          gh release edit "$RELEASE_TAG" --tag "$RELEASE_TAG" --draft=false --latest

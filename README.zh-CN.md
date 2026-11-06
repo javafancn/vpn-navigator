@@ -26,8 +26,8 @@
 
 | Mac 芯片 | 下载文件 |
 | --- | --- |
-| Apple Silicon（M 系列） | `VPN-Navigator-1.0.0-Apple-Silicon-arm64-Local-Test.zip` |
-| Intel | `VPN-Navigator-1.0.0-Intel-x86_64-Local-Test.zip` |
+| Apple Silicon（M 系列） | `VPN-Navigator-1.0.0-Apple-Silicon-arm64.zip` |
+| Intel | `VPN-Navigator-1.0.0-Intel-x86_64.zip` |
 
 每份压缩包包含 OpenVPN 引擎、安装包、卸载包、SHA-256 校验值、构建来源及安装说明。当前提供**本地测试通道：ad-hoc 签名，未经 Apple 公证**，通过管理员批准固定安装代码身份。用户无需安装 Homebrew。完整步骤见[本地安装、更新与卸载](docs/LOCAL_TEST_INSTALLATION.md)。
 

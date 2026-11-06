@@ -26,8 +26,8 @@ Get **1.0.0** from [GitHub Releases](https://github.com/javafancn/vpn-navigator/
 
 | Mac | Download |
 | --- | --- |
-| Apple Silicon (M-series) | `VPN-Navigator-1.0.0-Apple-Silicon-arm64-Local-Test.zip` |
-| Intel | `VPN-Navigator-1.0.0-Intel-x86_64-Local-Test.zip` |
+| Apple Silicon (M-series) | `VPN-Navigator-1.0.0-Apple-Silicon-arm64.zip` |
+| Intel | `VPN-Navigator-1.0.0-Intel-x86_64.zip` |
 
 Each archive contains the OpenVPN engine, installer, uninstaller, SHA-256 checksums, build provenance and installation instructions. These are **local-test builds: ad-hoc signed and not Apple notarized**. Administrator approval pins the installed code identity. No Homebrew is needed on the user's Mac. See [installation and removal](docs/LOCAL_TEST_INSTALLATION.md) for the full procedure.
 

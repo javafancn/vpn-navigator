@@ -15,7 +15,7 @@ VPN Navigator 1.0.0 brings the existing native macOS OpenVPN workspace into a ne
 
 ### Downloads and upgrade
 
-Choose the `Apple-Silicon-arm64` or `Intel-x86_64` Local-Test ZIP. Each includes an installer, uninstaller, SHA-256 checksums, build provenance, approval manifest and binary audit. OpenVPN and its matching source/license materials are bundled in the application.
+Choose the `Apple-Silicon-arm64` or `Intel-x86_64` ZIP. Each includes an installer, uninstaller, SHA-256 checksums, build provenance, approval manifest and binary audit. OpenVPN and its matching source/license materials are bundled in the application.
 
 These packages use the administrator-approved **local-test channel**, are ad-hoc signed and are **not Apple notarized**. Developer ID distribution remains a separate signing/notarization workflow. Before upgrading an existing connection-capable installation, complete **Upgrade & Uninstall Preparation** in the old app, then quit it. Follow the included instructions and [installation guide](LOCAL_TEST_INSTALLATION.md).
 
@@ -36,7 +36,7 @@ PF disconnect protection remains experimental and off by default. Physical-netwo
 
 ### 下载与升级
 
-按芯片选择 `Apple-Silicon-arm64` 或 `Intel-x86_64` Local-Test 压缩包，内含安装包、卸载包、SHA-256、构建来源、批准清单及二进制审计。应用内含 OpenVPN 引擎及对应源码、许可证材料。
+按芯片选择 `Apple-Silicon-arm64` 或 `Intel-x86_64` 压缩包，内含安装包、卸载包、SHA-256、构建来源、批准清单及二进制审计。应用内含 OpenVPN 引擎及对应源码、许可证材料。
 
 当前为管理员批准的**本地测试通道**，采用 ad-hoc 签名，**未经 Apple 公证**；Developer ID 分发仍使用独立签名及公证流程。更新前先在旧版完成「升级与卸载准备」，再退出旧应用。请按包内说明及[安装指南](LOCAL_TEST_INSTALLATION.md)操作。
 

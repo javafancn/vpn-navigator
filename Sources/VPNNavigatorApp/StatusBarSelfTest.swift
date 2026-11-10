@@ -137,7 +137,13 @@ enum StatusBarSelfTest {
     }
     private static func verifyMainMenuStability(model: AppModel, profile: VPNProfile, attempt: UUID) async throws {
         model.quickAccess.openMainWindow()
-        try await settle()
+        // Returning from the native status menu and publishing the first rate
+        // can finish scene/menu installation asynchronously. Warm up once;
+        // every subsequent traffic sample must preserve the settled objects.
+        model.applyVerifiedSessionReport(.init(state: .connected, message: "main menu warmup fixture", activeProfileID: profile.id,
+            receivedBytes: 100_000, sentBytes: 10_000,
+            attemptID: attempt, networkRecoveryRequired: false, routingMode: .original))
+        try await Task.sleep(nanoseconds: 1_000_000_000)
         guard let root = NSApp.mainMenu, root.numberOfItems > 0 else { throw Failure.check("main menu readiness") }
         let items = root.items
         let titles = items.map(\.title)
@@ -146,7 +152,7 @@ enum StatusBarSelfTest {
         // same foreground window. Presenting sheets legitimately changes the
         // responder/menu context on some systems and is tested separately by
         // WorkspaceAccessibilitySelfTest's modal command exclusion checks.
-        for sample in 1...6 {
+        for sample in 2...7 {
             model.applyVerifiedSessionReport(.init(state: .connected, message: "main menu polling fixture", activeProfileID: profile.id,
                 receivedBytes: UInt64(sample) * 100_000, sentBytes: UInt64(sample) * 10_000,
                 attemptID: attempt, networkRecoveryRequired: false, routingMode: .original))
@@ -155,7 +161,7 @@ enum StatusBarSelfTest {
                   root.items.map(\.title) == titles,
                   zip(root.items, items).allSatisfy({ $0 === $1 }),
                   zip(root.items.map(\.submenu), submenus).allSatisfy({ $0 === $1 }) else {
-                throw Failure.check("traffic rebuilt the foreground main menu at sample \(sample)")
+                throw Failure.check("traffic rebuilt the foreground main menu at sample \(sample); rootChanged=\(NSApp.mainMenu !== root); titles=\(root.items.map(\.title)); expected=\(titles)")
             }
         }
         model.applyVerifiedSessionReport(.init(state: .connected, message: "synthetic, no VPN", activeProfileID: profile.id,

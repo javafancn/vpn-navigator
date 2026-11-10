@@ -5,7 +5,7 @@
 
 <p align="center">原生 macOS OpenVPN 客户端，让连接、分流与排障更直观。</p>
 <p align="center">
-  <a href="https://github.com/javafancn/vpn-navigator/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/version-1.0.0-2563eb" alt="版本 1.0.0"></a>
+  <a href="https://github.com/javafancn/vpn-navigator/releases/tag/v1.0.1"><img src="https://img.shields.io/badge/version-1.0.1-2563eb" alt="版本 1.0.1"></a>
   <img src="https://img.shields.io/badge/macOS-13%2B-111827" alt="macOS 13 及以上">
   <img src="https://img.shields.io/badge/Apple_Silicon_%26_Intel-supported-16a34a" alt="支持 Apple Silicon 与 Intel">
   <a href="https://github.com/javafancn/vpn-navigator/actions/workflows/swift.yml"><img src="https://github.com/javafancn/vpn-navigator/actions/workflows/swift.yml/badge.svg" alt="Swift 核心测试"></a>
@@ -14,7 +14,7 @@
   <a href="README.md">English</a> · <strong>简体中文</strong><br>
   <a href="https://github.com/javafancn/vpn-navigator/releases/latest">下载安装</a> ·
   <a href="docs/README.md">文档中心</a> ·
-  <a href="docs/RELEASE_NOTES_1_0_0.md">版本说明</a> ·
+  <a href="docs/RELEASE_NOTES_1_0_1.md">版本说明</a> ·
   <a href="https://github.com/javafancn/vpn-navigator/issues">反馈问题</a>
 </p>
 
@@ -22,12 +22,12 @@
 
 ## 下载与连接
 
-从 [GitHub Releases](https://github.com/javafancn/vpn-navigator/releases/latest) 下载 **1.0.0**，按 Mac 芯片选择文件：
+从 [GitHub Releases](https://github.com/javafancn/vpn-navigator/releases/latest) 下载 **1.0.1**，按 Mac 芯片选择文件：
 
 | Mac 芯片 | 下载文件 |
 | --- | --- |
-| Apple Silicon（M 系列） | `VPN-Navigator-1.0.0-Apple-Silicon-arm64.zip` |
-| Intel | `VPN-Navigator-1.0.0-Intel-x86_64.zip` |
+| Apple Silicon（M 系列） | `VPN-Navigator-1.0.1-Apple-Silicon-arm64.zip` |
+| Intel | `VPN-Navigator-1.0.1-Intel-x86_64.zip` |
 
 每份压缩包包含 OpenVPN 引擎、安装包、卸载包、SHA-256 校验值、构建来源及安装说明。当前提供**本地测试通道：ad-hoc 签名，未经 Apple 公证**，通过管理员批准固定安装代码身份。用户无需安装 Homebrew。完整步骤见[本地安装、更新与卸载](docs/LOCAL_TEST_INSTALLATION.md)。
 
@@ -82,7 +82,7 @@ zsh scripts/build-app.sh
 | 整理与迁移配置 | [配置库](docs/PROFILE_LIBRARY.md) · [加密备份](docs/ENCRYPTED_BACKUP.md) · [健康与更新](docs/PROFILE_HEALTH_AND_UPDATES.md) |
 | 分流与自动连接 | [路由工具](docs/ROUTING_TOOLS.md) · [智能连接](docs/SMART_CONNECTION.md) |
 | 排查连接问题 | [启动诊断](docs/OPENVPN_STARTUP.md) · [网页延迟](docs/WEB_LATENCY_AND_OVERNIGHT.md) · [公网出口](docs/PUBLIC_EGRESS.md) |
-| 开发与发布验收 | [架构](docs/ARCHITECTURE.md) · [验收清单](docs/QA.md) · [1.0.0 说明](docs/RELEASE_NOTES_1_0_0.md) |
+| 开发与发布验收 | [架构](docs/ARCHITECTURE.md) · [验收清单](docs/QA.md) · [1.0.1 说明](docs/RELEASE_NOTES_1_0_1.md) |
 
 实现细节、历史修复与验证记录收录在[完整文档索引](docs/README.md)。
 
@@ -90,7 +90,7 @@ zsh scripts/build-app.sh
 
 连接前必须具备 `remote-cert-tls server` 或精确的 `verify-x509-name` 服务端身份约束；旧配置仍可导入和编辑。任意脚本/插件、TAP、硬件 PKCS11、SAML/浏览器认证及会话内 CRV1 重认证不在当前支持范围。
 
-**PF 断线保护为实验性功能，默认关闭。**它要求兼容的系统 PF 布局，保护变更会重置现有网络连接。完整物理网络防泄漏验收尚未完成；1.0.0 版本号不代表已通过 Apple 公证或全部真实网络验收。当前限制及待验收项目见[版本说明](docs/RELEASE_NOTES_1_0_0.md)与[验收清单](docs/QA.md)。
+**PF 断线保护为实验性功能，默认关闭。**它要求兼容的系统 PF 布局，保护变更会重置现有网络连接。完整物理网络防泄漏验收尚未完成；1.0.1 版本号不代表已通过 Apple 公证或全部真实网络验收。当前限制及待验收项目见[版本说明](docs/RELEASE_NOTES_1_0_1.md)与[验收清单](docs/QA.md)。
 
 恢复仅处理能确认属于本应用的 DNS、路由和 PF 资源。配置可能含私钥，请勿将真实配置、密码或签名证书提交到 Git 或问题反馈中。
 

@@ -40,6 +40,7 @@ enum StatusBarSelfTest {
         let idleLabel = AppBranding.statusLabel(download: "—", upload: "—", showsTraffic: false)
         guard idleLabel.size == NSSize(width: 22, height: 22), idleLabel.isTemplate else { throw Failure.check("idle status item keeps a standard icon width") }
         try await verifyMenuTracking(model: model, profile: profile, attempt: attempt)
+        try await verifyMainMenuStability(model: model, profile: profile, attempt: attempt)
         if Bundle.main.bundleURL.pathExtension == "app" {
             guard Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String == "AppIcon",
                   let icon = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"), NSImage(contentsOf: icon) != nil,
@@ -132,7 +133,34 @@ enum StatusBarSelfTest {
         try await settle()
         try requireSingleMainWindow("Dock close/reopen race")
         guard model.connected, model.activeProfileID == profile.id else { throw Failure.check("Dock reopen preserves session") }
-        print("PASS: stable native menu items/actions during polling, refreshed next-open state, template throughput label, bundled logo, single-instance SwiftUI scene, Dock reopen/minimize/hide/close races, unrelated-window ownership and synthetic session preservation; no VPN requests.")
+        print("PASS: stable foreground main menu and native status menu during polling, refreshed next-open state, template throughput label, bundled logo, single-instance SwiftUI scene, Dock reopen/minimize/hide/close races, unrelated-window ownership and synthetic session preservation; no VPN requests.")
+    }
+    private static func verifyMainMenuStability(model: AppModel, profile: VPNProfile, attempt: UUID) async throws {
+        model.quickAccess.openMainWindow()
+        try await settle()
+        guard let root = NSApp.mainMenu, root.numberOfItems > 0 else { throw Failure.check("main menu readiness") }
+        let items = root.items
+        let titles = items.map(\.title)
+        let submenus = items.map(\.submenu)
+        // Check the actual AppKit objects after SwiftUI has reconciled each
+        // traffic update, including the workspace command availability change.
+        for sample in 1...6 {
+            model.applyVerifiedSessionReport(.init(state: .connected, message: "main menu polling fixture", activeProfileID: profile.id,
+                receivedBytes: UInt64(sample) * 100_000, sentBytes: UInt64(sample) * 10_000,
+                attemptID: attempt, networkRecoveryRequired: false, routingMode: .original))
+            model.showingKeyboardHelp = sample.isMultiple(of: 2)
+            try await settle()
+            guard NSApp.mainMenu === root, root.items.count == items.count,
+                  root.items.map(\.title) == titles,
+                  zip(root.items, items).allSatisfy({ $0 === $1 }),
+                  zip(root.items.map(\.submenu), submenus).allSatisfy({ $0 === $1 }) else {
+                throw Failure.check("traffic or command availability rebuilt the main menu")
+            }
+        }
+        model.showingKeyboardHelp = false
+        model.applyVerifiedSessionReport(.init(state: .connected, message: "synthetic, no VPN", activeProfileID: profile.id,
+            receivedBytes: 1_000, sentBytes: 100, attemptID: attempt, networkRecoveryRequired: false, routingMode: .original))
+        try await settle()
     }
     private static func verifyMenuTracking(model: AppModel, profile: VPNProfile, attempt: UUID) async throws {
         let controller = StatusBarMenuController(model: model, installsStatusItem: false)

@@ -1,6 +1,6 @@
 # 文档中心 / Documentation
 
-[English](../README.md) · [简体中文](../README.zh-CN.md) · [1.0.0 / Build 39](RELEASE_NOTES_1_0_0.md)
+[English](../README.md) · [简体中文](../README.zh-CN.md) · [1.0.1 / Build 40](RELEASE_NOTES_1_0_1.md)
 
 README 提供安装入口与功能概览；本目录保留操作指南、实现说明及历史验证记录。历史文档中的版本、验收结论和限制仅适用于其记录的提交，当前状态以对应提交的 CI 和实机记录为准。
 
@@ -59,6 +59,7 @@ README 提供安装入口与功能概览；本目录保留操作指南、实现�
 - [快速打开（0.3.4 / Build 7）](QUICK_ACCESS.md)
 - [0.8.18 / Build 38](RELEASE_NOTES_0_8_18.md)
 - [VPN Navigator 1.0.0 / Build 39](RELEASE_NOTES_1_0_0.md)
+- [VPN Navigator 1.0.1 / Build 40](RELEASE_NOTES_1_0_1.md)
 - [规则、下载、备份和连接诊断改进](RELIABILITY_IMPROVEMENTS.md)
 - [2026-11-02 检查与后续优先级](REVIEW_2026_11_02.md)
 - [截图审查意见逐项核验（2026-11-03）](REVIEW_FINDINGS_VERIFICATION_2026_11_03.md)

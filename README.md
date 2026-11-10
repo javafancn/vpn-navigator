@@ -5,7 +5,7 @@
 
 <p align="center">A native OpenVPN workspace for macOS.</p>
 <p align="center">
-  <a href="https://github.com/javafancn/vpn-navigator/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/version-1.0.0-2563eb" alt="Version 1.0.0"></a>
+  <a href="https://github.com/javafancn/vpn-navigator/releases/tag/v1.0.1"><img src="https://img.shields.io/badge/version-1.0.1-2563eb" alt="Version 1.0.1"></a>
   <img src="https://img.shields.io/badge/macOS-13%2B-111827" alt="macOS 13 or later">
   <img src="https://img.shields.io/badge/Apple_Silicon_%26_Intel-supported-16a34a" alt="Apple Silicon and Intel">
   <a href="https://github.com/javafancn/vpn-navigator/actions/workflows/swift.yml"><img src="https://github.com/javafancn/vpn-navigator/actions/workflows/swift.yml/badge.svg" alt="Swift core tests"></a>
@@ -14,7 +14,7 @@
   <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a><br>
   <a href="https://github.com/javafancn/vpn-navigator/releases/latest">Download</a> ·
   <a href="docs/README.md">Documentation</a> ·
-  <a href="docs/RELEASE_NOTES_1_0_0.md">Release notes</a> ·
+  <a href="docs/RELEASE_NOTES_1_0_1.md">Release notes</a> ·
   <a href="https://github.com/javafancn/vpn-navigator/issues">Report an issue</a>
 </p>
 
@@ -22,12 +22,12 @@ Manage OpenVPN profiles, choose where traffic goes, and inspect your connection 
 
 ## Download and connect
 
-Get **1.0.0** from [GitHub Releases](https://github.com/javafancn/vpn-navigator/releases/latest). Choose the archive for your Mac:
+Get **1.0.1** from [GitHub Releases](https://github.com/javafancn/vpn-navigator/releases/latest). Choose the archive for your Mac:
 
 | Mac | Download |
 | --- | --- |
-| Apple Silicon (M-series) | `VPN-Navigator-1.0.0-Apple-Silicon-arm64.zip` |
-| Intel | `VPN-Navigator-1.0.0-Intel-x86_64.zip` |
+| Apple Silicon (M-series) | `VPN-Navigator-1.0.1-Apple-Silicon-arm64.zip` |
+| Intel | `VPN-Navigator-1.0.1-Intel-x86_64.zip` |
 
 Each archive contains the OpenVPN engine, installer, uninstaller, SHA-256 checksums, build provenance and installation instructions. These are **local-test builds: ad-hoc signed and not Apple notarized**. Administrator approval pins the installed code identity. No Homebrew is needed on the user's Mac. See [installation and removal](docs/LOCAL_TEST_INSTALLATION.md) for the full procedure.
 
@@ -82,7 +82,7 @@ Without `OPENVPN_BIN`, this creates a UI-only preview. For a connection-capable 
 | Organize and migrate profiles | [Profile library](docs/PROFILE_LIBRARY.md) · [Encrypted backups](docs/ENCRYPTED_BACKUP.md) · [Health and updates](docs/PROFILE_HEALTH_AND_UPDATES.md) |
 | Configure routing and automation | [Routing tools](docs/ROUTING_TOOLS.md) · [Smart connection](docs/SMART_CONNECTION.md) |
 | Investigate connection problems | [Startup diagnostics](docs/OPENVPN_STARTUP.md) · [Web latency](docs/WEB_LATENCY_AND_OVERNIGHT.md) · [Public egress](docs/PUBLIC_EGRESS.md) |
-| Contribute or verify a release | [Architecture](docs/ARCHITECTURE.md) · [QA checklist](docs/QA.md) · [1.0.0 notes](docs/RELEASE_NOTES_1_0_0.md) |
+| Contribute or verify a release | [Architecture](docs/ARCHITECTURE.md) · [QA checklist](docs/QA.md) · [1.0.1 notes](docs/RELEASE_NOTES_1_0_1.md) |
 
 The [complete documentation index](docs/README.md) includes implementation notes and earlier validation records. Most detailed documents are currently in Chinese.
 
@@ -90,7 +90,7 @@ The [complete documentation index](docs/README.md) includes implementation notes
 
 Profiles must include `remote-cert-tls server` or an exact `verify-x509-name` constraint before connection. Legacy profiles can still be imported and edited. Unsupported scripts/plugins, TAP, hardware PKCS11, SAML/browser authentication and in-session CRV1 reauthentication are outside the current scope.
 
-**PF disconnect protection is experimental and off by default.** It requires a compatible system PF layout; protection changes reset existing network connections. Full physical-network leak acceptance remains incomplete. A 1.0.0 version number does not imply Apple notarization or completion of every real-network acceptance test. Current limits and the remaining acceptance matrix are recorded in the [release notes](docs/RELEASE_NOTES_1_0_0.md) and [QA checklist](docs/QA.md).
+**PF disconnect protection is experimental and off by default.** It requires a compatible system PF layout; protection changes reset existing network connections. Full physical-network leak acceptance remains incomplete. A 1.0.1 version number does not imply Apple notarization or completion of every real-network acceptance test. Current limits and the remaining acceptance matrix are recorded in the [release notes](docs/RELEASE_NOTES_1_0_1.md) and [QA checklist](docs/QA.md).
 
 Recovery changes only DNS, routes and PF resources whose app ownership can be confirmed. Profiles may contain private keys; keep real profiles, passwords and signing certificates out of Git and issue reports.
 

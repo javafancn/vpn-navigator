@@ -1534,14 +1534,24 @@ final class AppModel: ObservableObject {
     }
 }
 
+/// Own the long-lived controllers without forwarding their frequent changes
+/// into App's scene/command tree. Each window observes its model directly.
+@MainActor
+private final class ApplicationState: ObservableObject {
+    let model: AppModel
+    let workspaceCommands = WorkspaceCommandRouter()
+    init(model: AppModel) { self.model = model }
+}
+
 @main
 struct VPNNavigatorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationLifecycle.self) private var appDelegate
-    @StateObject private var model: AppModel
-    @StateObject private var workspaceCommands = WorkspaceCommandRouter()
+    @StateObject private var state: ApplicationState
+    private var model: AppModel { state.model }
+    private var workspaceCommands: WorkspaceCommandRouter { state.workspaceCommands }
     init() {
         let initialModel = WorkspaceAccessibilitySelfTest.applicationModel()
-        _model = StateObject(wrappedValue: initialModel)
+        _state = StateObject(wrappedValue: ApplicationState(model: initialModel))
         appDelegate.model = initialModel
 #if VPNNAV_LOCAL_TEST
         if ProcessInfo.processInfo.arguments.contains("--vpnnav-local-managed-connect") {

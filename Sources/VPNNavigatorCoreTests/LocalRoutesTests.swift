@@ -28,7 +28,7 @@ final class LocalRoutesTests: XCTestCase {
                 transport: .udp, local: local, country: [], managedDirect: direct)
             let generated = try guardPolicy.rules(tunnel: "utun4")
             XCTAssertFalse(generated.contains("224.0.0.0/4"))
-            XCTAssertTrue(generated.contains("block drop out quick inet6"))
+            XCTAssertTrue(generated.contains("block return out quick inet6 from any to any"))
         }
     }
     func testFindsOnlyPhysicalOnLinkIPv4Networks() throws {

@@ -145,7 +145,7 @@ final class DualStackRoutingTests: XCTestCase {
         XCTAssertFalse(policy.direct6.contains { $0.contains("240e:1::1") })
         let raw = try policy.rules(tunnel: "utun4")
         XCTAssertTrue(raw.contains("on utun4 inet6 from any")); XCTAssertTrue(raw.contains("icmp6-type { routersol, neighbrsol, neighbradv }"))
-        XCTAssertFalse(raw.contains("on en0 inet6 from any to any")); XCTAssertTrue(raw.contains("block drop out quick inet6"))
+        XCTAssertFalse(raw.contains("on en0 inet6 from any to any")); XCTAssertTrue(raw.contains("block return out quick inet6 from any to any"))
         let ipv6 = try LeakGuardPolicy(physical: "en0", endpoint: "2606:4700::1111", port: 1194, transport: .udp,
             local: [], country: [], physical6: "en0", ipv4Tunnel: false, ipv6Tunnel: true)
         XCTAssertTrue(try ipv6.rules(tunnel: "utun4").contains("on en0 inet6 proto udp from any to 2606:4700::1111 port 1194"))
